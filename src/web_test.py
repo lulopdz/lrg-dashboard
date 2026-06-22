@@ -4,7 +4,7 @@ import os
 
 # 1. Cargar los datos históricos
 # Nota: Si tus columnas tienen otro nombre (ej. 'Fecha' en vez de 'Date'), cámbialas abajo.
-df = pd.read_csv('data/historico/ieso_dam_prices.csv')
+df = pd.read_csv('data/ieso_dam_prices.csv')
 
 # Para este ejemplo, asumo que tus columnas se llaman 'Date' y 'Price'
 # Si se llaman diferente, solo modifica los valores de x e y aquí abajo:
