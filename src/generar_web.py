@@ -42,11 +42,11 @@ for i, zone in enumerate(zones):
         line=dict(color='#888', dash='dot'), visible=visible, legendgroup=zone
     ))
     hourly_fig.add_trace(go.Scatter(
-        x=yesterday_z['hour'], y=yesterday_z['lmp'], name=f'Yesterday ({yesterday_date})', mode='lines+markers',
+        x=yesterday_z['hour'], y=yesterday_z['lmp'], name=f'{yesterday_date}', mode='lines+markers',
         line=dict(color='#f1c40f', dash='dash'), visible=visible, legendgroup=zone
     ))
     hourly_fig.add_trace(go.Scatter(
-        x=today_z['hour'], y=today_z['lmp'], name=f'Today ({today_date})', mode='lines+markers',
+        x=today_z['hour'], y=today_z['lmp'], name=f'{today_date}', mode='lines+markers',
         line=dict(color='#3498db', width=3), visible=visible, legendgroup=zone
     ))
 
