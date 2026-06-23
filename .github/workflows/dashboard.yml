@@ -5,6 +5,7 @@ on:
     branches: [ main ] # Se ejecutará cada vez que subas código para que lo veas ya
   schedule:
     - cron: '0 10 * * *' # Se ejecutará todos los días a las 10:00 UTC (6:00 AM EDT)
+  workflow_dispatch: # Permite disparar el workflow manualmente desde la pestaña Actions
 
 jobs:
   actualizar-web:
