@@ -8,6 +8,7 @@ from gridstatusio import GridStatusClient
 DATASET_ID = "ieso_lmp_day_ahead_hourly_virtual_zonal"
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_dam_prices.csv"
 PAST_HOURS = 48  # re-fetch a safety window in case IESO issues late corrections
+FORECAST_HOURS = 36  # DAM is published a day ahead, so the full next day is already available
 
 
 def update_dam_prices():
@@ -19,7 +20,7 @@ def update_dam_prices():
 
     now = pd.Timestamp.now(tz="UTC").tz_convert("-05:00")
     start = (now - timedelta(hours=PAST_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
-    end = now.strftime("%Y-%m-%d %H:%M:%S")
+    end = (now + timedelta(hours=FORECAST_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
 
     print(f"Fetching {DATASET_ID} from {start} to {end}...")
     new_df = client.get_dataset(
