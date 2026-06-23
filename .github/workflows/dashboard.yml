@@ -7,6 +7,9 @@ on:
     - cron: '0 10 * * *' # Se ejecutará todos los días a las 10:00 UTC (6:00 AM EDT)
   workflow_dispatch: # Permite disparar el workflow manualmente desde la pestaña Actions
 
+permissions:
+  contents: write # Necesario para que el bot pueda hacer commit y push del reporte
+
 jobs:
   actualizar-web:
     runs-on: ubuntu-latest
