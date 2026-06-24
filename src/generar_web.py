@@ -63,17 +63,13 @@ spread = dam[['location', 'interval_start_local', 'hour', 'lmp']].merge(
 spread['lmp'] = spread['lmp_dam'] - spread['lmp_rtm']
 spread = spread[['location', 'interval_start_local', 'hour', 'lmp']]
 
-# 3. Shared reference date, anchored to DAM: it always publishes a full day a day ahead,
-# so it's the freshest *complete* day available -- unlike RTM, which is only ever as
-# complete as "right now" and would otherwise hold the whole dashboard back to yesterday.
-latest_ts = dam['interval_start_local'].max()
-last_day_rows = dam[dam['interval_start_local'].dt.date == latest_ts.date()]
-if last_day_rows.groupby('location').size().min() < 24:
-    # The most recent day is still incomplete: fall back to the prior day
-    latest_ts = latest_ts - pd.Timedelta(days=1)
-
-today_date = latest_ts.date()
+# 3. Shared reference date: the actual calendar day, in market time. DAM always publishes
+# a day ahead (so its max date is "tomorrow", not "today"), and RTM is only ever as
+# complete as "right now" -- neither dataset's max date is the right anchor. Using the
+# real wall-clock date keeps DAM/RTM/Spread all defaulting to the same meaningful day.
+today_date = pd.Timestamp.now(tz='UTC').tz_convert('-05:00').date()
 table_start_date = today_date - pd.Timedelta(days=TABLE_DAYS - 1)
+latest_ts = dam['interval_start_local'].max()
 rtm_latest_ts = rtm['interval_start_local'].max()
 
 # Dates selectable in the "Day" dropdown (oldest -> newest), defaulting to the most recent one
