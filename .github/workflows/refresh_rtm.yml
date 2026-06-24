@@ -23,6 +23,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'
 
     - name: Instalar librerías
       run: pip install -r requirements.txt
@@ -47,4 +48,5 @@ jobs:
         git config --local user.name "Bot de LRG"
         git add data/ieso_rtm_prices.csv docs/index.html
         git commit -m "RTM actualizado manualmente" || echo "Sin cambios nuevos"
+        git pull --rebase origin main
         git push
