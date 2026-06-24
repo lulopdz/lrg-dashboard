@@ -1,6 +1,8 @@
-name: Refrescar RTM (manual)
+name: Refrescar RTM
 
 on:
+  schedule:
+    - cron: '0 10 * * *' # Mismo horario que el DAM: 10:00 UTC (6:00 AM EDT)
   workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
     inputs:
       hours:
@@ -47,6 +49,6 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
         git add data/ieso_rtm_prices.csv docs/index.html
-        git commit -m "RTM actualizado manualmente" || echo "Sin cambios nuevos"
+        git commit -m "RTM actualizado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         git push

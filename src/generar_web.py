@@ -72,10 +72,15 @@ table_start_date = today_date - pd.Timedelta(days=TABLE_DAYS - 1)
 latest_ts = dam['interval_start_local'].max()
 rtm_latest_ts = rtm['interval_start_local'].max()
 
-# Dates selectable in the "Day" dropdown (oldest -> newest), defaulting to the most recent one
+# Dates used by the hourly tables: the rolling last TABLE_DAYS ending at today (unaffected by the Day selector)
 SELECTABLE_DATES = [table_start_date + pd.Timedelta(days=d) for d in range(TABLE_DAYS)]
 SELECTABLE_DATE_STRS = [str(d) for d in SELECTABLE_DATES]
-default_date_idx = len(SELECTABLE_DATES) - 1
+
+# Dates selectable in the "Day" dropdown: same window, plus tomorrow (DAM is already
+# published for it), defaulting to today rather than the last (tomorrow) entry.
+DAY_OPTIONS = SELECTABLE_DATES + [today_date + pd.Timedelta(days=1)]
+DAY_OPTION_STRS = [str(d) for d in DAY_OPTIONS]
+default_date_idx = len(DAY_OPTIONS) - 2
 
 
 def zone_options_html(selected_zone):
@@ -88,7 +93,7 @@ def zone_options_html(selected_zone):
 def date_options_html(selected_date_str):
     return '\n'.join(
         f'<option value="{d}"{" selected" if d == selected_date_str else ""}>{d}</option>'
-        for d in SELECTABLE_DATE_STRS
+        for d in DAY_OPTION_STRS
     )
 
 
@@ -97,7 +102,7 @@ def build_hourly_fig(df, label):
     fig = go.Figure()
     for zi, zone in enumerate(zones):
         df_zone = df[df['location'] == zone]
-        for di, date in enumerate(SELECTABLE_DATES):
+        for di, date in enumerate(DAY_OPTIONS):
             visible = (zi == default_idx and di == default_date_idx)
             prev_date = date - pd.Timedelta(days=1)
             day_z = df_zone[df_zone['interval_start_local'].dt.date == date].sort_values('hour')
@@ -121,7 +126,7 @@ def build_hourly_fig(df, label):
 
     fig.update_layout(
         template='plotly_dark',
-        title=f'{label} - Hourly Profile - {DEFAULT_ZONE} ({SELECTABLE_DATE_STRS[default_date_idx]})',
+        title=f'{label} - Hourly Profile - {DEFAULT_ZONE} ({DAY_OPTION_STRS[default_date_idx]})',
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title='Price ($/MWh)',
         xaxis=dict(dtick=1, range=[0.5, 24.5]),
@@ -141,7 +146,7 @@ def build_spread_detail_fig():
     for zi, zone in enumerate(zones):
         dam_zone = dam[dam['location'] == zone]
         rtm_zone = rtm[rtm['location'] == zone]
-        for di, date in enumerate(SELECTABLE_DATES):
+        for di, date in enumerate(DAY_OPTIONS):
             visible = (zi == default_idx and di == default_date_idx)
             dam_z = dam_zone[dam_zone['interval_start_local'].dt.date == date].sort_values('hour')
             rtm_z = rtm_zone[rtm_zone['interval_start_local'].dt.date == date].sort_values('hour')
@@ -165,7 +170,7 @@ def build_spread_detail_fig():
 
     fig.update_layout(
         template='plotly_dark',
-        title=f'Spread (DAM - RTM) - {DEFAULT_ZONE} ({SELECTABLE_DATE_STRS[default_date_idx]})',
+        title=f'Spread (DAM - RTM) - {DEFAULT_ZONE} ({DAY_OPTION_STRS[default_date_idx]})',
         legend=dict(orientation='v', yanchor='middle', y=0.8, xanchor='left', x=1.02),
         margin=dict(t=60, b=40, r=140),
         height=650
@@ -243,7 +248,7 @@ spread_table_fig = build_table_fig(spread, 'Spread (DAM - RTM)', diverging=True)
 os.makedirs('docs', exist_ok=True)
 
 ZONES_JSON = json.dumps(zones)
-DATES_JSON = json.dumps(SELECTABLE_DATE_STRS)
+DATES_JSON = json.dumps(DAY_OPTION_STRS)
 
 
 def zone_control(div_id):
@@ -334,7 +339,7 @@ function applyAllFigs() {{
 <div class="global-day-bar">
   <label><strong>Day</strong> (applies to DAM, RTM and Spread):</label>
   <select id="global-date" onchange="applyAllFigs()">
-    {date_options_html(SELECTABLE_DATE_STRS[default_date_idx])}
+    {date_options_html(DAY_OPTION_STRS[default_date_idx])}
   </select>
 </div>
 
