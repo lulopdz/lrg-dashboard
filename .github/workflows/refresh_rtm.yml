@@ -2,6 +2,11 @@ name: Refrescar RTM (manual)
 
 on:
   workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
+    inputs:
+      hours:
+        description: 'Horas hacia atrás (vacío = detectar automáticamente desde el último dato guardado)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -25,7 +30,13 @@ jobs:
     - name: Actualizar datos del RTM
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
-      run: python src/update_rtm.py
+        HOURS_INPUT: ${{ github.event.inputs.hours }}
+      run: |
+        if [ -n "$HOURS_INPUT" ]; then
+          python src/update_rtm.py --hours "$HOURS_INPUT"
+        else
+          python src/update_rtm.py
+        fi
 
     - name: Ejecutar algoritmo y crear HTML
       run: python src/generar_web.py

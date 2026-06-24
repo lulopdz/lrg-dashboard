@@ -1,12 +1,14 @@
+import json
+import os
+
 import pandas as pd
 import plotly.graph_objects as go
-import os
 
 TABLE_DAYS = 14
 DEFAULT_ZONE = 'OTTAWA'
 
-# GitHub repo that hosts this dashboard, used to build the link the "Refresh
-# RTM" button opens (the GitHub Actions page for the refresh_rtm workflow).
+# GitHub repo that hosts this dashboard, used to build the links the "Refresh"
+# buttons open (the GitHub Actions pages for each workflow).
 GITHUB_OWNER = 'lulopdz'
 GITHUB_REPO = 'lrg-dashboard'
 
@@ -30,7 +32,7 @@ spread = dam[['location', 'interval_start_local', 'hour', 'lmp']].merge(
 spread['lmp'] = spread['lmp_dam'] - spread['lmp_rtm']
 spread = spread[['location', 'interval_start_local', 'hour', 'lmp']]
 
-# 3. Shared reference dates, driven by RTM since it always lags DAM (which publishes a day ahead)
+# 3. Shared reference date, driven by RTM since it always lags DAM (which publishes a day ahead)
 latest_ts = rtm['interval_start_local'].max()
 last_day_rows = rtm[rtm['interval_start_local'].dt.date == latest_ts.date()]
 if last_day_rows.groupby('location').size().min() < 24:
@@ -38,70 +40,73 @@ if last_day_rows.groupby('location').size().min() < 24:
     latest_ts = latest_ts - pd.Timedelta(days=1)
 
 today_date = latest_ts.date()
-yesterday_date = today_date - pd.Timedelta(days=1)
-week_ago_date = today_date - pd.Timedelta(days=7)
 table_start_date = today_date - pd.Timedelta(days=TABLE_DAYS - 1)
+
+# Dates selectable in the "Day" dropdown (oldest -> newest), defaulting to the most recent one
+SELECTABLE_DATES = [table_start_date + pd.Timedelta(days=d) for d in range(TABLE_DAYS)]
+SELECTABLE_DATE_STRS = [str(d) for d in SELECTABLE_DATES]
+default_date_idx = len(SELECTABLE_DATES) - 1
+
+
+def zone_options_html(selected_zone):
+    return '\n'.join(
+        f'<option value="{z}"{" selected" if z == selected_zone else ""}>{z}</option>'
+        for z in zones
+    )
+
+
+def date_options_html(selected_date_str):
+    return '\n'.join(
+        f'<option value="{d}"{" selected" if d == selected_date_str else ""}>{d}</option>'
+        for d in SELECTABLE_DATE_STRS
+    )
 
 
 def build_hourly_fig(df, label):
-    df_today = df[df['interval_start_local'].dt.date == today_date]
-    df_yesterday = df[df['interval_start_local'].dt.date == yesterday_date]
-    df_last7 = df[(df['interval_start_local'].dt.date > week_ago_date) & (df['interval_start_local'].dt.date <= today_date)]
-    avg_7d = df_last7.groupby(['location', 'hour'])['lmp'].mean().reset_index()
-
+    """One zone-selector + the shared 'Day' selector both drive trace visibility via JS."""
     fig = go.Figure()
-    for i, zone in enumerate(zones):
-        visible = (i == default_idx)
-        today_z = df_today[df_today['location'] == zone].sort_values('hour')
-        yesterday_z = df_yesterday[df_yesterday['location'] == zone].sort_values('hour')
-        avg_z = avg_7d[avg_7d['location'] == zone].sort_values('hour')
+    for zi, zone in enumerate(zones):
+        df_zone = df[df['location'] == zone]
+        for di, date in enumerate(SELECTABLE_DATES):
+            visible = (zi == default_idx and di == default_date_idx)
+            day_z = df_zone[df_zone['interval_start_local'].dt.date == date].sort_values('hour')
+            week_start = date - pd.Timedelta(days=6)
+            avg_window = df_zone[(df_zone['interval_start_local'].dt.date > week_start) & (df_zone['interval_start_local'].dt.date <= date)]
+            avg_z = avg_window.groupby('hour')['lmp'].mean().reset_index().sort_values('hour')
 
-        fig.add_trace(go.Scatter(
-            x=avg_z['hour'], y=avg_z['lmp'], name='7d Average', mode='lines',
-            line=dict(color='#888', dash='dot'), visible=visible, legendgroup=zone
-        ))
-        fig.add_trace(go.Scatter(
-            x=yesterday_z['hour'], y=yesterday_z['lmp'], name=f'{yesterday_date}', mode='lines+markers',
-            line=dict(color='#f1c40f', dash='dash'), visible=visible, legendgroup=zone
-        ))
-        fig.add_trace(go.Scatter(
-            x=today_z['hour'], y=today_z['lmp'], name=f'{today_date}', mode='lines+markers',
-            line=dict(color='#3498db', width=3), visible=visible, legendgroup=zone
-        ))
+            fig.add_trace(go.Scatter(
+                x=avg_z['hour'], y=avg_z['lmp'], name='7d Average', mode='lines',
+                line=dict(color='#888', dash='dot'), visible=visible, legendgroup=zone
+            ))
+            fig.add_trace(go.Scatter(
+                x=day_z['hour'], y=day_z['lmp'], name=str(date), mode='lines+markers',
+                line=dict(color='#3498db', width=3), visible=visible, legendgroup=zone
+            ))
 
-    traces_per_zone = 3
-    buttons = [
-        dict(label=zone, method='update',
-             args=[{'visible': [j // traces_per_zone == i for j in range(len(zones) * traces_per_zone)]},
-                   {'title': f'{label} - Hourly Profile - {zone}'}])
-        for i, zone in enumerate(zones)
-    ]
     fig.update_layout(
         template='plotly_dark',
-        title=f'{label} - Hourly Profile - {DEFAULT_ZONE}',
-        updatemenus=[dict(buttons=buttons, direction='down', x=1.0, y=1.18, xanchor='right', yanchor='top',
-                           active=default_idx, showactive=True)],
+        title=f'{label} - Hourly Profile - {DEFAULT_ZONE} ({SELECTABLE_DATE_STRS[default_date_idx]})',
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title='Price ($/MWh)',
         xaxis=dict(dtick=1, range=[0.5, 24.5]),
-        margin=dict(t=90, b=60, r=140),
+        margin=dict(t=60, b=60, r=140),
         height=500
     )
     return fig
 
 
 def build_table_fig(df, label, diverging=False):
+    """Unaffected by the Day selector: always the rolling last TABLE_DAYS ending at today_date."""
     df_table = df[(df['interval_start_local'].dt.date >= table_start_date) & (df['interval_start_local'].dt.date <= today_date)].copy()
     df_table['date'] = df_table['interval_start_local'].dt.date.astype(str)
 
     heatmap_kwargs = dict(colorscale='RdYlGn', zmid=0) if diverging else dict(colorscale='RdYlGn_r')
-    all_dates = [str(table_start_date + pd.Timedelta(days=d)) for d in range(TABLE_DAYS)]
 
     fig = go.Figure()
     for i, zone in enumerate(zones):
         pivot = (df_table[df_table['location'] == zone]
                  .pivot_table(index='date', columns='hour', values='lmp', aggfunc='mean')
-                 .reindex(index=all_dates, columns=range(1, 25)))
+                 .reindex(index=SELECTABLE_DATE_STRS, columns=range(1, 25)))
         text = pivot.round(1).astype(str).values
 
         fig.add_trace(go.Heatmap(
@@ -126,7 +131,7 @@ def build_table_fig(df, label, diverging=False):
                            active=default_idx, showactive=True)],
         xaxis_title='Hour', yaxis_title='Date',
         xaxis=dict(dtick=1, side='top'),
-        yaxis=dict(tickmode='array', tickvals=all_dates, ticktext=all_dates),
+        yaxis=dict(tickmode='array', tickvals=SELECTABLE_DATE_STRS, ticktext=SELECTABLE_DATE_STRS),
         margin=dict(t=90, b=40, r=40),
         height=560
     )
@@ -134,32 +139,25 @@ def build_table_fig(df, label, diverging=False):
 
 
 def build_spread_sign_fig(df):
-    df_today = df[df['interval_start_local'].dt.date == today_date]
-
     fig = go.Figure()
-    for i, zone in enumerate(zones):
-        z = df_today[df_today['location'] == zone].sort_values('hour')
-        colors = ['#2ecc71' if v >= 0 else '#e74c3c' for v in z['lmp']]
-        fig.add_trace(go.Bar(
-            x=z['hour'], y=z['lmp'], marker_color=colors,
-            visible=(i == default_idx), showlegend=False,
-            hovertemplate='Hour %{x}<br>Spread: $%{y:.2f}<extra></extra>'
-        ))
+    for zi, zone in enumerate(zones):
+        df_zone = df[df['location'] == zone]
+        for di, date in enumerate(SELECTABLE_DATES):
+            visible = (zi == default_idx and di == default_date_idx)
+            day_z = df_zone[df_zone['interval_start_local'].dt.date == date].sort_values('hour')
+            colors = ['#2ecc71' if v >= 0 else '#e74c3c' for v in day_z['lmp']]
+            fig.add_trace(go.Bar(
+                x=day_z['hour'], y=day_z['lmp'], marker_color=colors,
+                visible=visible, showlegend=False,
+                hovertemplate='Hour %{x}<br>Spread: $%{y:.2f}<extra></extra>'
+            ))
 
-    buttons = [
-        dict(label=zone, method='update',
-             args=[{'visible': [j == i for j in range(len(zones))]},
-                   {'title': f'Spread Sign - {zone} ({today_date})'}])
-        for i, zone in enumerate(zones)
-    ]
     fig.update_layout(
         template='plotly_dark',
-        title=f'Spread Sign - {DEFAULT_ZONE} ({today_date})',
-        updatemenus=[dict(buttons=buttons, direction='down', x=1.0, y=1.18, xanchor='right', yanchor='top',
-                           active=default_idx, showactive=True)],
+        title=f'Spread Sign - {DEFAULT_ZONE} ({SELECTABLE_DATE_STRS[default_date_idx]})',
         xaxis_title='Hour', yaxis_title='Spread ($/MWh)',
         xaxis=dict(dtick=1, range=[0.5, 24.5]),
-        margin=dict(t=90, b=40, r=40),
+        margin=dict(t=60, b=40, r=40),
         height=400
     )
     fig.add_hline(y=0, line_color='#666', line_width=1)
@@ -176,8 +174,25 @@ spread_sign_fig = build_spread_sign_fig(spread)
 spread_hourly_fig = build_hourly_fig(spread, 'Spread (DAM - RTM)')
 spread_table_fig = build_table_fig(spread, 'Spread (DAM - RTM)', diverging=True)
 
-# 4. Assemble the HTML page with tabs (DAM / RTM / Spread)
+# 4. Assemble the HTML page with tabs (DAM / RTM / Spread) and shared zone/day controls
 os.makedirs('docs', exist_ok=True)
+
+ZONES_JSON = json.dumps(zones)
+DATES_JSON = json.dumps(SELECTABLE_DATE_STRS)
+
+
+def zone_control(div_id):
+    return f"""<div class="controls">
+  <label>Zone:</label>
+  <select id="{div_id}-zone" onchange="applyFigSelection('{div_id}')">
+    {zone_options_html(DEFAULT_ZONE)}
+  </select>
+</div>"""
+
+
+def register_fig(div_id, traces_per_combo, title_prefix):
+    return f"<script>registerFig('{div_id}', {ZONES_JSON}, {DATES_JSON}, {traces_per_combo}, '{title_prefix}');</script>"
+
 
 html = f"""<html>
 <head>
@@ -187,7 +202,7 @@ html = f"""<html>
   body {{ background:#111; color:#eee; font-family:Arial, sans-serif; margin:0; padding:24px; }}
   h2 {{ color:#ddd; border-bottom:1px solid #333; padding-bottom:6px; }}
   footer {{ color:#888; font-size:12px; margin-top:20px; }}
-  .tabs {{ display:flex; gap:8px; margin-bottom:16px; }}
+  .tabs {{ display:flex; gap:8px; margin-bottom:0; }}
   .tab-btn {{
     background:#1e1e1e; color:#ccc; border:1px solid #333; border-radius:6px 6px 0 0;
     padding:10px 20px; cursor:pointer; font-size:14px;
@@ -198,6 +213,12 @@ html = f"""<html>
     padding:8px 16px; cursor:pointer; font-size:13px; margin-bottom:8px; text-decoration:none;
   }}
   .refresh-btn:hover {{ background:#2980b9; }}
+  .global-day-bar {{
+    background:#1a1a1a; border:1px solid #333; border-radius:4px;
+    padding:10px 16px; margin:16px 0; display:flex; align-items:center; gap:10px;
+  }}
+  .controls {{ margin:8px 0; }}
+  select {{ background:#1e1e1e; color:#eee; border:1px solid #444; border-radius:4px; padding:4px 8px; }}
   /* max-height:0 (instead of display:none) keeps the container's width intact so
      Plotly's auto-sizing doesn't collapse hidden charts to zero width on first render */
   .tab-content {{ max-height:0; overflow:hidden; }}
@@ -212,10 +233,24 @@ html = f"""<html>
   <button class="tab-btn" onclick="showTab('spread', this)">Spread</button>
 </div>
 
+<div class="global-day-bar">
+  <label><strong>Day</strong> (applies to DAM, RTM and Spread):</label>
+  <select id="global-date" onchange="applyAllFigs()">
+    {date_options_html(SELECTABLE_DATE_STRS[default_date_idx])}
+  </select>
+</div>
+
 <div id="tab-dam" class="tab-content active">
+<div>
+  <a class="refresh-btn" href="https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/dashboard.yml" target="_blank" rel="noopener">
+    Refresh DAM (opens GitHub Actions)
+  </a>
+</div>
 <h2>DAM - Hourly Profile</h2>
-{dam_hourly_fig.to_html(full_html=False, include_plotlyjs='cdn')}
-<h2>DAM - Hourly Table</h2>
+{zone_control('dam-hourly')}
+{dam_hourly_fig.to_html(full_html=False, include_plotlyjs='cdn', div_id='dam-hourly')}
+{register_fig('dam-hourly', 2, 'DAM - Hourly Profile')}
+<h2>DAM - Hourly Table (last {TABLE_DAYS} days)</h2>
 {dam_table_fig.to_html(full_html=False, include_plotlyjs=False)}
 </div>
 
@@ -226,17 +261,23 @@ html = f"""<html>
   </a>
 </div>
 <h2>RTM - Hourly Profile</h2>
-{rtm_hourly_fig.to_html(full_html=False, include_plotlyjs=False)}
-<h2>RTM - Hourly Table</h2>
+{zone_control('rtm-hourly')}
+{rtm_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-hourly')}
+{register_fig('rtm-hourly', 2, 'RTM - Hourly Profile')}
+<h2>RTM - Hourly Table (last {TABLE_DAYS} days)</h2>
 {rtm_table_fig.to_html(full_html=False, include_plotlyjs=False)}
 </div>
 
 <div id="tab-spread" class="tab-content">
-<h2>Spread Sign - Today (Positive = green, Negative = red)</h2>
-{spread_sign_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>Spread Sign (Positive = green, Negative = red)</h2>
+{zone_control('spread-sign')}
+{spread_sign_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-sign')}
+{register_fig('spread-sign', 1, 'Spread Sign')}
 <h2>Spread (DAM - RTM) - Hourly Profile</h2>
-{spread_hourly_fig.to_html(full_html=False, include_plotlyjs=False)}
-<h2>Spread (DAM - RTM) - Hourly Table</h2>
+{zone_control('spread-hourly')}
+{spread_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-hourly')}
+{register_fig('spread-hourly', 2, 'Spread (DAM - RTM) - Hourly Profile')}
+<h2>Spread (DAM - RTM) - Hourly Table (last {TABLE_DAYS} days)</h2>
 {spread_table_fig.to_html(full_html=False, include_plotlyjs=False)}
 </div>
 
@@ -248,6 +289,30 @@ function showTab(name, btn) {{
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
+}}
+
+const FIG_CONFIGS = {{}};
+
+function registerFig(divId, zonesList, datesList, tracesPerCombo, titlePrefix) {{
+  FIG_CONFIGS[divId] = {{zones: zonesList, dates: datesList, tracesPerCombo: tracesPerCombo, titlePrefix: titlePrefix}};
+}}
+
+function applyFigSelection(divId) {{
+  const cfg = FIG_CONFIGS[divId];
+  const zoneSel = document.getElementById(divId + '-zone');
+  const dateSel = document.getElementById('global-date');
+  const zoneIdx = cfg.zones.indexOf(zoneSel.value);
+  const dateIdx = cfg.dates.indexOf(dateSel.value);
+  const total = cfg.zones.length * cfg.dates.length * cfg.tracesPerCombo;
+  const visible = new Array(total).fill(false);
+  const base = (zoneIdx * cfg.dates.length + dateIdx) * cfg.tracesPerCombo;
+  for (let k = 0; k < cfg.tracesPerCombo; k++) visible[base + k] = true;
+  Plotly.restyle(divId, {{visible: visible}});
+  Plotly.relayout(divId, {{title: cfg.titlePrefix + ' - ' + zoneSel.value + ' (' + dateSel.value + ')'}});
+}}
+
+function applyAllFigs() {{
+  Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
 }}
 </script>
 
