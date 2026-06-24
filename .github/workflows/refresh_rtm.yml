@@ -1,0 +1,39 @@
+name: Refrescar RTM (manual)
+
+on:
+  workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
+
+permissions:
+  contents: write
+
+jobs:
+  refrescar-rtm:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Traer el código
+      uses: actions/checkout@v4
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Instalar librerías
+      run: pip install -r requirements.txt
+
+    - name: Actualizar datos del RTM
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      run: python src/update_rtm.py
+
+    - name: Ejecutar algoritmo y crear HTML
+      run: python src/generar_web.py
+
+    - name: Guardar la nueva web en GitHub
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Bot de LRG"
+        git add data/ieso_rtm_prices.csv docs/index.html
+        git commit -m "RTM actualizado manualmente" || echo "Sin cambios nuevos"
+        git push
