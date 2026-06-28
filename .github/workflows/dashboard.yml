@@ -32,6 +32,19 @@ jobs:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       run: python src/update_data.py
 
+    - name: Actualizar datos del clima
+      run: python src/update_weather.py
+
+    - name: Actualizar pronóstico de demanda
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      run: python src/update_load_forecast.py
+
+    - name: Actualizar pronóstico de viento
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      run: python src/update_wind_forecast.py
+
     - name: Ejecutar algoritmo y crear HTML
       run: python src/generar_web.py
 
@@ -39,7 +52,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_dam_prices.csv docs/index.html
+        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv docs/index.html
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         git push
