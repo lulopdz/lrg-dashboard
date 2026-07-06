@@ -417,6 +417,57 @@ wind_table_fig = build_table_fig(wind_forecast, 'Wind Forecast', palette='Greens
                                   value_col='generation_forecast', zones_list=wind_zones, default_zone_idx=default_wind_idx,
                                   colorbar_title='MW', hover_label='Generation', hover_prefix='', hover_suffix=' MW')
 
+
+def _pivot_to_js(df, time_col, location_col, value_col, group_keys):
+    """Shared pivot logic: returns a dict keyed by group_key → {dates, hours, values}."""
+    df_t = df[(df[time_col].dt.date >= table_start_date) &
+              (df[time_col].dt.date <= today_date)].copy()
+    df_t['date'] = df_t[time_col].dt.date.astype(str)
+    data = {}
+    for key in group_keys:
+        pivot = (df_t[df_t[location_col] == key]
+                 .pivot_table(index='date', columns='hour', values=value_col, aggfunc='mean')
+                 .reindex(index=SELECTABLE_DATE_STRS, columns=range(1, 25)))
+        data[key] = {
+            'dates': SELECTABLE_DATE_STRS,
+            'hours': list(range(1, 25)),
+            'values': [[None if pd.isna(v) else round(float(v), 2) for v in row]
+                       for row in pivot.values]
+        }
+    return data
+
+
+def table_data_js(df, var_name, zones_list=None, location_col='location', value_col='lmp'):
+    zones_list = zones_list if zones_list is not None else zones
+    data = _pivot_to_js(df, 'interval_start_local', location_col, value_col, zones_list)
+    return f"const {var_name} = {json.dumps(data)};"
+
+
+def wide_table_data_js(df, time_col, var_map, var_name):
+    df_t = df[(df[time_col].dt.date >= table_start_date) &
+              (df[time_col].dt.date <= today_date)].copy()
+    df_t['date'] = df_t[time_col].dt.date.astype(str)
+    data = {}
+    for var, (label, _) in var_map.items():
+        pivot = (df_t.pivot_table(index='date', columns='hour', values=var, aggfunc='mean')
+                 .reindex(index=SELECTABLE_DATE_STRS, columns=range(1, 25)))
+        data[label] = {
+            'dates': SELECTABLE_DATE_STRS,
+            'hours': list(range(1, 25)),
+            'values': [[None if pd.isna(v) else round(float(v), 2) for v in row]
+                       for row in pivot.values]
+        }
+    return f"const {var_name} = {json.dumps(data)};"
+
+
+dam_table_data_js     = table_data_js(dam, 'DAM_TABLE_DATA')
+rtm_table_data_js     = table_data_js(rtm, 'RTM_TABLE_DATA')
+spread_table_data_js  = table_data_js(spread, 'SPREAD_TABLE_DATA')
+weather_table_data_js = wide_table_data_js(weather, 'timestamp', WEATHER_VARS, 'WEATHER_TABLE_DATA')
+load_table_data_js    = wide_table_data_js(load_forecast, 'interval_start_local', LOAD_VARS, 'LOAD_TABLE_DATA')
+wind_table_data_js    = table_data_js(wind_forecast, 'WIND_TABLE_DATA', zones_list=wind_zones,
+                                       location_col='zone', value_col='generation_forecast')
+
 # 4. Assemble the HTML page with tabs (DAM / RTM / Spread / Weather / Load Forecast / Wind Forecast)
 # and shared zone/day controls
 os.makedirs('docs', exist_ok=True)
@@ -490,6 +541,11 @@ html = f"""<html>
      Plotly's auto-sizing doesn't collapse hidden charts to zero width on first render */
   .tab-content {{ max-height:0; overflow:hidden; }}
   .tab-content.active {{ max-height:none; }}
+  .copy-btn {{
+    background:#2c2c2c; color:#aaa; border:1px solid #444; border-radius:4px;
+    padding:3px 10px; cursor:pointer; font-size:12px; margin-left:12px; vertical-align:middle;
+  }}
+  .copy-btn:hover {{ background:#444; color:#fff; }}
 </style>
 </head>
 <body>
@@ -527,6 +583,22 @@ function applyFigSelection(divId) {{
 function applyAllFigs() {{
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
 }}
+
+function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
+  const gd = document.getElementById(plotlyDivId);
+  const activeIdx = (gd && gd._fullLayout && gd._fullLayout.updatemenus && gd._fullLayout.updatemenus.length)
+    ? gd._fullLayout.updatemenus[0].active : 0;
+  const key = keysArr[activeIdx];
+  const d = dataObj[key];
+  if (!d) return;
+  const header = 'Date\t' + d.hours.map(h => 'H' + h).join('\t');
+  const rows = d.dates.map((date, i) =>
+    date + '\t' + d.values[i].map(v => v == null ? '' : v).join('\t')
+  );
+  navigator.clipboard.writeText([header, ...rows].join('\n'))
+    .then(() => {{ btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1800); }})
+    .catch(() => {{ btn.textContent = 'Failed';  setTimeout(() => btn.textContent = 'Copy', 1800); }});
+}}
 </script>
 
 <div class="tabs">
@@ -555,8 +627,8 @@ function applyAllFigs() {{
 {zone_control('dam-hourly')}
 {dam_hourly_fig.to_html(full_html=False, include_plotlyjs='cdn', div_id='dam-hourly')}
 {register_fig('dam-hourly', 3, 'DAM - Hourly Profile')}
-<h2>DAM - Hourly Table (last {TABLE_DAYS} days)</h2>
-{dam_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>DAM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, DAM_TABLE_DATA, 'dam-table', {ZONES_JSON})">Copy</button></h2>
+{dam_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='dam-table')}
 </div>
 
 <div id="tab-rtm" class="tab-content">
@@ -569,8 +641,8 @@ function applyAllFigs() {{
 {zone_control('rtm-hourly')}
 {rtm_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-hourly')}
 {register_fig('rtm-hourly', 3, 'RTM - Hourly Profile')}
-<h2>RTM - Hourly Table (last {TABLE_DAYS} days)</h2>
-{rtm_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>RTM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, RTM_TABLE_DATA, 'rtm-table', {ZONES_JSON})">Copy</button></h2>
+{rtm_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-table')}
 </div>
 
 <div id="tab-spread" class="tab-content">
@@ -578,8 +650,8 @@ function applyAllFigs() {{
 {zone_control('spread-hourly')}
 {spread_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-hourly')}
 {register_fig('spread-hourly', 3, 'Spread (DAM - RTM) - Hourly Profile')}
-<h2>Spread (DAM - RTM) - Hourly Table (last {TABLE_DAYS} days)</h2>
-{spread_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>Spread (DAM - RTM) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, SPREAD_TABLE_DATA, 'spread-table', {ZONES_JSON})">Copy</button></h2>
+{spread_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-table')}
 </div>
 
 <div id="tab-weather" class="tab-content">
@@ -593,8 +665,8 @@ function applyAllFigs() {{
 {weather_date_control('weather-hourly')}
 {weather_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='weather-hourly')}
 {register_fig('weather-hourly', 3, 'Weather - Hourly Profile', zones_json=WEATHER_LABELS_JSON, y_axis_titles=WEATHER_Y_AXIS_TITLES, date_sel_id='weather-hourly-date')}
-<h2>Weather (OTTAWA) - Hourly Table (last {TABLE_DAYS} days)</h2>
-{weather_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>Weather (OTTAWA) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WEATHER_TABLE_DATA, 'weather-table', {WEATHER_LABELS_JSON})">Copy</button></h2>
+{weather_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='weather-table')}
 </div>
 
 <div id="tab-load" class="tab-content">
@@ -607,8 +679,8 @@ function applyAllFigs() {{
 {load_control('load-hourly')}
 {load_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='load-hourly')}
 {register_fig('load-hourly', 3, 'Load Forecast - Hourly Profile', zones_json=LOAD_LABELS_JSON, y_axis_titles=LOAD_Y_AXIS_TITLES)}
-<h2>Load Forecast - Hourly Table (last {TABLE_DAYS} days)</h2>
-{load_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>Load Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, LOAD_TABLE_DATA, 'load-table', {LOAD_LABELS_JSON})">Copy</button></h2>
+{load_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='load-table')}
 </div>
 
 <div id="tab-wind" class="tab-content">
@@ -621,9 +693,18 @@ function applyAllFigs() {{
 {wind_control('wind-hourly')}
 {wind_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='wind-hourly')}
 {register_fig('wind-hourly', 3, 'Wind Forecast - Hourly Profile', zones_json=WIND_ZONES_JSON)}
-<h2>Wind Forecast - Hourly Table (last {TABLE_DAYS} days)</h2>
-{wind_table_fig.to_html(full_html=False, include_plotlyjs=False)}
+<h2>Wind Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WIND_TABLE_DATA, 'wind-table', {WIND_ZONES_JSON})">Copy</button></h2>
+{wind_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='wind-table')}
 </div>
+
+<script>
+{dam_table_data_js}
+{rtm_table_data_js}
+{spread_table_data_js}
+{weather_table_data_js}
+{load_table_data_js}
+{wind_table_data_js}
+</script>
 
 <footer>DAM data through: {latest_ts.strftime('%Y-%m-%d %H:%M')} &nbsp;|&nbsp; RTM data through: {rtm_latest_ts.strftime('%Y-%m-%d %H:%M')} &nbsp;|&nbsp; Weather data through: {weather_latest_ts.strftime('%Y-%m-%d %H:%M')} &nbsp;|&nbsp; Load Forecast through: {load_latest_ts.strftime('%Y-%m-%d %H:%M')} &nbsp;|&nbsp; Wind Forecast through: {wind_latest_ts.strftime('%Y-%m-%d %H:%M')}</footer>
 
