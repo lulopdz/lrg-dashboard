@@ -584,11 +584,11 @@ function applyAllFigs() {{
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
 }}
 
-function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
+function copyTableTSV(btn, dataObj, plotlyDivId) {{
   const gd = document.getElementById(plotlyDivId);
   const activeIdx = (gd && gd._fullLayout && gd._fullLayout.updatemenus && gd._fullLayout.updatemenus.length)
     ? gd._fullLayout.updatemenus[0].active : 0;
-  const key = keysArr[activeIdx];
+  const key = Object.keys(dataObj)[activeIdx];
   const d = dataObj[key];
   if (!d) return;
   const header = 'Date\t' + d.hours.map(h => 'H' + h).join('\t');
@@ -627,7 +627,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {zone_control('dam-hourly')}
 {dam_hourly_fig.to_html(full_html=False, include_plotlyjs='cdn', div_id='dam-hourly')}
 {register_fig('dam-hourly', 3, 'DAM - Hourly Profile')}
-<h2>DAM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, DAM_TABLE_DATA, 'dam-table', {ZONES_JSON})">Copy</button></h2>
+<h2>DAM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, DAM_TABLE_DATA, 'dam-table')">Copy</button></h2>
 {dam_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='dam-table')}
 </div>
 
@@ -641,7 +641,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {zone_control('rtm-hourly')}
 {rtm_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-hourly')}
 {register_fig('rtm-hourly', 3, 'RTM - Hourly Profile')}
-<h2>RTM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, RTM_TABLE_DATA, 'rtm-table', {ZONES_JSON})">Copy</button></h2>
+<h2>RTM - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, RTM_TABLE_DATA, 'rtm-table')">Copy</button></h2>
 {rtm_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-table')}
 </div>
 
@@ -650,7 +650,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {zone_control('spread-hourly')}
 {spread_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-hourly')}
 {register_fig('spread-hourly', 3, 'Spread (DAM - RTM) - Hourly Profile')}
-<h2>Spread (DAM - RTM) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, SPREAD_TABLE_DATA, 'spread-table', {ZONES_JSON})">Copy</button></h2>
+<h2>Spread (DAM - RTM) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, SPREAD_TABLE_DATA, 'spread-table')">Copy</button></h2>
 {spread_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-table')}
 </div>
 
@@ -665,7 +665,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {weather_date_control('weather-hourly')}
 {weather_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='weather-hourly')}
 {register_fig('weather-hourly', 3, 'Weather - Hourly Profile', zones_json=WEATHER_LABELS_JSON, y_axis_titles=WEATHER_Y_AXIS_TITLES, date_sel_id='weather-hourly-date')}
-<h2>Weather (OTTAWA) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WEATHER_TABLE_DATA, 'weather-table', {WEATHER_LABELS_JSON})">Copy</button></h2>
+<h2>Weather (OTTAWA) - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WEATHER_TABLE_DATA, 'weather-table')">Copy</button></h2>
 {weather_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='weather-table')}
 </div>
 
@@ -679,7 +679,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {load_control('load-hourly')}
 {load_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='load-hourly')}
 {register_fig('load-hourly', 3, 'Load Forecast - Hourly Profile', zones_json=LOAD_LABELS_JSON, y_axis_titles=LOAD_Y_AXIS_TITLES)}
-<h2>Load Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, LOAD_TABLE_DATA, 'load-table', {LOAD_LABELS_JSON})">Copy</button></h2>
+<h2>Load Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, LOAD_TABLE_DATA, 'load-table')">Copy</button></h2>
 {load_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='load-table')}
 </div>
 
@@ -693,7 +693,7 @@ function copyTableTSV(btn, dataObj, plotlyDivId, keysArr) {{
 {wind_control('wind-hourly')}
 {wind_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='wind-hourly')}
 {register_fig('wind-hourly', 3, 'Wind Forecast - Hourly Profile', zones_json=WIND_ZONES_JSON)}
-<h2>Wind Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WIND_TABLE_DATA, 'wind-table', {WIND_ZONES_JSON})">Copy</button></h2>
+<h2>Wind Forecast - Hourly Table (last {TABLE_DAYS} days) <button class="copy-btn" onclick="copyTableTSV(this, WIND_TABLE_DATA, 'wind-table')">Copy</button></h2>
 {wind_table_fig.to_html(full_html=False, include_plotlyjs=False, div_id='wind-table')}
 </div>
 
