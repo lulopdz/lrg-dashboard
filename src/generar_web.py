@@ -591,11 +591,12 @@ function copyTableTSV(btn, dataObj, plotlyDivId) {{
   const key = Object.keys(dataObj)[activeIdx];
   const d = dataObj[key];
   if (!d) return;
-  const header = 'Date\t' + d.hours.map(h => 'H' + h).join('\t');
+  const sep = '\\t';
+  const header = 'Date' + sep + d.hours.map(h => 'H' + h).join(sep);
   const rows = d.dates.map((date, i) =>
-    date + '\t' + d.values[i].map(v => v == null ? '' : v).join('\t')
+    date + sep + d.values[i].map(v => v == null ? '' : v).join(sep)
   );
-  navigator.clipboard.writeText([header, ...rows].join('\n'))
+  navigator.clipboard.writeText([header, ...rows].join('\\n'))
     .then(() => {{ btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1800); }})
     .catch(() => {{ btn.textContent = 'Failed';  setTimeout(() => btn.textContent = 'Copy', 1800); }});
 }}
