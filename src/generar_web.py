@@ -35,7 +35,7 @@ def discrete_diverging_colorscale(n_per_side=3, neg_palette='Reds', pos_palette=
         scale.append([(i + 1) / n_buckets, color])
     return scale
 
-TABLE_DAYS = 14
+TABLE_DAYS = 30
 DEFAULT_ZONE = 'OTTAWA'
 
 # GitHub repo that hosts this dashboard, used to build the links the "Refresh"
