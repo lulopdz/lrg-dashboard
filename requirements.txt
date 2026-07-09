@@ -4,3 +4,4 @@ gridstatusio>=0.5
 openmeteo_requests>=1.0
 requests_cache>=1.0
 retry_requests>=2.0
+scikit-learn>=1.3
