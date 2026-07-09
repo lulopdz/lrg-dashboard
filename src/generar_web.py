@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 TABLE_BUCKET_SIZE = 100  # $/MWh step size for the discrete table color scales
+TABLE_ROW_HEIGHT = 26    # px per date row in the hourly heatmap tables -- height scales with TABLE_DAYS instead of being fixed
 
 
 def discrete_colorscale(zmin, zmax, palette, bucket_size=TABLE_BUCKET_SIZE):
@@ -276,7 +277,7 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
 
         fig.add_trace(go.Heatmap(
             z=pivot.values, x=pivot.columns, y=pivot.index,
-            text=text, texttemplate='%{text}', textfont=dict(size=10),
+            text=text, texttemplate='%{text}', textfont=dict(size=11),
             colorbar=dict(title=colorbar_title),
             visible=(i == default_zone_idx),
             hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{hover_label}: {hover_prefix}%{{z:.2f}}{hover_suffix}<extra></extra>',
@@ -298,7 +299,7 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
         xaxis=dict(dtick=1, side='top'),
         yaxis=dict(tickmode='array', tickvals=SELECTABLE_DATE_STRS, ticktext=SELECTABLE_DATE_STRS),
         margin=dict(t=90, b=40, r=40),
-        height=560
+        height=130 + TABLE_DAYS * TABLE_ROW_HEIGHT
     )
     return fig
 
@@ -366,7 +367,7 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
 
         fig.add_trace(go.Heatmap(
             z=pivot.values, x=pivot.columns, y=pivot.index,
-            text=text, texttemplate='%{text}', textfont=dict(size=10),
+            text=text, texttemplate='%{text}', textfont=dict(size=11),
             colorscale=colorscale, zmin=zmin, zmax=zmax,
             colorbar=dict(title=unit),
             visible=(i == default_var_idx),
@@ -389,7 +390,7 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
         xaxis=dict(dtick=1, side='top'),
         yaxis=dict(tickmode='array', tickvals=SELECTABLE_DATE_STRS, ticktext=SELECTABLE_DATE_STRS),
         margin=dict(t=90, b=40, r=40),
-        height=560
+        height=130 + TABLE_DAYS * TABLE_ROW_HEIGHT
     )
     return fig
 
