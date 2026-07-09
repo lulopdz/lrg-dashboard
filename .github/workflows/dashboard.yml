@@ -45,6 +45,15 @@ jobs:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       run: python src/update_wind_forecast.py
 
+    - name: Predecir DAM de mañana
+      run: python src/predict_dam.py
+
+    - name: Predecir RTM de mañana
+      run: python src/predict_rtm.py
+
+    - name: Predecir Spread de mañana
+      run: python src/predict_spread.py
+
     - name: Ejecutar algoritmo y crear HTML
       run: python src/generar_web.py
 
@@ -53,6 +62,7 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
         git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv docs/index.html
+        git add data/dam_forecast.csv data/dam_forecast_meta.json data/rtm_forecast.csv data/rtm_forecast_meta.json data/spread_forecast.csv data/spread_forecast_meta.json
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         git push
