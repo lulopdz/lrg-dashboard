@@ -1,5 +1,5 @@
 pandas>=2.0
-plotly>=5.0
+plotly==5.24.1
 gridstatusio>=0.5
 openmeteo_requests>=1.0
 requests_cache>=1.0
