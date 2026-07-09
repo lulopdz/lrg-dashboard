@@ -1,0 +1,45 @@
+name: Predicciones DAM/RTM/Spread
+
+on:
+  workflow_dispatch: # Disparado por el botón "Refresh Forecasts" del dashboard, o manualmente desde Actions
+
+permissions:
+  contents: write
+
+jobs:
+  predecir:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Traer el código
+      uses: actions/checkout@v4
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Instalar librerías
+      run: pip install -r requirements.txt
+
+    - name: Predecir DAM de mañana
+      run: python src/predict_dam.py
+
+    - name: Predecir RTM de mañana
+      run: python src/predict_rtm.py
+
+    - name: Predecir Spread de mañana
+      run: python src/predict_spread.py
+
+    - name: Ejecutar algoritmo y crear HTML
+      run: python src/generar_web.py
+
+    - name: Guardar las predicciones en GitHub
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Bot de LRG"
+        git add data/dam_forecast.csv data/dam_forecast_meta.json data/rtm_forecast.csv data/rtm_forecast_meta.json data/spread_forecast.csv data/spread_forecast_meta.json docs/index.html
+        git commit -m "Predicciones actualizadas" || echo "Sin cambios nuevos"
+        git pull --rebase origin main
+        git push
