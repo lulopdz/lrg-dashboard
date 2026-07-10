@@ -102,6 +102,15 @@ def add_lag_features(df, prefix):
     return df
 
 
+def usable_feature_cols(df, feature_cols):
+    """Drop any feature that's entirely missing in this slice. HistGradientBoostingRegressor
+    handles partial missingness fine, but a column with zero non-null values can crash its
+    histogram binning step on some scikit-learn versions -- e.g. a forecast source (like the
+    Ontario-wide wind forecast) that only has a couple weeks of history won't have a single
+    real value in an older training window, even though it's fully populated more recently."""
+    return [c for c in feature_cols if df[c].notna().any()]
+
+
 def backtest(df_hist, feature_cols, naive_col):
     """Trailing holdout: honest accuracy vs. a naive 'same hour last week' baseline, plus
     a per-hour-of-day error breakdown (which hours the model has historically nailed vs.
@@ -112,9 +121,10 @@ def backtest(df_hist, feature_cols, naive_col):
     if len(train) < MIN_TRAIN_DAYS * 24 or test.empty:
         return None
 
+    usable_cols = usable_feature_cols(train, feature_cols)
     model = HistGradientBoostingRegressor(random_state=0)
-    model.fit(train[feature_cols], train["lmp"])
-    pred = model.predict(test[feature_cols])
+    model.fit(train[usable_cols], train["lmp"])
+    pred = model.predict(test[usable_cols])
 
     naive = test[naive_col].fillna(train["lmp"].mean())
 
@@ -155,9 +165,12 @@ def recommend_hour(metrics, df_target, feature_cols):
 
 
 def fit_final_model(df_hist, feature_cols):
+    """Returns (model, usable_cols) -- usable_cols is feature_cols minus anything entirely
+    missing in df_hist; predict() calls must select the same columns, not the original list."""
+    usable_cols = usable_feature_cols(df_hist, feature_cols)
     model = HistGradientBoostingRegressor(random_state=0)
-    model.fit(df_hist[feature_cols], df_hist["lmp"])
-    return model
+    model.fit(df_hist[usable_cols], df_hist["lmp"])
+    return model, usable_cols
 
 
 def attach_reference_price(df, reference_df, target_date, forecast_csv_name, feature_name="dam_price"):
