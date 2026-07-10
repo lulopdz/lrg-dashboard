@@ -69,12 +69,12 @@ def main():
     else:
         print("Not enough history yet for a holdout backtest.")
 
-    model = fit_final_model(df_hist, FEATURE_COLS)
+    model, usable_cols = fit_final_model(df_hist, FEATURE_COLS)
     missing_features = df_target[FEATURE_COLS].isna().any(axis=1).sum()
     if missing_features:
         print(f"Warning: {missing_features} of {len(df_target)} target hours have missing inputs -- "
               "predictions for those hours are less reliable.")
-    df_target["predicted_lmp"] = model.predict(df_target[FEATURE_COLS])
+    df_target["predicted_lmp"] = model.predict(df_target[usable_cols])
 
     best_hour, best_hour_mae = recommend_hour(metrics, df_target, FEATURE_COLS)
     if best_hour:
