@@ -89,7 +89,7 @@ def update_weather():
     # Drop duplicates keeping the LAST one (newest forecast), same convention as the
     # price feeds: as the forecast horizon shrinks, fresher predictions overwrite older ones.
     combined = combined.drop_duplicates(subset=["timestamp"], keep="last")
-    combined = combined.sort_values("timestamp", ascending=False)
+    combined = combined.sort_values("timestamp")
 
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(DATA_PATH, index=False)
