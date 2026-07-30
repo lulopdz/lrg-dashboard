@@ -3,6 +3,14 @@ name: Predicciones DAM/RTM/Spread
 on:
   workflow_dispatch: # Disparado por el botón "Refresh Forecasts" del dashboard, o manualmente desde Actions
 
+# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean a main y
+# regeneran docs/index.html -- si corren al mismo tiempo, el segundo en subir choca al
+# intentar fusionar ese HTML generado. Este grupo compartido los encola en vez de dejarlos
+# pisarse (cancel-in-progress: false = esperan su turno, no se cancelan entre sí).
+concurrency:
+  group: lrg-dashboard-git-writes
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -32,14 +40,14 @@ jobs:
     - name: Predecir Spread de mañana
       run: python src/predict_spread.py
 
-    - name: Ejecutar algoritmo y crear HTML
-      run: python src/generar_web.py
-
-    - name: Guardar las predicciones en GitHub
+    - name: Guardar predicciones y regenerar dashboard
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/dam_forecast.csv data/dam_forecast_meta.json data/rtm_forecast.csv data/rtm_forecast_meta.json data/spread_forecast.csv data/spread_forecast_meta.json docs/index.html
+        git add data/dam_forecast.csv data/dam_forecast_meta.json data/rtm_forecast.csv data/rtm_forecast_meta.json data/spread_forecast.csv data/spread_forecast_meta.json
         git commit -m "Predicciones actualizadas" || echo "Sin cambios nuevos"
         git pull --rebase origin main
+        python src/generar_web.py
+        git add docs/index.html
+        git commit -m "Regenerar dashboard" || echo "Sin cambios nuevos"
         git push
