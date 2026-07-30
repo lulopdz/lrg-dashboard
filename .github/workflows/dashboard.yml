@@ -7,6 +7,14 @@ on:
     - cron: '0 10 * * *' # Se ejecutará todos los días a las 10:00 UTC (6:00 AM EDT)
   workflow_dispatch: # Permite disparar el workflow manualmente desde la pestaña Actions
 
+# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean a main y
+# regeneran docs/index.html -- si corren al mismo tiempo, el segundo en subir choca al
+# intentar fusionar ese HTML generado. Este grupo compartido los encola en vez de dejarlos
+# pisarse (cancel-in-progress: false = esperan su turno, no se cancelan entre sí).
+concurrency:
+  group: lrg-dashboard-git-writes
+  cancel-in-progress: false
+
 permissions:
   contents: write # Necesario para que el bot pueda hacer commit y push del reporte
 
@@ -45,14 +53,14 @@ jobs:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       run: python src/update_wind_forecast.py
 
-    - name: Ejecutar algoritmo y crear HTML
-      run: python src/generar_web.py
-
-    - name: Guardar la nueva web en GitHub
+    - name: Guardar datos y regenerar dashboard
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv docs/index.html
+        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
+        python src/generar_web.py
+        git add docs/index.html
+        git commit -m "Regenerar dashboard" || echo "Sin cambios nuevos"
         git push

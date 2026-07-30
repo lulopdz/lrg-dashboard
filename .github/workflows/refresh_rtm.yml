@@ -10,6 +10,14 @@ on:
         required: false
         default: ''
 
+# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean a main y
+# regeneran docs/index.html -- si corren al mismo tiempo, el segundo en subir choca al
+# intentar fusionar ese HTML generado. Este grupo compartido los encola en vez de dejarlos
+# pisarse (cancel-in-progress: false = esperan su turno, no se cancelan entre sí).
+concurrency:
+  group: lrg-dashboard-git-writes
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -41,14 +49,14 @@ jobs:
           python src/update_rtm.py
         fi
 
-    - name: Ejecutar algoritmo y crear HTML
-      run: python src/generar_web.py
-
-    - name: Guardar la nueva web en GitHub
+    - name: Guardar datos y regenerar dashboard
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_rtm_prices.csv docs/index.html
+        git add data/ieso_rtm_prices.csv
         git commit -m "RTM actualizado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
+        python src/generar_web.py
+        git add docs/index.html
+        git commit -m "Regenerar dashboard" || echo "Sin cambios nuevos"
         git push
