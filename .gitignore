@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 .cache.sqlite
+
+# Built by generar_web.py on every workflow run; published straight to GitHub Pages via
+# actions/deploy-pages instead of being committed (was the single biggest contributor to
+# repo growth at ~3MB/commit).
+docs/

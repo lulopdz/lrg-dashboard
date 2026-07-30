@@ -7,16 +7,18 @@ on:
     - cron: '0 10 * * *' # Se ejecutará todos los días a las 10:00 UTC (6:00 AM EDT)
   workflow_dispatch: # Permite disparar el workflow manualmente desde la pestaña Actions
 
-# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean a main y
-# regeneran docs/index.html -- si corren al mismo tiempo, el segundo en subir choca al
-# intentar fusionar ese HTML generado. Este grupo compartido los encola en vez de dejarlos
-# pisarse (cancel-in-progress: false = esperan su turno, no se cancelan entre sí).
+# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean y publican a
+# Pages -- si corren al mismo tiempo se pisan el push o la publicación. Este grupo
+# compartido los encola en vez de dejarlos correr en paralelo (cancel-in-progress: false =
+# esperan su turno, no se cancelan entre sí).
 concurrency:
   group: lrg-dashboard-git-writes
   cancel-in-progress: false
 
 permissions:
   contents: write # Necesario para que el bot pueda hacer commit y push del reporte
+  pages: write
+  id-token: write
 
 jobs:
   actualizar-web:
@@ -61,6 +63,23 @@ jobs:
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py
-        git add docs/index.html
-        git commit -m "Regenerar dashboard" || echo "Sin cambios nuevos"
         git push
+
+    - name: Preparar artefacto de Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
+
+  publicar:
+    needs: actualizar-web
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Publicar en GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
