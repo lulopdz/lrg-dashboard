@@ -18,23 +18,29 @@ MIN_TRAIN_DAYS = 60  # need enough history before the holdout window to bother t
 
 # The full set of forecasted variables we have for tomorrow (IESO load forecast +
 # IESO wind forecast + Open-Meteo weather forecast) -- "similar day" means closest
-# on these, not on anything realized/actual.
-ANALOG_FEATURE_COLS = [
-    "ontario", "ontario_southeast", "wind_forecast",
-    "temperature_2m", "wind_speed_10m", "precipitation", "snowfall",
-    "relative_humidity_2m", "shortwave_radiation",
+# on these, not on anything realized/actual. Each entry is
+# (feature_key, source_column, agg_func, label, unit, weight): source_column/agg_func
+# say how to build the daily value from the hourly grid (temperature_2m_max reuses
+# temperature_2m's column with "max" instead of "mean"); weight scales that feature's
+# contribution to the distance in find_similar_day -- load and wind forecasts move
+# price the most, so they count double; temperature (avg and max) drives demand too
+# but a bit less directly, so it's 1.5x; the rest of the weather variables stay at 1x.
+_ANALOG_SPEC = [
+    ("ontario", "ontario", "mean", "Ontario load forecast", "MW", 2.0),
+    ("ontario_southeast", "ontario_southeast", "mean", "SE Ontario load forecast", "MW", 2.0),
+    ("wind_forecast", "wind_forecast", "mean", "Wind generation forecast", "MW", 2.0),
+    ("temperature_2m", "temperature_2m", "mean", "Temperature", "°C", 1.5),
+    ("temperature_2m_max", "temperature_2m", "max", "Max temperature", "°C", 1.5),
+    ("wind_speed_10m", "wind_speed_10m", "mean", "Wind speed", "m/s", 1.0),
+    ("precipitation", "precipitation", "mean", "Precipitation", "mm", 1.0),
+    ("snowfall", "snowfall", "mean", "Snowfall", "cm", 1.0),
+    ("relative_humidity_2m", "relative_humidity_2m", "mean", "Humidity", "%", 1.0),
+    ("shortwave_radiation", "shortwave_radiation", "mean", "Solar radiation", "W/m²", 1.0),
 ]
-ANALOG_FEATURE_LABELS = {
-    "ontario": ("Ontario load forecast", "MW"),
-    "ontario_southeast": ("SE Ontario load forecast", "MW"),
-    "wind_forecast": ("Wind generation forecast", "MW"),
-    "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_10m": ("Wind speed", "m/s"),
-    "precipitation": ("Precipitation", "mm"),
-    "snowfall": ("Snowfall", "cm"),
-    "relative_humidity_2m": ("Humidity", "%"),
-    "shortwave_radiation": ("Solar radiation", "W/m²"),
-}
+
+ANALOG_FEATURE_COLS = [key for key, *_ in _ANALOG_SPEC]
+ANALOG_FEATURE_LABELS = {key: (label, unit) for key, _src, _agg, label, unit, _w in _ANALOG_SPEC}
+ANALOG_FEATURE_WEIGHTS = {key: w for key, _src, _agg, _label, _unit, w in _ANALOG_SPEC}
 
 
 def load_price_series(filename, zone=ZONE):
@@ -193,10 +199,11 @@ def attach_reference_price(df, reference_df, target_date, forecast_csv_name, fea
 
 def find_similar_day(df, df_hist, target_date):
     """Nearest historical day to target_date on the full set of forecasted variables we
-    have for tomorrow (load forecast, wind forecast, weather forecast) plus weekend-ness.
+    have for tomorrow (load forecast, wind forecast, weather forecast) plus weekend-ness,
+    weighted by ANALOG_FEATURE_WEIGHTS so load/wind/temperature count more than the rest.
     Returns (analog_date, distance, comparison) or None if too little data to compare.
     `comparison` holds each feature's target vs. analog-day value, for display."""
-    agg = {col: (col, "mean") for col in ANALOG_FEATURE_COLS}
+    agg = {key: (src, func) for key, src, func, _label, _unit, _w in _ANALOG_SPEC}
     daily = df.groupby(df["interval_start_local"].dt.date).agg(
         is_weekend=("is_weekend", "max"),
         n_hours=("interval_start_local", "count"),
@@ -215,11 +222,12 @@ def find_similar_day(df, df_hist, target_date):
     sigma = daily_hist[ANALOG_FEATURE_COLS].std().replace(0, 1)
     z_hist = (daily_hist[ANALOG_FEATURE_COLS] - mu) / sigma
     z_target = (daily.loc[target_date, ANALOG_FEATURE_COLS] - mu) / sigma
+    weights = pd.Series(ANALOG_FEATURE_WEIGHTS)[ANALOG_FEATURE_COLS]
 
     # Weekday/weekend demand shapes differ enough that a weekend analog for a
     # weekday target (or vice versa) should lose even if load/wind/weather happen to match.
     weekend_penalty = (daily_hist["is_weekend"] != daily.loc[target_date, "is_weekend"]).astype(float) * 3.0
-    dist = np.sqrt(((z_hist - z_target) ** 2).sum(axis=1)) + weekend_penalty
+    dist = np.sqrt((weights * (z_hist - z_target) ** 2).sum(axis=1)) + weekend_penalty
     analog_date = dist.idxmin()
 
     comparison = {
