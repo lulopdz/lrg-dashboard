@@ -5,16 +5,18 @@ on:
     - cron: '30 10 * * *' # 30 min después del refresco diario de datos (10:00 UTC), para correr ya con carga/viento/clima/DAM frescos
   workflow_dispatch: # Disparado por el botón "Refresh Forecasts" del dashboard, o manualmente desde Actions
 
-# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean a main y
-# regeneran docs/index.html -- si corren al mismo tiempo, el segundo en subir choca al
-# intentar fusionar ese HTML generado. Este grupo compartido los encola en vez de dejarlos
-# pisarse (cancel-in-progress: false = esperan su turno, no se cancelan entre sí).
+# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean y publican a
+# Pages -- si corren al mismo tiempo se pisan el push o la publicación. Este grupo
+# compartido los encola en vez de dejarlos correr en paralelo (cancel-in-progress: false =
+# esperan su turno, no se cancelan entre sí).
 concurrency:
   group: lrg-dashboard-git-writes
   cancel-in-progress: false
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   predecir:
@@ -50,6 +52,23 @@ jobs:
         git commit -m "Predicciones actualizadas" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py
-        git add docs/index.html
-        git commit -m "Regenerar dashboard" || echo "Sin cambios nuevos"
         git push
+
+    - name: Preparar artefacto de Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
+
+  publicar:
+    needs: predecir
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Publicar en GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
