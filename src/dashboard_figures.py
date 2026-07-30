@@ -146,6 +146,12 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         name=f"Similar day ({meta.get('analog_date')})", mode='lines+markers',
         line=dict(color='#888', dash='dash')
     ))
+    if 'analog_lmp_2' in forecast_df.columns and forecast_df['analog_lmp_2'].notna().any():
+        fig.add_trace(go.Scatter(
+            x=forecast_df['hour'], y=forecast_df['analog_lmp_2'],
+            name=f"2nd similar day ({meta.get('analog_date_2')})", mode='lines+markers',
+            line=dict(color='#666', dash='dot')
+        ))
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['predicted_lmp'],
         name=f"Predicted ({meta.get('target_date')})", mode='lines+markers',
