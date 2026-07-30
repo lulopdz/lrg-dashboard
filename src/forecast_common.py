@@ -1,6 +1,7 @@
-"""Shared plumbing for the next-day DAM/RTM predictors (predict_dam.py, predict_rtm.py):
-loading IESO's own forecasts, calendar feature engineering, backtesting, and the
-similar-day analog search. Both predictors need this unchanged, so it lives here once."""
+"""Shared plumbing for the next-day DAM/RTM/Spread predictors (predict_dam.py, predict_rtm.py,
+predict_spread.py): loading IESO's own forecasts, calendar feature engineering, backtesting,
+the similar-day analog search, and the end-to-end run_forecast() driver they all call."""
+import json
 from pathlib import Path
 
 import numpy as np
@@ -226,3 +227,99 @@ def find_similar_day(df, df_hist, target_date):
         for col in ANALOG_FEATURE_COLS
     }
     return analog_date, float(dist.loc[analog_date]), comparison
+
+
+def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False):
+    """End-to-end driver shared by predict_dam.py/predict_rtm.py/predict_spread.py: builds the
+    hourly grid, optionally attaches the same-hour DAM price as a feature, backtests, fits the
+    final model, predicts tomorrow, finds a similar-day analog, and writes
+    data/{prefix}_forecast.csv + data/{prefix}_forecast_meta.json.
+
+    prefix names the lag features (e.g. 'dam' -> dam_lag_1d, used as the naive baseline too)
+    and the output files. series_df is the series being predicted (DAM/RTM price, or the
+    DAM-RTM spread); dam is always the DAM price series, used both to anchor "tomorrow" and,
+    when attach_dam_feature=True, merged in as the 'dam_price' feature (predict_rtm.py/
+    predict_spread.py's FEATURE_COLS must include it; predict_dam.py doesn't need it)."""
+    load_fc, wind_fc, weather = load_forecast_inputs()
+    target_date = determine_target_date(dam)
+    tz = series_df["interval_start_local"].dt.tz
+
+    df = build_grid(series_df, load_fc, wind_fc, weather, target_date, tz)
+    used_dam_forecast = None
+    if attach_dam_feature:
+        df, used_dam_forecast = attach_reference_price(df, dam, target_date, "dam_forecast.csv")
+    df = add_lag_features(df, prefix=prefix)
+    df_hist = df[df["lmp"].notna()].copy()
+    df_target = df[df["interval_start_local"].dt.date == target_date].copy()
+
+    print(f"Target date (tomorrow): {target_date}")
+    print(f"Training rows: {len(df_hist)} hourly observations through {df_hist['interval_start_local'].max()}")
+    if attach_dam_feature and not used_dam_forecast:
+        print("Note: data/dam_forecast.csv not found -- run predict_dam.py first for a same-hour DAM "
+              "feature on the target day; tomorrow's hours will have no DAM info this run.")
+
+    metrics = backtest(df_hist, feature_cols, naive_col=f"{prefix}_lag_7d")
+    if metrics:
+        print(f"Backtest (last {BACKTEST_DAYS}d): model MAE ${metrics['model_mae']:.2f} vs. "
+              f"naive-lag-7d MAE ${metrics['naive_mae']:.2f} (RMSE ${metrics['model_rmse']:.2f})")
+    else:
+        print("Not enough history yet for a holdout backtest.")
+
+    model, usable_cols = fit_final_model(df_hist, feature_cols)
+    missing_features = df_target[feature_cols].isna().any(axis=1).sum()
+    if missing_features:
+        print(f"Warning: {missing_features} of {len(df_target)} target hours have missing inputs -- "
+              "predictions for those hours are less reliable.")
+    df_target["predicted_lmp"] = model.predict(df_target[usable_cols])
+
+    best_hour, best_hour_mae = recommend_hour(metrics, df_target, feature_cols)
+    if best_hour:
+        print(f"Most confident hour: {best_hour} (historical backtest MAE ${best_hour_mae:.2f})")
+
+    analog = find_similar_day(df, df_hist, target_date)
+    analog_curve = {}
+    analog_date_str = None
+    similarity_distance = None
+    comparison = {}
+    if analog:
+        analog_date, similarity_distance, comparison = analog
+        analog_date_str = str(analog_date)
+        analog_rows = df_hist[df_hist["interval_start_local"].dt.date == analog_date]
+        analog_curve = dict(zip((analog_rows["hour"] + 1).tolist(), analog_rows["lmp"].tolist()))
+        print(f"Most similar historical day: {analog_date} (distance {similarity_distance:.2f})")
+        for col, (label, unit) in ANALOG_FEATURE_LABELS.items():
+            print(f"  {label}: tomorrow's forecast {comparison[col]['target']:.1f}{unit} "
+                  f"vs. {analog_date} {comparison[col]['analog']:.1f}{unit}")
+    else:
+        print("Not enough complete historical days to find a similar-day analog.")
+
+    out = pd.DataFrame({
+        "hour": (df_target["hour"] + 1).values,
+        "predicted_lmp": df_target["predicted_lmp"].round(2).values,
+    })
+    out["analog_lmp"] = out["hour"].map(analog_curve).round(2)
+    out_path = DATA_DIR / f"{prefix}_forecast.csv"
+    out.to_csv(out_path, index=False)
+    print(f"Saved {len(out)} rows to {out_path}")
+
+    comparison_display = [
+        {"label": label, "unit": unit, "target": comparison[col]["target"], "analog": comparison[col]["analog"]}
+        for col, (label, unit) in ANALOG_FEATURE_LABELS.items()
+    ] if comparison else []
+
+    meta = {
+        "zone": ZONE,
+        "target_date": str(target_date),
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "analog_date": analog_date_str,
+        "analog_distance": similarity_distance,
+        "analog_comparison": comparison_display,
+        "recommended_hour": {"hour": best_hour, "expected_error": best_hour_mae} if best_hour else None,
+        "backtest": metrics,
+    }
+    if attach_dam_feature:
+        meta["used_dam_forecast_feature"] = used_dam_forecast
+    meta_path = DATA_DIR / f"{prefix}_forecast_meta.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    print(f"Saved metadata to {meta_path}")
