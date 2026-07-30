@@ -101,16 +101,30 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label, script_name):
             return 'n/a'
         return f"{(target - analog) / analog * 100:+.1f}%"
 
+    def row_html(c, c2=None):
+        cells = [c['label'], f"{c['weight']:g}x", f"{c['target']:.1f} {c['unit']}",
+                 f"{c['analog']:.1f} {c['unit']}", pct_diff_label(c['target'], c['analog'])]
+        if c2:
+            cells += [f"{c2['analog']:.1f} {c2['unit']}", pct_diff_label(c2['target'], c2['analog'])]
+        return "<tr>" + "".join(f"<td>{v}</td>" for v in cells) + "</tr>"
+
     comparison_rows = meta.get('analog_comparison') or []
-    comparison_rows_html = '\n'.join(
-        f"<tr><td>{c['label']}</td><td>{c['target']:.1f} {c['unit']}</td><td>{c['analog']:.1f} {c['unit']}</td>"
-        f"<td>{pct_diff_label(c['target'], c['analog'])}</td></tr>"
-        for c in comparison_rows
-    )
+    comparison_rows_2 = meta.get('analog_comparison_2') or []
+    analog_label_2 = meta.get('analog_date_2')
+
+    if comparison_rows_2:
+        comparison_rows_html = '\n'.join(row_html(c, c2) for c, c2 in zip(comparison_rows, comparison_rows_2))
+        first_header = f"#1: {analog_label} (actual)"
+        extra_header = f"<th>#2: {analog_label_2} (actual)</th><th>% diff</th>"
+    else:
+        comparison_rows_html = '\n'.join(row_html(c) for c in comparison_rows)
+        first_header = f"{analog_label} (actual)"
+        extra_header = ""
+
     comparison_table_html = f"""
-<h3>Why this day? Tomorrow's forecast vs. {analog_label}</h3>
+<h3>Why this day? Tomorrow's forecast vs. the closest historical day{'s' if comparison_rows_2 else ''}</h3>
 <table class="compare-table">
-  <thead><tr><th>Variable</th><th>Tomorrow (forecast)</th><th>{analog_label} (actual)</th><th>% diff</th></tr></thead>
+  <thead><tr><th>Variable</th><th>Weight</th><th>Tomorrow (forecast)</th><th>{first_header}</th><th>% diff</th>{extra_header}</tr></thead>
   <tbody>
 {comparison_rows_html}
   </tbody>

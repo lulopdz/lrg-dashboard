@@ -197,12 +197,13 @@ def attach_reference_price(df, reference_df, target_date, forecast_csv_name, fea
     return df, used_forecast
 
 
-def find_similar_day(df, df_hist, target_date):
-    """Nearest historical day to target_date on the full set of forecasted variables we
-    have for tomorrow (load forecast, wind forecast, weather forecast) plus weekend-ness,
-    weighted by ANALOG_FEATURE_WEIGHTS so load/wind/temperature count more than the rest.
-    Returns (analog_date, distance, comparison) or None if too little data to compare.
-    `comparison` holds each feature's target vs. analog-day value, for display."""
+def find_similar_day(df, df_hist, target_date, n=2):
+    """The n historical days closest to target_date (closest first) on the full set of
+    forecasted variables we have for tomorrow (load forecast, wind forecast, weather
+    forecast) plus weekend-ness, weighted by ANALOG_FEATURE_WEIGHTS so load/wind/
+    temperature count more than the rest. Returns a list of up to n dicts
+    {date, distance, comparison} (empty if too little data to compare). `comparison`
+    holds each feature's target vs. that day's value, for display."""
     agg = {key: (src, func) for key, src, func, _label, _unit, _w in _ANALOG_SPEC}
     daily = df.groupby(df["interval_start_local"].dt.date).agg(
         is_weekend=("is_weekend", "max"),
@@ -210,13 +211,13 @@ def find_similar_day(df, df_hist, target_date):
         **agg,
     )
     if target_date not in daily.index or daily.loc[target_date, ANALOG_FEATURE_COLS].isna().any():
-        return None
+        return []
 
     complete_dates = set(df_hist["interval_start_local"].dt.date)
     daily_hist = daily[daily.index.isin(complete_dates) & (daily["n_hours"] == 24)].dropna(subset=ANALOG_FEATURE_COLS)
     daily_hist = daily_hist.drop(index=target_date, errors="ignore")
     if daily_hist.empty:
-        return None
+        return []
 
     mu = daily_hist[ANALOG_FEATURE_COLS].mean()
     sigma = daily_hist[ANALOG_FEATURE_COLS].std().replace(0, 1)
@@ -228,13 +229,15 @@ def find_similar_day(df, df_hist, target_date):
     # weekday target (or vice versa) should lose even if load/wind/weather happen to match.
     weekend_penalty = (daily_hist["is_weekend"] != daily.loc[target_date, "is_weekend"]).astype(float) * 3.0
     dist = np.sqrt((weights * (z_hist - z_target) ** 2).sum(axis=1)) + weekend_penalty
-    analog_date = dist.idxmin()
 
-    comparison = {
-        col: {"target": float(daily.loc[target_date, col]), "analog": float(daily_hist.loc[analog_date, col])}
-        for col in ANALOG_FEATURE_COLS
-    }
-    return analog_date, float(dist.loc[analog_date]), comparison
+    analogs = []
+    for date, distance in dist.nsmallest(n).items():
+        comparison = {
+            col: {"target": float(daily.loc[target_date, col]), "analog": float(daily_hist.loc[date, col])}
+            for col in ANALOG_FEATURE_COLS
+        }
+        analogs.append({"date": date, "distance": float(distance), "comparison": comparison})
+    return analogs
 
 
 def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False):
@@ -284,20 +287,19 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False)
     if best_hour:
         print(f"Most confident hour: {best_hour} (historical backtest MAE ${best_hour_mae:.2f})")
 
-    analog = find_similar_day(df, df_hist, target_date)
-    analog_curve = {}
-    analog_date_str = None
-    similarity_distance = None
-    comparison = {}
-    if analog:
-        analog_date, similarity_distance, comparison = analog
-        analog_date_str = str(analog_date)
-        analog_rows = df_hist[df_hist["interval_start_local"].dt.date == analog_date]
-        analog_curve = dict(zip((analog_rows["hour"] + 1).tolist(), analog_rows["lmp"].tolist()))
-        print(f"Most similar historical day: {analog_date} (distance {similarity_distance:.2f})")
+    analogs = find_similar_day(df, df_hist, target_date)
+    analog_curves = []
+    for a in analogs:
+        rows = df_hist[df_hist["interval_start_local"].dt.date == a["date"]]
+        analog_curves.append(dict(zip((rows["hour"] + 1).tolist(), rows["lmp"].tolist())))
+
+    if analogs:
+        for rank, a in enumerate(analogs, start=1):
+            print(f"#{rank} similar historical day: {a['date']} (distance {a['distance']:.2f})")
         for col, (label, unit) in ANALOG_FEATURE_LABELS.items():
-            print(f"  {label}: tomorrow's forecast {comparison[col]['target']:.1f}{unit} "
-                  f"vs. {analog_date} {comparison[col]['analog']:.1f}{unit}")
+            target_val = analogs[0]["comparison"][col]["target"]
+            analog_vals = " / ".join(f"{a['comparison'][col]['analog']:.1f}{unit}" for a in analogs)
+            print(f"  {label}: tomorrow's forecast {target_val:.1f}{unit} vs. {analog_vals}")
     else:
         print("Not enough complete historical days to find a similar-day analog.")
 
@@ -305,23 +307,34 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False)
         "hour": (df_target["hour"] + 1).values,
         "predicted_lmp": df_target["predicted_lmp"].round(2).values,
     })
-    out["analog_lmp"] = out["hour"].map(analog_curve).round(2)
+    out["analog_lmp"] = out["hour"].map(analog_curves[0] if analogs else {}).round(2)
+    out["analog_lmp_2"] = out["hour"].map(analog_curves[1] if len(analogs) > 1 else {}).round(2)
     out_path = DATA_DIR / f"{prefix}_forecast.csv"
     out.to_csv(out_path, index=False)
     print(f"Saved {len(out)} rows to {out_path}")
 
-    comparison_display = [
-        {"label": label, "unit": unit, "target": comparison[col]["target"], "analog": comparison[col]["analog"]}
-        for col, (label, unit) in ANALOG_FEATURE_LABELS.items()
-    ] if comparison else []
+    def comparison_display(rank):
+        if len(analogs) <= rank:
+            return []
+        comparison = analogs[rank]["comparison"]
+        return [
+            {
+                "label": label, "unit": unit, "weight": ANALOG_FEATURE_WEIGHTS[col],
+                "target": comparison[col]["target"], "analog": comparison[col]["analog"],
+            }
+            for col, (label, unit) in ANALOG_FEATURE_LABELS.items()
+        ]
 
     meta = {
         "zone": ZONE,
         "target_date": str(target_date),
         "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
-        "analog_date": analog_date_str,
-        "analog_distance": similarity_distance,
-        "analog_comparison": comparison_display,
+        "analog_date": str(analogs[0]["date"]) if analogs else None,
+        "analog_distance": analogs[0]["distance"] if analogs else None,
+        "analog_comparison": comparison_display(0),
+        "analog_date_2": str(analogs[1]["date"]) if len(analogs) > 1 else None,
+        "analog_distance_2": analogs[1]["distance"] if len(analogs) > 1 else None,
+        "analog_comparison_2": comparison_display(1),
         "recommended_hour": {"hour": best_hour, "expected_error": best_hour_mae} if best_hour else None,
         "backtest": metrics,
     }
