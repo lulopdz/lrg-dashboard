@@ -96,15 +96,21 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label, script_name):
         f"Hour {recommended['hour']} (±${recommended['expected_error']:.2f})" if recommended.get('hour') else 'n/a'
     )
 
+    def pct_diff_label(target, analog):
+        if analog == 0:
+            return 'n/a'
+        return f"{(target - analog) / analog * 100:+.1f}%"
+
     comparison_rows = meta.get('analog_comparison') or []
     comparison_rows_html = '\n'.join(
-        f"<tr><td>{c['label']}</td><td>{c['target']:.1f} {c['unit']}</td><td>{c['analog']:.1f} {c['unit']}</td></tr>"
+        f"<tr><td>{c['label']}</td><td>{c['target']:.1f} {c['unit']}</td><td>{c['analog']:.1f} {c['unit']}</td>"
+        f"<td>{pct_diff_label(c['target'], c['analog'])}</td></tr>"
         for c in comparison_rows
     )
     comparison_table_html = f"""
 <h3>Why this day? Tomorrow's forecast vs. {analog_label}</h3>
 <table class="compare-table">
-  <thead><tr><th>Variable</th><th>Tomorrow (forecast)</th><th>{analog_label} (actual)</th></tr></thead>
+  <thead><tr><th>Variable</th><th>Tomorrow (forecast)</th><th>{analog_label} (actual)</th><th>% diff</th></tr></thead>
   <tbody>
 {comparison_rows_html}
   </tbody>
