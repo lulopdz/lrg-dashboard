@@ -350,7 +350,8 @@ html = f"""<html>
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
   h2 {{ color:#ddd; border-bottom:1px solid #333; padding-bottom:6px; }}
   footer {{ color:#888; font-size:12px; margin-top:20px; }}
-  .tabs {{ display:flex; gap:8px; margin-bottom:0; }}
+  .tabs-row {{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }}
+  .tabs {{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:0; }}
   .tab-btn {{
     background:#1e1e1e; color:#ccc; border:1px solid #333; border-top:3px solid transparent;
     border-radius:6px 6px 0 0; padding:10px 20px; cursor:pointer; font-size:14px;
@@ -365,6 +366,11 @@ html = f"""<html>
   .tab-btn.group-predict {{ border-top-color:#9b59b6; }}
   .tab-btn.group-predict.active {{ border-bottom:2px solid #9b59b6; }}
   .tab-group-start {{ margin-left:16px; }}
+  .sim-link {{
+    display:inline-block; flex:0 0 auto; padding:6px 14px; border:1px solid #9b59b6;
+    border-radius:4px; color:#c39bd3; text-decoration:none; font-size:13px;
+  }}
+  .sim-link:hover {{ background:#9b59b6; color:#fff; }}
   .refresh-btn {{
     display:inline-block; background:#3498db; color:#fff; border:none; border-radius:4px;
     padding:8px 16px; cursor:pointer; font-size:13px; margin-bottom:8px; text-decoration:none;
@@ -540,16 +546,19 @@ function copyTableTSV(btn, dataObj, plotlyDivId) {{
 }}
 </script>
 
-<div class="tabs">
-  <button class="tab-btn group-market active" onclick="showTab('dam', this)">DAM</button>
-  <button class="tab-btn group-market" onclick="showTab('rtm', this)">RTM</button>
-  <button class="tab-btn group-market" onclick="showTab('spread', this)">Spread</button>
-  <button class="tab-btn group-forecast tab-group-start" onclick="showTab('weather', this)">Weather Forecast</button>
-  <button class="tab-btn group-forecast" onclick="showTab('load', this)">Load Forecast</button>
-  <button class="tab-btn group-forecast" onclick="showTab('wind', this)">Wind Forecast</button>
-  {dam_forecast_tab_button}
-  {rtm_forecast_tab_button}
-  {spread_forecast_tab_button}
+<div class="tabs-row">
+  <div class="tabs">
+    <button class="tab-btn group-market active" onclick="showTab('dam', this)">DAM</button>
+    <button class="tab-btn group-market" onclick="showTab('rtm', this)">RTM</button>
+    <button class="tab-btn group-market" onclick="showTab('spread', this)">Spread</button>
+    <button class="tab-btn group-forecast tab-group-start" onclick="showTab('weather', this)">Weather Forecast</button>
+    <button class="tab-btn group-forecast" onclick="showTab('load', this)">Load Forecast</button>
+    <button class="tab-btn group-forecast" onclick="showTab('wind', this)">Wind Forecast</button>
+    {dam_forecast_tab_button}
+    {rtm_forecast_tab_button}
+    {spread_forecast_tab_button}
+  </div>
+  <a href="simulator.html" class="sim-link" title="Practice with historical backtests, no spoilers">Trading Simulator</a>
 </div>
 
 <div class="global-day-bar">
