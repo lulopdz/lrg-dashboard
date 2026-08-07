@@ -17,6 +17,12 @@ TABLE_BUCKET_SIZE = 100  # $/MWh step size for the discrete table color scales
 TABLE_ROW_HEIGHT = 26    # px per date row in the hourly heatmap tables -- height scales with TABLE_DAYS instead of being fixed
 
 
+def hour_xaxis(**extra):
+    base = dict(dtick=1, range=[0.5, 24.5])
+    base.update(extra)
+    return base
+
+
 def discrete_colorscale(zmin, zmax, palette, bucket_size=TABLE_BUCKET_SIZE):
     """Build a stepped (non-gradient) Plotly colorscale: one flat color per $bucket_size band."""
     n_buckets = max(1, math.ceil((zmax - zmin) / bucket_size))
@@ -44,21 +50,24 @@ def discrete_diverging_colorscale(n_per_side=3, neg_palette='Reds', pos_palette=
 
 
 def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis_title='Price ($/MWh)',
-                      zones_list=None, default_zone_idx=None, polished=False):
+                      zones_list=None, default_zone_idx=None, polished=False, default_day_idx=None):
     """One zone-selector + the shared 'Day' selector both drive trace visibility via JS.
     location_col/value_col let this be reused for non-price datasets (e.g. Wind Forecast's
     'zone'/'generation_forecast') without duplicating the trace-building logic.
     polished=True opts into the refreshed mark/hover treatment (bigger ringed markers, a
     soft fill under the 'Today' line, unified crosshair hover) -- kept opt-in so tabs can
-    pick it up one at a time instead of every build_hourly_fig call changing at once."""
+    pick it up one at a time instead of every build_hourly_fig call changing at once.
+    default_day_idx overrides which DAY_OPTIONS entry starts visible (Wind Forecast opens on
+    tomorrow; everything else defaults to today)."""
     zones_list = zones_list if zones_list is not None else zones
     default_zone_idx = default_zone_idx if default_zone_idx is not None else default_idx
+    default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
 
     fig = go.Figure()
     for zi, zone in enumerate(zones_list):
         df_zone = df[df[location_col] == zone]
         for di, date in enumerate(DAY_OPTIONS):
-            visible = (zi == default_zone_idx and di == default_date_idx)
+            visible = (zi == default_zone_idx and di == default_day_idx)
             prev_date = date - pd.Timedelta(days=1)
             day_z = df_zone[df_zone['interval_start_local'].dt.date == date].sort_values('hour')
             prev_z = df_zone[df_zone['interval_start_local'].dt.date == prev_date].sort_values('hour')
@@ -85,7 +94,7 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
                 visible=visible, legendgroup=zone
             ))
 
-    xaxis = dict(dtick=1, range=[0.5, 24.5])
+    xaxis = hour_xaxis()
     if polished:
         xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
                       spikedash='dot', spikethickness=1, spikecolor='#666',
@@ -93,7 +102,7 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
 
     # polished tabs drop the in-canvas title: it only repeated the section heading and the
     # zone/day selectors above the chart, and removing it reclaims top margin for the plot.
-    title = None if polished else f'{label} - Hourly Profile - {zones_list[default_zone_idx]} ({DAY_OPTION_STRS[default_date_idx]})'
+    title = None if polished else f'{label} - Hourly Profile - {zones_list[default_zone_idx]} ({DAY_OPTION_STRS[default_day_idx]})'
 
     yaxis = dict(gridcolor='#242424', hoverformat='.1f') if polished else dict(hoverformat='.1f')
 
@@ -157,7 +166,7 @@ def build_spread_detail_fig(polished=False):
         margin=dict(t=30, b=40, r=140) if polished else dict(t=60, b=40, r=140),
         height=620 if polished else 650
     )
-    row_xaxis = dict(dtick=1, range=[0.5, 24.5])
+    row_xaxis = hour_xaxis()
     if polished:
         row_xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
                           spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424')
@@ -177,24 +186,47 @@ def build_spread_detail_fig(polished=False):
 def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     """Tomorrow's predicted DAM/RTM/Spread curve for one zone, with the closest historical
     'similar day' (by forecasted load/wind/weather) plotted as a dashed reference, and the
-    hour we're most confident in (lowest historical backtest error) marked on the axis."""
+    hour we're most confident in (lowest historical backtest error) marked on the axis.
+    Same ringed-marker/crosshair/unified-hover/no-title treatment as the rest of the site
+    (see build_hourly_fig's polished=True) -- the outer <h2> in the forecast tab already
+    carries the title."""
     is_spread = series_label == 'Spread'
+    ring_marker = dict(size=7, line=dict(width=1.5, color='#111'))
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['analog_lmp'],
         name=f"Similar day ({meta.get('analog_date')})", mode='lines+markers',
-        line=dict(color='#888', dash='dash')
+        line=dict(color='#888', dash='dash'), marker=ring_marker
     ))
     if 'analog_lmp_2' in forecast_df.columns and forecast_df['analog_lmp_2'].notna().any():
         fig.add_trace(go.Scatter(
             x=forecast_df['hour'], y=forecast_df['analog_lmp_2'],
             name=f"2nd similar day ({meta.get('analog_date_2')})", mode='lines+markers',
-            line=dict(color='#666', dash='dot')
+            line=dict(color='#666', dash='dot'), marker=ring_marker
         ))
+
+    # Confidence band: predicted +/- the model's historical per-hour MAE from the backtest
+    # (see forecast_common.backtest's hourly_mae) -- a "typical error range" for that hour,
+    # not a calibrated statistical interval (that would need quantile regression), and
+    # symmetric even though real price errors likely skew toward spikes. Simple first pass
+    # using data already computed for the "most confident hour" stat.
+    hourly_mae = (meta.get('backtest') or {}).get('hourly_mae') or {}
+    band_err = forecast_df['hour'].map(lambda h: hourly_mae.get(str(h))).astype(float)
+    if band_err.notna().any():
+        fig.add_trace(go.Scatter(
+            x=forecast_df['hour'], y=forecast_df['predicted_lmp'] - band_err, mode='lines',
+            line=dict(width=0), hoverinfo='skip', showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=forecast_df['hour'], y=forecast_df['predicted_lmp'] + band_err, mode='lines',
+            line=dict(width=0), fill='tonexty', fillcolor='rgba(155,89,182,0.18)',
+            hoverinfo='skip', name='Typical error range (±hist. MAE)'
+        ))
+
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['predicted_lmp'],
         name=f"Predicted ({meta.get('target_date')})", mode='lines+markers',
-        line=dict(color='#9b59b6', width=3)
+        line=dict(color='#9b59b6', width=3), marker=dict(size=8, line=dict(width=2, color='#111'))
     ))
     if is_spread:
         fig.add_hline(y=0, line_color='#666', line_width=1)
@@ -209,13 +241,15 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
 
     fig.update_layout(
         template='plotly_dark',
-        title=f"{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})",
+        title=None,
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=f"{'Spread' if is_spread else 'Price'} ($/MWh)",
-        xaxis=dict(dtick=1, range=[0.5, 24.5]),
-        yaxis=dict(hoverformat='.1f'),
-        margin=dict(t=60, b=60, r=140),
-        height=500
+        xaxis=hour_xaxis(showspikes=True, spikemode='across', spikesnap='cursor',
+                          spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424'),
+        yaxis=dict(gridcolor='#242424', hoverformat='.1f'),
+        hovermode='x unified',
+        margin=dict(t=30, b=60, r=140),
+        height=470
     )
     return fig
 
@@ -287,10 +321,14 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
     return fig
 
 
-def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, default_day_idx=None):
+def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, default_day_idx=None, polished=False):
     """Same 7d-avg / yesterday / today layout as build_hourly_fig, but looping over wide-format
     variables (columns, single location) instead of a 'location' column with one value column.
-    Used by Weather (Open-Meteo columns) and Load Forecast (per-subzone columns)."""
+    Used by Weather (Open-Meteo columns) and Load Forecast (per-subzone columns).
+    polished=True applies the same ringed-marker/crosshair/no-title treatment as
+    build_hourly_fig(polished=True) -- minus the tozeroy fill, since zero isn't a meaningful
+    baseline for most weather variables (temperature goes negative, humidity/wind don't
+    have a $-style floor) the way it is for price."""
     var_keys = list(var_map.keys())
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
 
@@ -307,34 +345,101 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
-                line=dict(color='#888', dash='dot'), visible=visible, legendgroup=var
+                line=dict(color='#6b7280' if polished else '#888', dash='dot', width=1.5 if polished else 2),
+                visible=visible, legendgroup=var
             ))
             fig.add_trace(go.Scatter(
                 x=prev_z['hour'], y=prev_z[var], name=str(prev_date), mode='lines+markers',
-                line=dict(color='#f1c40f', dash='dash'), visible=visible, legendgroup=var
+                line=dict(color='#e8a33d' if polished else '#f1c40f', dash='dash'),
+                marker=dict(size=7, line=dict(width=1.5, color='#111')) if polished else {},
+                visible=visible, legendgroup=var
             ))
             fig.add_trace(go.Scatter(
                 x=day_z['hour'], y=day_z[var], name=str(date), mode='lines+markers',
-                line=dict(color='#3498db', width=3), visible=visible, legendgroup=var
+                line=dict(color='#3498db', width=3),
+                marker=dict(size=8, line=dict(width=2, color='#111')) if polished else {},
+                visible=visible, legendgroup=var
             ))
 
     label0, unit0 = var_map[var_keys[default_var_idx]]
+    xaxis = hour_xaxis()
+    if polished:
+        xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
+                      spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424')
+
+    title = None if polished else f'{tab_label} - Hourly Profile - {label0} ({DAY_OPTION_STRS[default_day_idx]})'
+    yaxis = dict(gridcolor='#242424', hoverformat='.1f') if polished else dict(hoverformat='.1f')
+
     fig.update_layout(
         template='plotly_dark',
-        title=f'{tab_label} - Hourly Profile - {label0} ({DAY_OPTION_STRS[default_day_idx]})',
+        title=title,
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=f'{label0} ({unit0})',
-        xaxis=dict(dtick=1, range=[0.5, 24.5]),
-        yaxis=dict(hoverformat='.1f'),
-        margin=dict(t=60, b=60, r=140),
-        height=500
+        xaxis=xaxis,
+        yaxis=yaxis,
+        hovermode='x unified' if polished else 'closest',
+        margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
+        height=470 if polished else 500
     )
     return fig
 
 
-def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colorscale='Thermal'):
-    """Same rolling-window heatmap as build_table_fig, with a variable dropdown (native Plotly
-    updatemenu) instead of a zone dropdown, since each variable has its own scale/units."""
+def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
+    """Small multiples: one compact chart per variable instead of one big chart with a
+    variable dropdown, so every variable (temperature, wind, precipitation...) is visible
+    at a glance. Same 7d-avg / previous-day / selected-day trace layout as
+    build_wide_hourly_fig, just split one-figure-per-variable; the shared 3-color meaning
+    is explained once via an external legend instead of repeating a legend on every tile.
+    Each figure is registered with a single-item 'zones' list (itself) purely so it can
+    reuse the existing registerFig/applyFigSelection date-sync machinery -- there's no
+    per-tile selector, only the shared Day picker."""
+    default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
+    figs = {}
+    for var in var_map:
+        fig = go.Figure()
+        for di, date in enumerate(DAY_OPTIONS):
+            visible = (di == default_day_idx)
+            prev_date = date - pd.Timedelta(days=1)
+            day_z = df[df[time_col].dt.date == date].sort_values('hour')
+            prev_z = df[df[time_col].dt.date == prev_date].sort_values('hour')
+            week_start = date - pd.Timedelta(days=6)
+            avg_window = df[(df[time_col].dt.date > week_start) & (df[time_col].dt.date <= date)]
+            avg_z = avg_window.groupby('hour')[var].mean().reset_index().sort_values('hour')
+
+            fig.add_trace(go.Scatter(
+                x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
+                line=dict(color='#6b7280', dash='dot', width=1.5), visible=visible
+            ))
+            fig.add_trace(go.Scatter(
+                x=prev_z['hour'], y=prev_z[var], name=str(prev_date), mode='lines+markers',
+                line=dict(color='#e8a33d', dash='dash'), marker=dict(size=5, line=dict(width=1, color='#111')),
+                visible=visible
+            ))
+            fig.add_trace(go.Scatter(
+                x=day_z['hour'], y=day_z[var], name=str(date), mode='lines+markers',
+                line=dict(color='#3498db', width=2.5), marker=dict(size=6, line=dict(width=1.5, color='#111')),
+                visible=visible
+            ))
+
+        fig.update_layout(
+            template='plotly_dark',
+            title=None,
+            showlegend=False,
+            xaxis=hour_xaxis(dtick=4, showspikes=True, spikemode='across', spikesnap='cursor',
+                              spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424'),
+            yaxis=dict(gridcolor='#242424', hoverformat='.1f'),
+            hovermode='x unified',
+            margin=dict(t=10, b=30, l=45, r=10),
+            height=240
+        )
+        figs[var] = fig
+    return figs
+
+
+def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colorscale='Thermal', polished=False):
+    """Same rolling-window heatmap as build_table_fig. polished=False keeps the native Plotly
+    updatemenu dropdown to pick the variable; polished=True drops it since variable switching
+    is then driven externally (the shared day-bar selector, relabeled 'Variable' for this tab)."""
     var_keys = list(var_map.keys())
     df_table = df[(df[time_col].dt.date >= table_start_date) & (df[time_col].dt.date <= today_date)].copy()
     df_table['date'] = df_table[time_col].dt.date.astype(str)
@@ -358,22 +463,25 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
             hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{label}: %{{z:.1f}} {unit}<extra></extra>'
         ))
 
-    buttons = [
-        dict(label=var_map[var][0], method='update',
-             args=[{'visible': [j == i for j in range(len(var_keys))]},
-                   {'title': f'{tab_label} - Hourly Table - {var_map[var][0]} (last {TABLE_DAYS} days)'}])
-        for i, var in enumerate(var_keys)
-    ]
     label0 = var_map[var_keys[default_var_idx]][0]
-    fig.update_layout(
+    title = None if polished else f'{tab_label} - Hourly Table - {label0} (last {TABLE_DAYS} days)'
+    layout_kwargs = dict(
         template='plotly_dark',
-        title=f'{tab_label} - Hourly Table - {label0} (last {TABLE_DAYS} days)',
-        updatemenus=[dict(buttons=buttons, direction='down', x=1.0, y=1.12, xanchor='right', yanchor='top',
-                           active=default_var_idx, showactive=True)],
+        title=title,
         xaxis_title='Hour', yaxis_title='Date',
         xaxis=dict(dtick=1, side='top'),
         yaxis=dict(tickmode='array', tickvals=SELECTABLE_DATE_STRS, ticktext=SELECTABLE_DATE_STRS),
-        margin=dict(t=90, b=40, r=40),
-        height=130 + TABLE_DAYS * TABLE_ROW_HEIGHT
+        margin=dict(t=50, b=40, r=40) if polished else dict(t=90, b=40, r=40),
+        height=(100 if polished else 130) + TABLE_DAYS * TABLE_ROW_HEIGHT
     )
+    if not polished:
+        buttons = [
+            dict(label=var_map[var][0], method='update',
+                 args=[{'visible': [j == i for j in range(len(var_keys))]},
+                       {'title': f'{tab_label} - Hourly Table - {var_map[var][0]} (last {TABLE_DAYS} days)'}])
+            for i, var in enumerate(var_keys)
+        ]
+        layout_kwargs['updatemenus'] = [dict(buttons=buttons, direction='down', x=1.0, y=1.12, xanchor='right', yanchor='top',
+                                              active=default_var_idx, showactive=True)]
+    fig.update_layout(**layout_kwargs)
     return fig
