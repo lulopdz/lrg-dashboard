@@ -52,6 +52,7 @@ jobs:
         git commit -m "Predicciones actualizadas" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py
+        python src/generar_simulator.py
         git push
 
     - name: Preparar artefacto de Pages
