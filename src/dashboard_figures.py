@@ -44,10 +44,13 @@ def discrete_diverging_colorscale(n_per_side=3, neg_palette='Reds', pos_palette=
 
 
 def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis_title='Price ($/MWh)',
-                      zones_list=None, default_zone_idx=None):
+                      zones_list=None, default_zone_idx=None, polished=False):
     """One zone-selector + the shared 'Day' selector both drive trace visibility via JS.
     location_col/value_col let this be reused for non-price datasets (e.g. Wind Forecast's
-    'zone'/'generation_forecast') without duplicating the trace-building logic."""
+    'zone'/'generation_forecast') without duplicating the trace-building logic.
+    polished=True opts into the refreshed mark/hover treatment (bigger ringed markers, a
+    soft fill under the 'Today' line, unified crosshair hover) -- kept opt-in so tabs can
+    pick it up one at a time instead of every build_hourly_fig call changing at once."""
     zones_list = zones_list if zones_list is not None else zones
     default_zone_idx = default_zone_idx if default_zone_idx is not None else default_idx
 
@@ -65,36 +68,61 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[value_col], name='7d Average', mode='lines',
-                line=dict(color='#888', dash='dot'), visible=visible, legendgroup=zone
+                line=dict(color='#6b7280' if polished else '#888', dash='dot', width=1.5 if polished else 2),
+                visible=visible, legendgroup=zone
             ))
             fig.add_trace(go.Scatter(
                 x=prev_z['hour'], y=prev_z[value_col], name=str(prev_date), mode='lines+markers',
-                line=dict(color='#f1c40f', dash='dash'), visible=visible, legendgroup=zone
+                line=dict(color='#e8a33d' if polished else '#f1c40f', dash='dash'),
+                marker=dict(size=7, line=dict(width=1.5, color='#111')) if polished else {},
+                visible=visible, legendgroup=zone
             ))
             fig.add_trace(go.Scatter(
                 x=day_z['hour'], y=day_z[value_col], name=str(date), mode='lines+markers',
-                line=dict(color='#3498db', width=3), visible=visible, legendgroup=zone
+                line=dict(color='#3498db', width=3),
+                marker=dict(size=8, line=dict(width=2, color='#111')) if polished else {},
+                fill='tozeroy' if polished else None, fillcolor='rgba(52,152,219,0.08)' if polished else None,
+                visible=visible, legendgroup=zone
             ))
+
+    xaxis = dict(dtick=1, range=[0.5, 24.5])
+    if polished:
+        xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
+                      spikedash='dot', spikethickness=1, spikecolor='#666',
+                      gridcolor='#242424')
+
+    # polished tabs drop the in-canvas title: it only repeated the section heading and the
+    # zone/day selectors above the chart, and removing it reclaims top margin for the plot.
+    title = None if polished else f'{label} - Hourly Profile - {zones_list[default_zone_idx]} ({DAY_OPTION_STRS[default_date_idx]})'
+
+    yaxis = dict(gridcolor='#242424', hoverformat='.1f') if polished else dict(hoverformat='.1f')
 
     fig.update_layout(
         template='plotly_dark',
-        title=f'{label} - Hourly Profile - {zones_list[default_zone_idx]} ({DAY_OPTION_STRS[default_date_idx]})',
+        title=title,
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=y_axis_title,
-        xaxis=dict(dtick=1, range=[0.5, 24.5]),
-        margin=dict(t=60, b=60, r=140),
-        height=500
+        xaxis=xaxis,
+        yaxis=yaxis,
+        hovermode='x unified' if polished else 'closest',
+        margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
+        height=470 if polished else 500
     )
     return fig
 
 
-def build_spread_detail_fig():
-    """Two stacked subplots sharing the hour axis: DAM vs RTM on top, spread sign bars below."""
+def build_spread_detail_fig(polished=False):
+    """Two stacked subplots sharing the hour axis: DAM vs RTM on top, spread sign bars below.
+    polished=True applies the same treatment as build_hourly_fig(polished=True): drops the
+    redundant in-canvas title, adds ringed markers, and turns on unified crosshair hover.
+    The two subplot_titles ('DAM vs RTM' / 'Spread...') stay either way -- unlike the main
+    title, they label two different panels and aren't repeated anywhere else on the page."""
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4],
         vertical_spacing=0.1,
         subplot_titles=('DAM vs RTM', 'Spread (DAM - RTM)')
     )
+    marker = dict(size=7, line=dict(width=1.5, color='#111')) if polished else {}
     for zi, zone in enumerate(zones):
         dam_zone = dam[dam['location'] == zone]
         rtm_zone = rtm[rtm['location'] == zone]
@@ -108,29 +136,40 @@ def build_spread_detail_fig():
 
             fig.add_trace(go.Scatter(
                 x=dam_z['hour'], y=dam_z['lmp'], name='DAM', mode='lines+markers',
-                line=dict(color='#3498db', width=2), visible=visible, legendgroup=zone
+                line=dict(color='#3498db', width=2), marker=marker, visible=visible, legendgroup=zone
             ), row=1, col=1)
             fig.add_trace(go.Scatter(
                 x=rtm_z['hour'], y=rtm_z['lmp'], name='RTM', mode='lines+markers',
-                line=dict(color='#e67e22', width=2), visible=visible, legendgroup=zone
+                line=dict(color='#e67e22', width=2), marker=marker, visible=visible, legendgroup=zone
             ), row=1, col=1)
             fig.add_trace(go.Bar(
                 x=merged['hour'], y=merged['spread'], marker_color=colors,
                 visible=visible, showlegend=False,
-                hovertemplate='Hour %{x}<br>Spread: $%{y:.2f}<extra></extra>'
+                hovertemplate='Hour %{x}<br>Spread: $%{y:.1f}<extra></extra>'
             ), row=2, col=1)
 
+    title = None if polished else f'Spread (DAM - RTM) - {DEFAULT_ZONE} ({DAY_OPTION_STRS[default_date_idx]})'
     fig.update_layout(
         template='plotly_dark',
-        title=f'Spread (DAM - RTM) - {DEFAULT_ZONE} ({DAY_OPTION_STRS[default_date_idx]})',
+        title=title,
         legend=dict(orientation='v', yanchor='middle', y=0.8, xanchor='left', x=1.02),
-        margin=dict(t=60, b=40, r=140),
-        height=650
+        hovermode='x unified' if polished else 'closest',
+        margin=dict(t=30, b=40, r=140) if polished else dict(t=60, b=40, r=140),
+        height=620 if polished else 650
     )
-    fig.update_xaxes(dtick=1, range=[0.5, 24.5], row=1, col=1)
-    fig.update_xaxes(dtick=1, range=[0.5, 24.5], title_text='Hour', row=2, col=1)
-    fig.update_yaxes(title_text='Price ($/MWh)', row=1, col=1)
-    fig.update_yaxes(title_text='Spread ($/MWh)', row=2, col=1)
+    row_xaxis = dict(dtick=1, range=[0.5, 24.5])
+    if polished:
+        row_xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
+                          spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424')
+    fig.update_xaxes(row=1, col=1, **row_xaxis)
+    fig.update_xaxes(title_text='Hour', row=2, col=1, **row_xaxis)
+
+    row1_yaxis = dict(title_text='Price ($/MWh)', hoverformat='.1f')
+    row2_yaxis = dict(title_text='Spread ($/MWh)', hoverformat='.1f')
+    if polished:
+        row1_yaxis['gridcolor'] = row2_yaxis['gridcolor'] = '#242424'
+    fig.update_yaxes(row=1, col=1, **row1_yaxis)
+    fig.update_yaxes(row=2, col=1, **row2_yaxis)
     fig.add_hline(y=0, line_color='#666', line_width=1, row=2, col=1)
     return fig
 
@@ -174,6 +213,7 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=f"{'Spread' if is_spread else 'Price'} ($/MWh)",
         xaxis=dict(dtick=1, range=[0.5, 24.5]),
+        yaxis=dict(hoverformat='.1f'),
         margin=dict(t=60, b=60, r=140),
         height=500
     )
@@ -182,8 +222,10 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
 
 def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='location', value_col='lmp',
                      zones_list=None, default_zone_idx=None, colorbar_title='$/MWh',
-                     hover_label='Price', hover_prefix='$', hover_suffix=''):
-    """Unaffected by the Day selector: always the rolling last TABLE_DAYS ending at today_date."""
+                     hover_label='Price', hover_prefix='$', hover_suffix='', polished=False):
+    """Unaffected by the Day selector: always the rolling last TABLE_DAYS ending at today_date.
+    polished=True drops the in-canvas title -- the zone dropdown already names the zone and
+    the card heading above already says 'Hourly Table', so the title only repeated both."""
     zones_list = zones_list if zones_list is not None else zones
     default_zone_idx = default_zone_idx if default_zone_idx is not None else default_idx
 
@@ -213,26 +255,34 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
             text=text, texttemplate='%{text}', textfont=dict(size=11),
             colorbar=dict(title=colorbar_title),
             visible=(i == default_zone_idx),
-            hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{hover_label}: {hover_prefix}%{{z:.2f}}{hover_suffix}<extra></extra>',
+            hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{hover_label}: {hover_prefix}%{{z:.1f}}{hover_suffix}<extra></extra>',
             **heatmap_kwargs
         ))
 
-    buttons = [
-        dict(label=zone, method='update',
-             args=[{'visible': [j == i for j in range(len(zones_list))]},
-                   {'title': f'{label} - Hourly Table - {zone} (last {TABLE_DAYS} days)'}])
-        for i, zone in enumerate(zones_list)
-    ]
-    fig.update_layout(
+    title = None if polished else f'{label} - Hourly Table - {zones_list[default_zone_idx]} (last {TABLE_DAYS} days)'
+    layout_kwargs = dict(
         template='plotly_dark',
-        title=f'{label} - Hourly Table - {zones_list[default_zone_idx]} (last {TABLE_DAYS} days)',
-        updatemenus=[dict(buttons=buttons, direction='down', x=1.0, y=1.12, xanchor='right', yanchor='top',
-                           active=default_zone_idx, showactive=True)],
+        title=title,
         xaxis_title='Hour', yaxis_title='Date',
         xaxis=dict(dtick=1, side='top'),
         yaxis=dict(tickmode='array', tickvals=SELECTABLE_DATE_STRS, ticktext=SELECTABLE_DATE_STRS),
-        margin=dict(t=90, b=40, r=40),
-        height=130 + TABLE_DAYS * TABLE_ROW_HEIGHT
+        margin=dict(t=50, b=40, r=40) if polished else dict(t=90, b=40, r=40),
+        height=(100 if polished else 130) + TABLE_DAYS * TABLE_ROW_HEIGHT
+    )
+    if polished:
+        # Zone switching is driven externally (the shared day-bar selector) instead of
+        # Plotly's own dropdown, so there's nothing left to wire buttons/updatemenus to.
+        pass
+    else:
+        buttons = [
+            dict(label=zone, method='update',
+                 args=[{'visible': [j == i for j in range(len(zones_list))]},
+                       {'title': f'{label} - Hourly Table - {zone} (last {TABLE_DAYS} days)'}])
+            for i, zone in enumerate(zones_list)
+        ]
+        layout_kwargs['updatemenus'] = [dict(buttons=buttons, direction='down', x=1.0, y=1.12, xanchor='right', yanchor='top',
+                                              active=default_zone_idx, showactive=True)]
+    fig.update_layout(**layout_kwargs
     )
     return fig
 
@@ -275,6 +325,7 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=f'{label0} ({unit0})',
         xaxis=dict(dtick=1, range=[0.5, 24.5]),
+        yaxis=dict(hoverformat='.1f'),
         margin=dict(t=60, b=60, r=140),
         height=500
     )
