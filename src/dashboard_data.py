@@ -82,9 +82,12 @@ wind_latest_ts = wind_forecast['interval_start_local'].max()
 SELECTABLE_DATES = [table_start_date + pd.Timedelta(days=d) for d in range(TABLE_DAYS)]
 SELECTABLE_DATE_STRS = [str(d) for d in SELECTABLE_DATES]
 
-# Dates selectable in the "Day" dropdown: same window, plus tomorrow (DAM is already
-# published for it), defaulting to today rather than the last (tomorrow) entry.
+# Dates selectable in the shared "Day" picker: same window, plus tomorrow (DAM is already
+# published for it). Every tab that plots by day -- DAM/RTM/Spread/Weather/Load/Wind --
+# reads off this one list, but the two tab groups default to different entries: the market
+# tabs (DAM/RTM/Spread) open on today, the forecast tabs (Weather/Load/Wind, which all carry
+# a look-ahead forecast) open on tomorrow.
 DAY_OPTIONS = SELECTABLE_DATES + [today_date + pd.Timedelta(days=1)]
 DAY_OPTION_STRS = [str(d) for d in DAY_OPTIONS]
 default_date_idx = len(DAY_OPTIONS) - 2
-default_weather_date_idx = len(DAY_OPTIONS) - 1  # tomorrow -- weather forecasts are most useful looking ahead
+default_forecast_date_idx = len(DAY_OPTIONS) - 1
