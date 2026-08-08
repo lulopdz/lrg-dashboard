@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from dashboard_data import (
-    DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, SELECTABLE_DATE_STRS, TABLE_DAYS,
+    COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, SELECTABLE_DATE_STRS, TABLE_DAYS,
     dam, default_date_idx, default_idx, rtm, table_start_date, today_date, zones,
 )
 
@@ -77,19 +77,19 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[value_col], name='7d Average', mode='lines',
-                line=dict(color='#6b7280' if polished else '#888', dash='dot', width=1.5 if polished else 2),
+                line=dict(color=COLORS['avg'] if polished else COLORS['avg_legacy'], dash='dot', width=1.5 if polished else 2),
                 visible=visible, legendgroup=zone
             ))
             fig.add_trace(go.Scatter(
                 x=prev_z['hour'], y=prev_z[value_col], name=str(prev_date), mode='lines+markers',
-                line=dict(color='#e8a33d' if polished else '#f1c40f', dash='dash'),
-                marker=dict(size=7, line=dict(width=1.5, color='#111')) if polished else {},
+                line=dict(color=COLORS['prev_day'] if polished else COLORS['prev_day_legacy'], dash='dash'),
+                marker=dict(size=7, line=dict(width=1.5, color=COLORS['ring'])) if polished else {},
                 visible=visible, legendgroup=zone
             ))
             fig.add_trace(go.Scatter(
                 x=day_z['hour'], y=day_z[value_col], name=str(date), mode='lines+markers',
-                line=dict(color='#3498db', width=3),
-                marker=dict(size=8, line=dict(width=2, color='#111')) if polished else {},
+                line=dict(color=COLORS['dam'], width=3),
+                marker=dict(size=8, line=dict(width=2, color=COLORS['ring'])) if polished else {},
                 fill='tozeroy' if polished else None, fillcolor='rgba(52,152,219,0.08)' if polished else None,
                 visible=visible, legendgroup=zone
             ))
@@ -97,14 +97,14 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     xaxis = hour_xaxis()
     if polished:
         xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
-                      spikedash='dot', spikethickness=1, spikecolor='#666',
-                      gridcolor='#242424')
+                      spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'],
+                      gridcolor=COLORS['grid'])
 
     # polished tabs drop the in-canvas title: it only repeated the section heading and the
     # zone/day selectors above the chart, and removing it reclaims top margin for the plot.
     title = None if polished else f'{label} - Hourly Profile - {zones_list[default_zone_idx]} ({DAY_OPTION_STRS[default_day_idx]})'
 
-    yaxis = dict(gridcolor='#242424', hoverformat='.1f') if polished else dict(hoverformat='.1f')
+    yaxis = dict(gridcolor=COLORS['grid'], hoverformat='.1f') if polished else dict(hoverformat='.1f')
 
     fig.update_layout(
         template='plotly_dark',
@@ -131,7 +131,7 @@ def build_spread_detail_fig(polished=False):
         vertical_spacing=0.1,
         subplot_titles=('DAM vs RTM', 'Spread (DAM - RTM)')
     )
-    marker = dict(size=7, line=dict(width=1.5, color='#111')) if polished else {}
+    marker = dict(size=7, line=dict(width=1.5, color=COLORS['ring'])) if polished else {}
     for zi, zone in enumerate(zones):
         dam_zone = dam[dam['location'] == zone]
         rtm_zone = rtm[rtm['location'] == zone]
@@ -141,15 +141,15 @@ def build_spread_detail_fig(polished=False):
             rtm_z = rtm_zone[rtm_zone['interval_start_local'].dt.date == date].sort_values('hour')
             merged = dam_z[['hour', 'lmp']].merge(rtm_z[['hour', 'lmp']], on='hour', suffixes=('_dam', '_rtm'))
             merged['spread'] = merged['lmp_dam'] - merged['lmp_rtm']
-            colors = ['#2ecc71' if v >= 0 else '#e74c3c' for v in merged['spread']]
+            colors = [COLORS['positive'] if v >= 0 else COLORS['negative'] for v in merged['spread']]
 
             fig.add_trace(go.Scatter(
                 x=dam_z['hour'], y=dam_z['lmp'], name='DAM', mode='lines+markers',
-                line=dict(color='#3498db', width=2), marker=marker, visible=visible, legendgroup=zone
+                line=dict(color=COLORS['dam'], width=2), marker=marker, visible=visible, legendgroup=zone
             ), row=1, col=1)
             fig.add_trace(go.Scatter(
                 x=rtm_z['hour'], y=rtm_z['lmp'], name='RTM', mode='lines+markers',
-                line=dict(color='#e67e22', width=2), marker=marker, visible=visible, legendgroup=zone
+                line=dict(color=COLORS['rtm'], width=2), marker=marker, visible=visible, legendgroup=zone
             ), row=1, col=1)
             fig.add_trace(go.Bar(
                 x=merged['hour'], y=merged['spread'], marker_color=colors,
@@ -169,17 +169,17 @@ def build_spread_detail_fig(polished=False):
     row_xaxis = hour_xaxis()
     if polished:
         row_xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
-                          spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424')
+                          spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid'])
     fig.update_xaxes(row=1, col=1, **row_xaxis)
     fig.update_xaxes(title_text='Hour', row=2, col=1, **row_xaxis)
 
     row1_yaxis = dict(title_text='Price ($/MWh)', hoverformat='.1f')
     row2_yaxis = dict(title_text='Spread ($/MWh)', hoverformat='.1f')
     if polished:
-        row1_yaxis['gridcolor'] = row2_yaxis['gridcolor'] = '#242424'
+        row1_yaxis['gridcolor'] = row2_yaxis['gridcolor'] = COLORS['grid']
     fig.update_yaxes(row=1, col=1, **row1_yaxis)
     fig.update_yaxes(row=2, col=1, **row2_yaxis)
-    fig.add_hline(y=0, line_color='#666', line_width=1, row=2, col=1)
+    fig.add_hline(y=0, line_color=COLORS['muted'], line_width=1, row=2, col=1)
     return fig
 
 
@@ -191,18 +191,18 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     (see build_hourly_fig's polished=True) -- the outer <h2> in the forecast tab already
     carries the title."""
     is_spread = series_label == 'Spread'
-    ring_marker = dict(size=7, line=dict(width=1.5, color='#111'))
+    ring_marker = dict(size=7, line=dict(width=1.5, color=COLORS['ring']))
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['analog_lmp'],
         name=f"Similar day ({meta.get('analog_date')})", mode='lines+markers',
-        line=dict(color='#888', dash='dash'), marker=ring_marker
+        line=dict(color=COLORS['avg_legacy'], dash='dash'), marker=ring_marker
     ))
     if 'analog_lmp_2' in forecast_df.columns and forecast_df['analog_lmp_2'].notna().any():
         fig.add_trace(go.Scatter(
             x=forecast_df['hour'], y=forecast_df['analog_lmp_2'],
             name=f"2nd similar day ({meta.get('analog_date_2')})", mode='lines+markers',
-            line=dict(color='#666', dash='dot'), marker=ring_marker
+            line=dict(color=COLORS['muted'], dash='dot'), marker=ring_marker
         ))
 
     # Confidence band: predicted +/- the model's historical per-hour MAE from the backtest
@@ -226,17 +226,17 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['predicted_lmp'],
         name=f"Predicted ({meta.get('target_date')})", mode='lines+markers',
-        line=dict(color='#9b59b6', width=3), marker=dict(size=8, line=dict(width=2, color='#111'))
+        line=dict(color=COLORS['predicted'], width=3), marker=dict(size=8, line=dict(width=2, color=COLORS['ring']))
     ))
     if is_spread:
-        fig.add_hline(y=0, line_color='#666', line_width=1)
+        fig.add_hline(y=0, line_color=COLORS['muted'], line_width=1)
 
     recommended = meta.get('recommended_hour')
     if recommended and recommended.get('hour'):
         fig.add_vline(
-            x=recommended['hour'], line_color='#2ecc71', line_width=1, line_dash='dot',
+            x=recommended['hour'], line_color=COLORS['positive'], line_width=1, line_dash='dot',
             annotation_text=f"Most confident: hour {recommended['hour']}",
-            annotation_position='top', annotation_font_color='#2ecc71'
+            annotation_position='top', annotation_font_color=COLORS['positive']
         )
 
     fig.update_layout(
@@ -245,8 +245,8 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
         xaxis_title='Hour', yaxis_title=f"{'Spread' if is_spread else 'Price'} ($/MWh)",
         xaxis=hour_xaxis(showspikes=True, spikemode='across', spikesnap='cursor',
-                          spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424'),
-        yaxis=dict(gridcolor='#242424', hoverformat='.1f'),
+                          spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid']),
+        yaxis=dict(gridcolor=COLORS['grid'], hoverformat='.1f'),
         hovermode='x unified',
         margin=dict(t=30, b=60, r=140),
         height=470
@@ -285,7 +285,11 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
         text = pivot.round(1).astype(str).values
 
         fig.add_trace(go.Heatmap(
-            z=pivot.values, x=pivot.columns, y=pivot.index,
+            # Plain Python lists, not the numpy/pandas objects themselves: plotly.py encodes
+            # numpy-backed numeric arrays as compact base64 ({"dtype":...,"bdata":...}) which
+            # copyTableTSV (see generar_web.py) can't read directly off the rendered figure --
+            # plain lists always serialize as ordinary JSON arrays.
+            z=pivot.values.tolist(), x=list(pivot.columns), y=list(pivot.index),
             text=text, texttemplate='%{text}', textfont=dict(size=11),
             colorbar=dict(title=colorbar_title),
             visible=(i == default_zone_idx),
@@ -345,19 +349,19 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
-                line=dict(color='#6b7280' if polished else '#888', dash='dot', width=1.5 if polished else 2),
+                line=dict(color=COLORS['avg'] if polished else COLORS['avg_legacy'], dash='dot', width=1.5 if polished else 2),
                 visible=visible, legendgroup=var
             ))
             fig.add_trace(go.Scatter(
                 x=prev_z['hour'], y=prev_z[var], name=str(prev_date), mode='lines+markers',
-                line=dict(color='#e8a33d' if polished else '#f1c40f', dash='dash'),
-                marker=dict(size=7, line=dict(width=1.5, color='#111')) if polished else {},
+                line=dict(color=COLORS['prev_day'] if polished else COLORS['prev_day_legacy'], dash='dash'),
+                marker=dict(size=7, line=dict(width=1.5, color=COLORS['ring'])) if polished else {},
                 visible=visible, legendgroup=var
             ))
             fig.add_trace(go.Scatter(
                 x=day_z['hour'], y=day_z[var], name=str(date), mode='lines+markers',
-                line=dict(color='#3498db', width=3),
-                marker=dict(size=8, line=dict(width=2, color='#111')) if polished else {},
+                line=dict(color=COLORS['dam'], width=3),
+                marker=dict(size=8, line=dict(width=2, color=COLORS['ring'])) if polished else {},
                 visible=visible, legendgroup=var
             ))
 
@@ -365,10 +369,10 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
     xaxis = hour_xaxis()
     if polished:
         xaxis.update(showspikes=True, spikemode='across', spikesnap='cursor',
-                      spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424')
+                      spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid'])
 
     title = None if polished else f'{tab_label} - Hourly Profile - {label0} ({DAY_OPTION_STRS[default_day_idx]})'
-    yaxis = dict(gridcolor='#242424', hoverformat='.1f') if polished else dict(hoverformat='.1f')
+    yaxis = dict(gridcolor=COLORS['grid'], hoverformat='.1f') if polished else dict(hoverformat='.1f')
 
     fig.update_layout(
         template='plotly_dark',
@@ -408,16 +412,16 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
-                line=dict(color='#6b7280', dash='dot', width=1.5), visible=visible
+                line=dict(color=COLORS['avg'], dash='dot', width=1.5), visible=visible
             ))
             fig.add_trace(go.Scatter(
                 x=prev_z['hour'], y=prev_z[var], name=str(prev_date), mode='lines+markers',
-                line=dict(color='#e8a33d', dash='dash'), marker=dict(size=5, line=dict(width=1, color='#111')),
+                line=dict(color=COLORS['prev_day'], dash='dash'), marker=dict(size=5, line=dict(width=1, color=COLORS['ring'])),
                 visible=visible
             ))
             fig.add_trace(go.Scatter(
                 x=day_z['hour'], y=day_z[var], name=str(date), mode='lines+markers',
-                line=dict(color='#3498db', width=2.5), marker=dict(size=6, line=dict(width=1.5, color='#111')),
+                line=dict(color=COLORS['dam'], width=2.5), marker=dict(size=6, line=dict(width=1.5, color=COLORS['ring'])),
                 visible=visible
             ))
 
@@ -426,8 +430,8 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
             title=None,
             showlegend=False,
             xaxis=hour_xaxis(dtick=4, showspikes=True, spikemode='across', spikesnap='cursor',
-                              spikedash='dot', spikethickness=1, spikecolor='#666', gridcolor='#242424'),
-            yaxis=dict(gridcolor='#242424', hoverformat='.1f'),
+                              spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid']),
+            yaxis=dict(gridcolor=COLORS['grid'], hoverformat='.1f'),
             hovermode='x unified',
             margin=dict(t=10, b=30, l=45, r=10),
             height=240
@@ -455,7 +459,11 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
             zmin, zmax = 0, 1
 
         fig.add_trace(go.Heatmap(
-            z=pivot.values, x=pivot.columns, y=pivot.index,
+            # Plain Python lists, not the numpy/pandas objects themselves: plotly.py encodes
+            # numpy-backed numeric arrays as compact base64 ({"dtype":...,"bdata":...}) which
+            # copyTableTSV (see generar_web.py) can't read directly off the rendered figure --
+            # plain lists always serialize as ordinary JSON arrays.
+            z=pivot.values.tolist(), x=list(pivot.columns), y=list(pivot.index),
             text=text, texttemplate='%{text}', textfont=dict(size=11),
             colorscale=colorscale, zmin=zmin, zmax=zmax,
             colorbar=dict(title=unit),
