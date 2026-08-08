@@ -23,6 +23,21 @@ def hour_xaxis(**extra):
     return base
 
 
+def _reference_series(df, time_col, value_col, date):
+    """The three reference series every 'hourly profile' chart plots for a given day: the day
+    itself, the day before it, and the trailing 7-day average leading up to it (all sorted by
+    hour). Shared by build_hourly_fig, build_wide_hourly_fig, and build_weather_grid_figs,
+    which otherwise differ too much in trace styling (marker size, fill, legend grouping) to
+    also unify into one function."""
+    prev_date = date - pd.Timedelta(days=1)
+    day_z = df[df[time_col].dt.date == date].sort_values('hour')
+    prev_z = df[df[time_col].dt.date == prev_date].sort_values('hour')
+    week_start = date - pd.Timedelta(days=6)
+    avg_window = df[(df[time_col].dt.date > week_start) & (df[time_col].dt.date <= date)]
+    avg_z = avg_window.groupby('hour')[value_col].mean().reset_index().sort_values('hour')
+    return day_z, prev_z, avg_z, prev_date
+
+
 def discrete_colorscale(zmin, zmax, palette, bucket_size=TABLE_BUCKET_SIZE):
     """Build a stepped (non-gradient) Plotly colorscale: one flat color per $bucket_size band."""
     n_buckets = max(1, math.ceil((zmax - zmin) / bucket_size))
@@ -68,12 +83,7 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
         df_zone = df[df[location_col] == zone]
         for di, date in enumerate(DAY_OPTIONS):
             visible = (zi == default_zone_idx and di == default_day_idx)
-            prev_date = date - pd.Timedelta(days=1)
-            day_z = df_zone[df_zone['interval_start_local'].dt.date == date].sort_values('hour')
-            prev_z = df_zone[df_zone['interval_start_local'].dt.date == prev_date].sort_values('hour')
-            week_start = date - pd.Timedelta(days=6)
-            avg_window = df_zone[(df_zone['interval_start_local'].dt.date > week_start) & (df_zone['interval_start_local'].dt.date <= date)]
-            avg_z = avg_window.groupby('hour')[value_col].mean().reset_index().sort_values('hour')
+            day_z, prev_z, avg_z, prev_date = _reference_series(df_zone, 'interval_start_local', value_col, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[value_col], name='7d Average', mode='lines',
@@ -340,12 +350,7 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
     for vi, var in enumerate(var_keys):
         for di, date in enumerate(DAY_OPTIONS):
             visible = (vi == default_var_idx and di == default_day_idx)
-            prev_date = date - pd.Timedelta(days=1)
-            day_z = df[df[time_col].dt.date == date].sort_values('hour')
-            prev_z = df[df[time_col].dt.date == prev_date].sort_values('hour')
-            week_start = date - pd.Timedelta(days=6)
-            avg_window = df[(df[time_col].dt.date > week_start) & (df[time_col].dt.date <= date)]
-            avg_z = avg_window.groupby('hour')[var].mean().reset_index().sort_values('hour')
+            day_z, prev_z, avg_z, prev_date = _reference_series(df, time_col, var, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
@@ -403,12 +408,7 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
         fig = go.Figure()
         for di, date in enumerate(DAY_OPTIONS):
             visible = (di == default_day_idx)
-            prev_date = date - pd.Timedelta(days=1)
-            day_z = df[df[time_col].dt.date == date].sort_values('hour')
-            prev_z = df[df[time_col].dt.date == prev_date].sort_values('hour')
-            week_start = date - pd.Timedelta(days=6)
-            avg_window = df[(df[time_col].dt.date > week_start) & (df[time_col].dt.date <= date)]
-            avg_z = avg_window.groupby('hour')[var].mean().reset_index().sort_values('hour')
+            day_z, prev_z, avg_z, prev_date = _reference_series(df, time_col, var, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
