@@ -5,6 +5,27 @@ import pandas as pd
 TABLE_DAYS = 30
 DEFAULT_ZONE = 'OTTAWA'
 
+# One source of truth for the hex values that carry meaning -- series identity, direction,
+# tab-group accents -- across dashboard_figures.py and generar_web.py (and, loosely,
+# generar_simulator.py, which mirrors these by eye since it's a deliberately separate page).
+# Structural UI chrome (panel backgrounds, borders, body text) stays local to each file's own
+# CSS since it isn't data-carrying and doesn't need to change in lockstep with a chart color.
+COLORS = {
+    'dam': '#3498db',              # DAM / "today" line, market-group tab accent
+    'rtm': '#e67e22',              # RTM line
+    'predicted': '#9b59b6',        # ML forecast "Predicted" line, predict-group tab accent
+    'forecast': '#14b8a6',         # weather/load/wind group tab accent
+    'positive': '#2ecc71',         # positive spread / correct call / confident-hour marker
+    'negative': '#e74c3c',         # negative spread / incorrect call
+    'avg': '#6b7280',              # 7d-average reference line (polished)
+    'avg_legacy': '#888',          # 7d-average / other muted secondary reference line
+    'prev_day': '#e8a33d',         # previous-day reference line (polished)
+    'prev_day_legacy': '#f1c40f',  # previous-day reference line (non-polished)
+    'muted': '#666',               # spike/crosshair lines, hlines, secondary reference lines
+    'grid': '#242424',             # gridlines
+    'ring': '#111',                # marker ring / chart surface color
+}
+
 # GitHub repo that hosts this dashboard, used to build the links the "Refresh"
 # buttons open (the GitHub Actions pages for each workflow).
 GITHUB_OWNER = 'lulopdz'
