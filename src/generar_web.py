@@ -4,7 +4,7 @@ import os
 import pandas as pd
 
 from dashboard_data import (
-    COLORS, DAY_OPTION_STRS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
+    COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
     TABLE_DAYS, WEATHER_VARS, dam, default_date_idx, default_forecast_date_idx, default_load_idx,
     default_weather_idx, default_wind_idx, latest_ts, load_forecast, load_latest_ts,
     load_var_keys, rtm, rtm_latest_ts, spread, today_date, weather,
@@ -25,11 +25,39 @@ def date_input_html(elem_id, onchange, selected_date_str):
             f'min="{DAY_OPTION_STRS[0]}" max="{DAY_OPTION_STRS[-1]}" value="{selected_date_str}">')
 
 
-dam_hourly_fig = build_hourly_fig(dam, 'DAM', polished=True)
+def zone_hourly_data(df, zones_list, exclude_zone, location_col='location', value_col='lmp'):
+    """Compact {zone: {date_str: [24 hourly values]}} for every zone except exclude_zone (the
+    one build_hourly_fig(compact_zones=True) already pre-bakes as full Plotly traces). Read by
+    the page's JS (see showCompactZone) to recompute a chart on the fly when the zone selector
+    picks a non-default zone, instead of pre-baking every zone x day combination. Covers the
+    Day picker's window plus 7 extra trailing days so the earliest selectable day can still
+    compute its 7d-average reference."""
+    window_start = DAY_OPTIONS[0] - pd.Timedelta(days=7)
+    df_t = df[(df['interval_start_local'].dt.date >= window_start) &
+              (df['interval_start_local'].dt.date <= DAY_OPTIONS[-1])].copy()
+    df_t['date'] = df_t['interval_start_local'].dt.date.astype(str)
+    data = {}
+    for zone in zones_list:
+        if zone == exclude_zone:
+            continue
+        zdf = df_t[df_t[location_col] == zone]
+        data[zone] = {
+            date: [None if pd.isna(v) else round(float(v), 2) for v in g.set_index('hour')[value_col].reindex(range(1, 25))]
+            for date, g in zdf.groupby('date')
+        }
+    return data
+
+
+dam_hourly_fig = build_hourly_fig(dam, 'DAM', polished=True, compact_zones=True)
 dam_table_fig = build_table_fig(dam, 'DAM', palette='Blues', polished=True)
 
-rtm_hourly_fig = build_hourly_fig(rtm, 'RTM', polished=True)
+rtm_hourly_fig = build_hourly_fig(rtm, 'RTM', polished=True, compact_zones=True)
 rtm_table_fig = build_table_fig(rtm, 'RTM', palette='Oranges', polished=True)
+
+COMPACT_ZONE_DATA_JSON = json.dumps({
+    'dam': zone_hourly_data(dam, zones, DEFAULT_ZONE),
+    'rtm': zone_hourly_data(rtm, zones, DEFAULT_ZONE),
+})
 
 spread_hourly_fig = build_spread_detail_fig(polished=True)
 spread_table_fig = build_table_fig(spread, 'Spread (DAM - RTM)', diverging=True, polished=True)
@@ -234,13 +262,16 @@ WIND_ZONES_JSON = json.dumps(wind_zones)
 
 
 def register_fig(div_id, traces_per_combo, title_prefix, zones_json=None, y_axis_titles=None, date_sel_id=None,
-                  show_title=True, zone_sel_id=None):
+                  show_title=True, zone_sel_id=None, compact_zone_data=None, default_zone_idx=None):
     zones_json = zones_json if zones_json is not None else ZONES_JSON
     y_axis_json = json.dumps(y_axis_titles) if y_axis_titles else 'null'
     date_sel_json = json.dumps(date_sel_id) if date_sel_id else 'null'
     zone_sel_json = json.dumps(zone_sel_id) if zone_sel_id else 'null'
+    compact_json = json.dumps(compact_zone_data) if compact_zone_data else 'null'
+    default_zone_json = json.dumps(default_zone_idx) if default_zone_idx is not None else 'null'
     return (f"<script>registerFig('{div_id}', {zones_json}, {DATES_JSON}, {traces_per_combo}, "
-            f"'{title_prefix}', {y_axis_json}, {date_sel_json}, {json.dumps(show_title)}, {zone_sel_json});</script>")
+            f"'{title_prefix}', {y_axis_json}, {date_sel_json}, {json.dumps(show_title)}, {zone_sel_json}, "
+            f"{compact_json}, {default_zone_json});</script>")
 
 
 def weather_stat_tiles_html():
@@ -380,6 +411,11 @@ html = f"""<html>
 const TAB_REFRESH = {TAB_REFRESH_JSON};
 const TAB_ZONES = {TAB_ZONES_JSON};
 const TAB_DATES = {TAB_DATES_JSON};
+// {{dam: {{zone: {{date: [24 hourly values]}}}}, rtm: {{...}}}} -- every zone except the default
+// (OTTAWA), which build_hourly_fig(compact_zones=True) already pre-bakes as real Plotly
+// traces. Read by showCompactZone() to recompute DAM/RTM on the fly when a non-default zone
+// is picked, instead of shipping every zone x day combination pre-baked.
+const COMPACT_ZONE_DATA = {COMPACT_ZONE_DATA_JSON};
 let currentTab = 'dam';
 
 function showTab(name, btn) {{
@@ -420,12 +456,70 @@ function showTab(name, btn) {{
 const FIG_CONFIGS = {{}};
 const TABLE_CONFIGS = {{}};
 
-function registerFig(divId, zonesList, datesList, tracesPerCombo, titlePrefix, yAxisTitles, dateSelId, showTitle, zoneSelId) {{
-  FIG_CONFIGS[divId] = {{zones: zonesList, dates: datesList, tracesPerCombo: tracesPerCombo, titlePrefix: titlePrefix, yAxisTitles: yAxisTitles || null, dateSelId: dateSelId || 'global-date', showTitle: showTitle !== false, zoneSelId: zoneSelId || (divId + '-zone')}};
+function registerFig(divId, zonesList, datesList, tracesPerCombo, titlePrefix, yAxisTitles, dateSelId, showTitle, zoneSelId, compactZoneData, defaultZoneIdx) {{
+  FIG_CONFIGS[divId] = {{
+    zones: zonesList, dates: datesList, tracesPerCombo: tracesPerCombo, titlePrefix: titlePrefix,
+    yAxisTitles: yAxisTitles || null, dateSelId: dateSelId || 'global-date', showTitle: showTitle !== false,
+    zoneSelId: zoneSelId || (divId + '-zone'),
+    compactZoneData: compactZoneData || null, defaultZoneIdx: defaultZoneIdx != null ? defaultZoneIdx : 0
+  }};
 }}
 
 function registerTable(divId, zonesList) {{
   TABLE_CONFIGS[divId] = zonesList;
+}}
+
+function addDays(dateStr, n) {{
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}}
+
+function zoneReferenceSeries(zoneData, date) {{
+  // Mirrors dashboard_figures.py's _reference_series in JS: the selected day, the day before
+  // it, and the trailing 7-day average leading up to it, computed from a compact
+  // {{date: [24 hourly values]}} map instead of a pre-baked trace.
+  const prevDate = addDays(date, -1);
+  const hours = Array.from({{length: 24}}, (_, i) => i + 1);
+  const dayVals = zoneData[date] || new Array(24).fill(null);
+  const prevVals = zoneData[prevDate] || new Array(24).fill(null);
+  const sum = new Array(24).fill(0), count = new Array(24).fill(0);
+  for (let i = 1; i <= 7; i++) {{
+    const row = zoneData[addDays(date, -i)];
+    if (!row) continue;
+    for (let h = 0; h < 24; h++) {{ if (row[h] != null) {{ sum[h] += row[h]; count[h]++; }} }}
+  }}
+  const avgVals = sum.map((s, h) => count[h] ? s / count[h] : null);
+  return {{hours, dayVals, prevVals, avgVals, prevDate}};
+}}
+
+function showCompactZone(divId, cfg, zoneLabel, date) {{
+  // Recomputes the 3 'dynamic' placeholder traces build_hourly_fig(compact_zones=True) added
+  // after the baked ones, and hides every baked trace so only the freshly-computed zone shows.
+  const zoneData = COMPACT_ZONE_DATA[cfg.compactZoneData] && COMPACT_ZONE_DATA[cfg.compactZoneData][zoneLabel];
+  if (!zoneData) return;
+  const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
+  const dynamicStart = bakedTotal;
+  const {{hours, dayVals, prevVals, avgVals, prevDate}} = zoneReferenceSeries(zoneData, date);
+  Plotly.restyle(divId, {{visible: new Array(bakedTotal).fill(false)}},
+                  Array.from({{length: bakedTotal}}, (_, i) => i));
+  Plotly.restyle(divId, {{
+    x: [hours, hours, hours],
+    y: [avgVals, prevVals, dayVals],
+    name: ['7d Average', prevDate, date],
+    visible: [true, true, true]
+  }}, [dynamicStart, dynamicStart + 1, dynamicStart + 2]);
+}}
+
+function showBakedZone(divId, cfg, dateIdx) {{
+  // Restores the default zone's own pre-baked trace for the selected day, and hides the 3
+  // dynamic placeholder traces in case a non-default zone had them showing.
+  const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
+  const visible = new Array(bakedTotal).fill(false);
+  const base = dateIdx * cfg.tracesPerCombo;
+  for (let k = 0; k < cfg.tracesPerCombo; k++) visible[base + k] = true;
+  Plotly.restyle(divId, {{visible: visible}}, Array.from({{length: bakedTotal}}, (_, i) => i));
+  Plotly.restyle(divId, {{visible: [false, false, false]}}, [bakedTotal, bakedTotal + 1, bakedTotal + 2]);
 }}
 
 function applyFigSelection(divId) {{
@@ -444,6 +538,16 @@ function applyFigSelection(divId) {{
     zoneLabel = zoneSel.value;
   }}
   if (zoneIdx === -1 || dateIdx === -1) return;
+
+  if (cfg.compactZoneData) {{
+    if (zoneIdx === cfg.defaultZoneIdx) {{
+      showBakedZone(divId, cfg, dateIdx);
+    }} else {{
+      showCompactZone(divId, cfg, zoneLabel, dateSel.value);
+    }}
+    return; // DAM/RTM titles are already hidden (show_title=False) and have no per-zone y-axis unit
+  }}
+
   const total = cfg.zones.length * cfg.dates.length * cfg.tracesPerCombo;
   const visible = new Array(total).fill(false);
   const base = (zoneIdx * cfg.dates.length + dateIdx) * cfg.tracesPerCombo;
@@ -527,7 +631,7 @@ function copyTableTSV(btn, plotlyDivId) {{
     <h2>Hourly Profile</h2>
   </div>
   {dam_hourly_fig.to_html(full_html=False, include_plotlyjs='cdn', div_id='dam-hourly')}
-  {register_fig('dam-hourly', 3, 'DAM - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select')}
+  {register_fig('dam-hourly', 3, 'DAM - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select', compact_zone_data='dam', default_zone_idx=zones.index(DEFAULT_ZONE))}
 </div>
 <div class="card">
   <div class="section-header">
@@ -545,7 +649,7 @@ function copyTableTSV(btn, plotlyDivId) {{
     <h2>Hourly Profile</h2>
   </div>
   {rtm_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='rtm-hourly')}
-  {register_fig('rtm-hourly', 3, 'RTM - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select')}
+  {register_fig('rtm-hourly', 3, 'RTM - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select', compact_zone_data='rtm', default_zone_idx=zones.index(DEFAULT_ZONE))}
 </div>
 <div class="card">
   <div class="section-header">
