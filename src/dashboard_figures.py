@@ -65,7 +65,8 @@ def discrete_diverging_colorscale(n_per_side=3, neg_palette='Reds', pos_palette=
 
 
 def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis_title='Price ($/MWh)',
-                      zones_list=None, default_zone_idx=None, polished=False, default_day_idx=None):
+                      zones_list=None, default_zone_idx=None, polished=False, default_day_idx=None,
+                      compact_zones=False):
     """One zone-selector + the shared 'Day' selector both drive trace visibility via JS.
     location_col/value_col let this be reused for non-price datasets (e.g. Wind Forecast's
     'zone'/'generation_forecast') without duplicating the trace-building logic.
@@ -73,16 +74,23 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     soft fill under the 'Today' line, unified crosshair hover) -- kept opt-in so tabs can
     pick it up one at a time instead of every build_hourly_fig call changing at once.
     default_day_idx overrides which DAY_OPTIONS entry starts visible (Wind Forecast opens on
-    tomorrow; everything else defaults to today)."""
+    tomorrow; everything else defaults to today).
+    compact_zones=True only pre-bakes the default zone's traces (still one hidden trace set
+    per day, toggled instantly) and appends 3 empty 'dynamic' placeholder traces that the
+    page's JS fills in on demand -- via zone_hourly_data()'s compact {zone: {date: [24]}} data
+    -- when a non-default zone is picked, instead of pre-baking every zone x day combination.
+    Cuts this figure's embedded data by roughly (zones - 1) / zones."""
     zones_list = zones_list if zones_list is not None else zones
     default_zone_idx = default_zone_idx if default_zone_idx is not None else default_idx
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
 
+    baked_zones = [zones_list[default_zone_idx]] if compact_zones else zones_list
+
     fig = go.Figure()
-    for zi, zone in enumerate(zones_list):
+    for zi, zone in enumerate(baked_zones):
         df_zone = df[df[location_col] == zone]
         for di, date in enumerate(DAY_OPTIONS):
-            visible = (zi == default_zone_idx and di == default_day_idx)
+            visible = di == default_day_idx if compact_zones else (zi == default_zone_idx and di == default_day_idx)
             day_z, prev_z, avg_z, prev_date = _reference_series(df_zone, 'interval_start_local', value_col, date)
 
             fig.add_trace(go.Scatter(
@@ -103,6 +111,29 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
                 fill='tozeroy' if polished else None, fillcolor='rgba(52,152,219,0.08)' if polished else None,
                 visible=visible, legendgroup=zone
             ))
+
+    if compact_zones:
+        # Same 3 mark specs as above (avg/prev/today), empty and hidden until the page's JS
+        # (applyFigSelection -> showCompactZone) restyles their x/y/name for whichever
+        # non-default zone is currently selected.
+        fig.add_trace(go.Scatter(
+            x=[], y=[], name='7d Average', mode='lines',
+            line=dict(color=COLORS['avg'] if polished else COLORS['avg_legacy'], dash='dot', width=1.5 if polished else 2),
+            visible=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[], y=[], mode='lines+markers',
+            line=dict(color=COLORS['prev_day'] if polished else COLORS['prev_day_legacy'], dash='dash'),
+            marker=dict(size=7, line=dict(width=1.5, color=COLORS['ring'])) if polished else {},
+            visible=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[], y=[], mode='lines+markers',
+            line=dict(color=COLORS['dam'], width=3),
+            marker=dict(size=8, line=dict(width=2, color=COLORS['ring'])) if polished else {},
+            fill='tozeroy' if polished else None, fillcolor='rgba(52,152,219,0.08)' if polished else None,
+            visible=False
+        ))
 
     xaxis = hour_xaxis()
     if polished:
