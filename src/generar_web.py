@@ -607,6 +607,7 @@ function copyTableTSV(btn, plotlyDivId) {{
     {rtm_forecast_tab_button}
     {spread_forecast_tab_button}
   </div>
+  <a href="portfolio.html" class="sim-link" title="View trading history and PnL" style="margin-right: 12px;">Trading Portfolio</a>
   <a href="simulator.html" class="sim-link" title="Practice with historical backtests, no spoilers">Trading Simulator</a>
 </div>
 

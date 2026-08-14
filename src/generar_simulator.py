@@ -176,7 +176,10 @@ html = f"""<html>
 </head>
 <body>
 
-<a class="back-link" href="index.html">&larr; Back to dashboard</a>
+<div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
+  <a class="back-link" href="index.html" style="margin-bottom: 0;">&larr; Back to dashboard</a>
+  <a class="back-link" href="portfolio.html" style="margin-bottom: 0;">Trading Portfolio &rarr;</a>
+</div>
 <h1>Trading Simulator</h1>
 <p class="subtitle">Pick a past date and this page shows only what would have been known at
 that moment: DAM shows the previous day (D&minus;1, fully settled), RTM shows the chosen day
