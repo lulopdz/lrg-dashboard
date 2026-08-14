@@ -1,16 +1,35 @@
-"""Builds docs/portfolio.html: the settled trading history from data/historical_pnl.csv
-(itself built by parse_reports.py from the IESO participation XML reports in data/reports),
-grouped by month, as a per-trade log plus an all-time equity curve and summary stats."""
+"""Builds docs/portfolio.html: the trading history from data/historical_pnl.csv (itself
+built by parse_reports.py from the IESO participation XML reports in data/reports),
+grouped by month -- a Won/Lost/No-exposure breakdown, an hour-by-day case grid, and a
+per-trade log. Stats are month-scoped only, on purpose: an all-time accumulated view was
+tried and dropped -- the per-month cut is what's actually useful here."""
 import os
 
 import pandas as pd
 import plotly.graph_objects as go
 
 from dashboard_data import COLORS
+from dashboard_figures import TABLE_ROW_HEIGHT
 
 os.makedirs('docs', exist_ok=True)
 
 BADGE_CLASS = {'Won': 'badge-won', 'Lost': 'badge-lost', 'Flat': 'badge-flat', 'Pending': 'badge-pending'}
+
+# Case-grid heatmap: one flat color per outcome (not a magnitude scale) -- the point is the
+# category, not the size. 'blank' (an hour never listed in the report at all -- not a case)
+# sits right on the panel background so it disappears; 'No exposure' (explicitly 0 MW in the
+# report -- submitted, didn't clear) gets its own visible-but-calm gray so it reads as a real,
+# counted case instead of empty space.
+GRID_CATEGORY = {'blank': 0, 'No exposure': 1, 'Lost': 2, 'Won': 3, 'Pending': 4, 'Flat': 5}
+GRID_COLORS = ['#242424', 'rgba(102,102,102,0.5)', 'rgba(231,76,60,0.55)', 'rgba(46,204,113,0.55)',
+               'rgba(232,163,61,0.55)', 'rgba(150,150,150,0.55)']
+
+GRID_LEGEND = f'''<div class="chart-legend">
+  <span><i class="sw" style="background:{GRID_COLORS[3]}"></i>Won</span>
+  <span><i class="sw" style="background:{GRID_COLORS[2]}"></i>Lost</span>
+  <span><i class="sw" style="background:{GRID_COLORS[1]}"></i>No exposure</span>
+  <span><i class="sw" style="background:{GRID_COLORS[4]}"></i>Pending</span>
+</div>'''
 
 
 def fmt_money(val, signed=False):
@@ -20,7 +39,12 @@ def fmt_money(val, signed=False):
     return f"{sign}${val:,.2f}"
 
 
-def outcome_of(pnl):
+def outcome_of(energy_mw, pnl):
+    """energy_mw == 0 means the report explicitly lists this hour with nothing filled -- an
+    order was sent but the price never cleared -- which is its own category, checked before
+    pnl (which is trivially 0, or even NaN if the price join failed) says anything else."""
+    if energy_mw == 0:
+        return 'No exposure'
     if pd.isna(pnl):
         return 'Pending'
     if pnl > 0:
@@ -30,52 +54,103 @@ def outcome_of(pnl):
     return 'Flat'
 
 
-def load_trades():
-    """One row per actually-submitted bid/offer (energy_mw != 0) -- the zero rows in
-    historical_pnl.csv just mark hours the resource was eligible for but sat out, which
-    isn't a 'trade' to log. position/outcome mirror the vocabulary the Trading Simulator
-    already uses (Long/Short on the DAM-RTM spread) so the two pages read as one product."""
+def pnl_cls(val):
+    if pd.isna(val) or val == 0:
+        return ''
+    return 'pos' if val > 0 else 'neg'
+
+
+def load_data():
+    """df is every row parse_reports.py wrote -- every hour the report explicitly lists,
+    whether it filled (energy_mw != 0) or not (energy_mw == 0, an order that never cleared).
+    An hour missing from the report entirely isn't in df at all -- it's not a case, just
+    nothing sent. position comes from resource_type (GEN offer = Virtual Gen, LD bid = Virtual
+    Load -- the actual IESO terms for the two sides) rather than energy_mw's sign, since a
+    0 MW row has no sign to read but still has a real intended side. trades is the subset
+    that actually filled, used for the per-trade log."""
     df = pd.read_csv('data/historical_pnl.csv', parse_dates=['date'])
+    df['month'] = df['date'].dt.strftime('%Y-%m')
+    df['position'] = df['resource_type'].apply(lambda t: 'Virtual Gen' if t == 'GEN' else 'Virtual Load')
+    df['size'] = df['energy_mw'].abs()
+    df['outcome'] = df.apply(lambda r: outcome_of(r['energy_mw'], r['pnl']), axis=1)
+    df = df.sort_values(['date', 'hour'])
+
     trades = df[df['energy_mw'] != 0].copy()
-    if trades.empty:
-        return trades
-    trades['position'] = trades['energy_mw'].apply(lambda v: 'Long' if v > 0 else 'Short')
-    trades['size'] = trades['energy_mw'].abs()
-    trades['outcome'] = trades['pnl'].apply(outcome_of)
-    trades['month'] = trades['date'].dt.strftime('%Y-%m')
-    return trades.sort_values(['date', 'hour'])
+    return df, trades
 
 
-def build_equity_fig(settled):
-    """Cumulative PnL across every settled trade, chronological. A single neutral line
-    (no series color to assign -- it's the whole portfolio, not a DAM or RTM position) with
-    a zero reference and a colored end-marker/value carrying the 'are we up or down' read,
-    same treatment as the recommended-hour marker on the forecast charts."""
-    x_labels = [f"{d:%b %d} HE{int(h):02d}" for d, h in zip(settled['date'], settled['hour'])]
-    pnl_fmt = [fmt_money(v, signed=True) for v in settled['pnl']]
-    cum_fmt = [fmt_money(v, signed=True) for v in settled['cum_pnl']]
+def _discrete_category_colorscale(colors):
+    n = len(colors)
+    scale = []
+    for i, c in enumerate(colors):
+        scale.append([i / n, c])
+        scale.append([(i + 1) / n, c])
+    return scale
 
-    fig = go.Figure()
-    fig.add_hline(y=0, line_color=COLORS['muted'], line_width=1)
-    fig.add_trace(go.Scatter(
-        x=list(range(len(settled))), y=settled['cum_pnl'], mode='lines',
-        line=dict(color='#d1d5db', width=2),
-        customdata=list(zip(x_labels, pnl_fmt, cum_fmt)),
-        hovertemplate='%{customdata[0]}<br>Trade PnL: %{customdata[1]}<br>Cumulative: %{customdata[2]}<extra></extra>',
-        showlegend=False,
+
+def build_case_grid_fig(dates, month_df):
+    """One row per report date that month, one column per hour (HE01-HE24) plus a trailing
+    Total column, colored by outcome instead of magnitude -- every case at a glance. month_df
+    is every row the report lists for that month (blank/uninvolved hours just aren't in it,
+    and stay the near-invisible 'blank' color); this is what makes 'no exposure' a first-class,
+    visible category instead of just a subtracted count in a stat tile.
+    yaxis.type is forced to 'category': dates are strings that look like dates, and Plotly's
+    default type inference reads them as a real date axis, spacing rows by elapsed calendar
+    time instead of evenly -- rows for report dates separated by a weekend or a gap end up
+    stretched apart. The other hourly tables never hit this because they show a contiguous
+    day range with no gaps; report dates are inherently sparse."""
+    date_strs = [f"{d:%Y-%m-%d}" for d in dates]
+    n = len(dates)
+    row_of = {d: i for i, d in enumerate(dates)}
+    TOTAL_COL = 24
+    z = [[GRID_CATEGORY['blank'] + 0.5] * 25 for _ in range(n)]
+    text = [[''] * 25 for _ in range(n)]
+    hover = [[''] * 25 for _ in range(n)]
+
+    for _, r in month_df.iterrows():
+        i, j = row_of[r['date']], int(r['hour']) - 1
+        z[i][j] = GRID_CATEGORY[r['outcome']] + 0.5
+        if r['outcome'] == 'No exposure':
+            text[i][j] = ''
+            hover[i][j] = f"{r['position']} order sent, didn't clear (0 MW)"
+            continue
+        detail = (f"{r['position']} {r['size']:.1f} MW<br>DAM {fmt_money(r['lmp_dam'])} "
+                  f"&middot; RTM {fmt_money(r['lmp_rtm'])} &middot; Spread {fmt_money(r['spread'], signed=True)}")
+        if r['outcome'] == 'Pending':
+            text[i][j] = '…'
+            hover[i][j] = f"{detail}<br>Pending settlement"
+        else:
+            text[i][j] = '0' if r['outcome'] == 'Flat' else f"{r['pnl']:+.0f}"
+            hover[i][j] = f"{detail}<br>PnL: {fmt_money(r['pnl'], signed=True)} ({r['outcome']})"
+
+    # Trailing Total column: the day's net settled PnL (No-exposure rows contribute $0,
+    # Pending rows are excluded since their outcome isn't known yet -- can't total an unknown).
+    for d in dates:
+        i = row_of[d]
+        day_settled = month_df[(month_df['date'] == d) & (month_df['outcome'].isin(['Won', 'Lost', 'Flat']))]
+        if day_settled.empty:
+            continue
+        day_total = day_settled['pnl'].sum()
+        z[i][TOTAL_COL] = GRID_CATEGORY['Won' if day_total > 0 else ('Lost' if day_total < 0 else 'Flat')] + 0.5
+        text[i][TOTAL_COL] = f"{day_total:+.0f}"
+        hover[i][TOTAL_COL] = f"Daily total: {fmt_money(day_total, signed=True)}"
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=list(range(1, 26)), y=date_strs,
+        text=text, texttemplate='%{text}', textfont=dict(size=10, color='#eee'),
+        customdata=hover, hovertemplate='Date %{y}, Hour %{x}<br>%{customdata}<extra></extra>',
+        colorscale=_discrete_category_colorscale(GRID_COLORS), zmin=0, zmax=len(GRID_COLORS),
+        showscale=False, xgap=2, ygap=2,
     ))
-    final_val = settled['cum_pnl'].iloc[-1]
-    end_color = COLORS['positive'] if final_val >= 0 else COLORS['negative']
-    fig.add_trace(go.Scatter(
-        x=[len(settled) - 1], y=[final_val], mode='markers',
-        marker=dict(size=10, color=end_color, line=dict(width=2, color=COLORS['ring'])),
-        showlegend=False, hoverinfo='skip',
-    ))
+    fig.add_vline(x=24.5, line_color=COLORS['muted'], line_width=1)
     fig.update_layout(
         template='plotly_dark', title=None,
-        xaxis=dict(showticklabels=False, gridcolor=COLORS['grid'], zeroline=False, title=None),
-        yaxis=dict(gridcolor=COLORS['grid'], title='Cumulative PnL ($)'),
-        hovermode='x unified', margin=dict(t=10, b=10, l=60, r=20), height=240,
+        xaxis=dict(tickmode='array', tickvals=list(range(1, 25)) + [25], ticktext=[str(h) for h in range(1, 25)] + ['Total'],
+                   range=[0.5, 25.5], side='top', gridcolor=COLORS['grid']),
+        yaxis=dict(type='category', tickmode='array', tickvals=date_strs, ticktext=date_strs,
+                   autorange='reversed'),
+        margin=dict(t=30, b=10, l=90, r=10),
+        height=40 + n * TABLE_ROW_HEIGHT,
     )
     return fig
 
@@ -86,14 +161,8 @@ def stat_tile(label, value, cls='', sub=None, extra_cls=''):
     <div class="stat-value {cls}">{value}</div>{sub_html}</div>'''
 
 
-def pnl_cls(val):
-    if pd.isna(val) or val == 0:
-        return ''
-    return 'pos' if val > 0 else 'neg'
-
-
 def render_trade_row(r):
-    pos_cls = 'badge-long' if r['position'] == 'Long' else 'badge-short'
+    pos_cls = 'badge-long' if r['position'] == 'Virtual Gen' else 'badge-short'
     out_cls = BADGE_CLASS[r['outcome']]
     return f'''<tr>
   <td>{r['date']:%Y-%m-%d}</td>
@@ -109,63 +178,48 @@ def render_trade_row(r):
 
 
 def build_portfolio():
-    trades = load_trades()
+    df, trades = load_data()
     if trades.empty:
         print("No trades found in historical_pnl.csv (run parse_reports.py first).")
         return
 
-    settled = trades[trades['outcome'] != 'Pending'].copy().sort_values(['date', 'hour'])
-    settled['cum_pnl'] = settled['pnl'].cumsum()
-
-    n_trades, n_settled = len(trades), len(settled)
-    n_won = int((settled['pnl'] > 0).sum())
-    n_lost = int((settled['pnl'] < 0).sum())
-    win_rate = n_won / n_settled if n_settled else 0
-    net_pnl = settled['pnl'].sum() if n_settled else 0
-    avg_pnl = settled['pnl'].mean() if n_settled else 0
-    pending_sub = f"{n_trades - n_settled} pending settlement" if n_trades > n_settled else None
-
-    overview_tiles = stat_tile('Total trades', n_trades, sub=pending_sub)
-    overview_tiles += stat_tile('Win rate', f"{win_rate:.0%}", sub=f"{n_won} won / {n_lost} lost")
-    overview_tiles += stat_tile('Net PnL', fmt_money(net_pnl, signed=True), cls=pnl_cls(net_pnl), extra_cls='highlight')
-    overview_tiles += stat_tile('Avg PnL / trade', fmt_money(avg_pnl, signed=True), cls=pnl_cls(avg_pnl))
-    if n_settled:
-        best, worst = settled.loc[settled['pnl'].idxmax()], settled.loc[settled['pnl'].idxmin()]
-        overview_tiles += stat_tile('Best trade', fmt_money(best['pnl'], signed=True), cls='pos',
-                                     sub=f"{best['date']:%b %d} HE{int(best['hour']):02d}")
-        overview_tiles += stat_tile('Worst trade', fmt_money(worst['pnl'], signed=True), cls='neg',
-                                     sub=f"{worst['date']:%b %d} HE{int(worst['hour']):02d}")
-
-    if n_settled:
-        equity_fig = build_equity_fig(settled)
-        equity_html = f'''<div class="stat-label" style="margin:20px 0 8px;">Cumulative PnL
-      &middot; {settled['date'].min():%b %d, %Y} &rarr; {settled['date'].max():%b %d, %Y}</div>
-    {equity_fig.to_html(full_html=False, include_plotlyjs='cdn', div_id='equity-curve')}'''
-    else:
-        equity_html = ''
-
-    months = sorted(trades['month'].unique(), reverse=True)
+    months = sorted(df['month'].unique(), reverse=True)
     tabs_html, sections_html = '', ''
     for i, m in enumerate(months):
         active = 'active' if i == 0 else ''
         month_label = pd.to_datetime(m + '-01').strftime('%B %Y')
         tabs_html += f'<button class="tab-btn {active}" onclick="showMonth(\'{m}\', this)">{month_label}</button>\n'
 
+        m_df = df[df['month'] == m]
+        m_dates = sorted(m_df['date'].unique(), reverse=True)
         m_trades = trades[trades['month'] == m].sort_values(['date', 'hour'], ascending=[False, True])
-        m_settled = m_trades[m_trades['outcome'] != 'Pending']
-        m_won, m_lost = int((m_settled['pnl'] > 0).sum()), int((m_settled['pnl'] < 0).sum())
-        m_net = m_settled['pnl'].sum() if len(m_settled) else 0
+        counts = m_df['outcome'].value_counts()
+        m_won, m_lost = int(counts.get('Won', 0)), int(counts.get('Lost', 0))
+        m_pending = int(counts.get('Pending', 0))
+        m_no_exposure = int(counts.get('No exposure', 0))
+        m_net = m_trades.loc[m_trades['outcome'] != 'Pending', 'pnl'].sum() if len(m_trades) else 0
+        m_total_cases = len(m_df)
 
-        month_tiles = stat_tile('Trades', len(m_trades))
-        month_tiles += stat_tile('Won / Lost', f'<span class="pos">{m_won}</span> / <span class="neg">{m_lost}</span>')
-        month_tiles += stat_tile('Net PnL', fmt_money(m_net, signed=True), cls=pnl_cls(m_net))
-        month_tiles += stat_tile('Active days', m_trades['date'].nunique())
+        def _pct(count):
+            return f"{count} ({count / m_total_cases:.0%})" if m_total_cases else str(count)
 
+        month_tiles = stat_tile('Won', _pct(m_won), cls='pos')
+        month_tiles += stat_tile('Lost', _pct(m_lost), cls='neg')
+        month_tiles += stat_tile('No exposure', _pct(m_no_exposure))
+        month_tiles += stat_tile('Net PnL', fmt_money(m_net, signed=True), cls=pnl_cls(m_net), extra_cls='highlight')
+        if m_pending:
+            month_tiles += stat_tile('Pending', _pct(m_pending))
+
+        grid_fig = build_case_grid_fig(m_dates, m_df)
         rows_html = '\n'.join(render_trade_row(r) for _, r in m_trades.iterrows())
 
         sections_html += f'''<div id="month-{m}" class="tab-content {active}">
   <div class="stat-row month-stats">{month_tiles}</div>
-  <div class="table-container">
+  {GRID_LEGEND}
+  <div class="table-container grid-container">
+    {grid_fig.to_html(full_html=False, include_plotlyjs=('cdn' if i == 0 else False), div_id=f'grid-{m}')}
+  </div>
+  <div class="table-container" style="margin-top:16px;">
     <table class="trade-table">
       <thead><tr><th>Date</th><th>Hour</th><th>Position</th><th>Size</th><th>DAM</th><th>RTM</th><th>Spread</th><th>PnL</th><th>Outcome</th></tr></thead>
       <tbody>{rows_html}</tbody>
@@ -182,14 +236,11 @@ def build_portfolio():
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
   a {{ color:{COLORS['dam']}; }}
   h1 {{ font-size:20px; margin:0 0 4px; }}
-  h2 {{ font-size:15px; color:#ccc; margin:28px 0 12px; }}
   .subtitle {{ color:#888; font-size:13px; margin:0 0 20px; max-width:760px; }}
   .back-link {{ display:inline-block; margin-bottom:16px; color:#aaa; text-decoration:none; font-size:13px; }}
   .back-link:hover {{ color:#fff; }}
 
-  .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:8px; padding:16px 20px; margin:16px 0; }}
-
-  .stat-row {{ display:flex; flex-wrap:wrap; gap:16px; margin:0; }}
+  .stat-row {{ display:flex; flex-wrap:wrap; gap:16px; margin:0 0 16px; }}
   .stat-tile {{ background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:12px 20px; flex:1; min-width:130px; }}
   .stat-tile.highlight {{ border-color:#555; background:#202020; }}
   .stat-label {{ color:#888; font-size:12px; }}
@@ -205,8 +256,15 @@ def build_portfolio():
     border-radius:6px 6px 0 0; padding:8px 16px; cursor:pointer; font-size:13px; }}
   .tab-btn.active {{ background:#2c2c2c; color:#fff; border-bottom:2px solid {COLORS['dam']}; }}
 
-  .tab-content {{ display:none; }}
-  .tab-content.active {{ display:block; }}
+  /* max-height:0 (instead of display:none) keeps the container's width intact so Plotly's
+     auto-sizing doesn't collapse hidden tabs' charts to a fallback width on first render --
+     same fix already used for the main dashboard's tabs (see generar_web.py). */
+  .tab-content {{ max-height:0; overflow:hidden; }}
+  .tab-content.active {{ max-height:none; }}
+
+  .chart-legend {{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; font-size:12px; color:#aaa; margin:0 0 8px; }}
+  .chart-legend .sw {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }}
+  .grid-container {{ padding:4px 8px; }}
 
   .table-container {{ overflow-x:auto; max-width:100%; border:1px solid #333; border-radius:8px; }}
   .trade-table {{ border-collapse:collapse; width:100%; background:#1a1a1a; font-size:13px; }}
@@ -231,16 +289,11 @@ def build_portfolio():
 
 <a class="back-link" href="index.html">&larr; Back to dashboard</a>
 <h1>Trading Portfolio</h1>
-<p class="subtitle">Settled results for every LRG bid/offer submitted to the IESO market, built from the
-participation reports in data/reports. Long bets the DAM price clears above RTM; Short bets the opposite.
-Positive PnL means the trade closed in your favor.</p>
+<p class="subtitle">Monthly results for every LRG bid/offer submitted to the IESO market, built from the
+participation reports in data/reports. Virtual Gen profits when DAM clears above RTM; Virtual Load profits
+when RTM clears above DAM. The case grid shows every hour we could have traded that month, not just the
+ones we did.</p>
 
-<div class="card">
-  <div class="stat-row">{overview_tiles}</div>
-  {equity_html}
-</div>
-
-<h2>Monthly detail</h2>
 <div class="tabs">
   {tabs_html}
 </div>
