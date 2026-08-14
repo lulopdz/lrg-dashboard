@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="https://reports.ieso.ca/docrefs/stylesheet/DAScheduledEnergy2_HTML_t1-1.xsl" ?>
+<Document docID="DAScheduledEnergy2" xmlns="http://www.ieso.ca/schema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ieso.ca/schema https://reports-public.ieso.ca/docrefs/schema/DAScheduledEnergy2_r1.xsd">
+<DocHeader>
+<DocTitle>Day-Ahead Schedule Report</DocTitle>
+<DocRevision>1</DocRevision>
+<DocConfidentiality>
+<DocConfClass>CNF</DocConfClass>
+<DocConfGroups>
+<DocConfGroup>LRG</DocConfGroup>
+</DocConfGroups>
+</DocConfidentiality>
+<CreatedAt>2026-07-30T12:31:42</CreatedAt>
+</DocHeader>
+<DocBody>
+<MPShortName>LRG</MPShortName>
+<DeliveryDate>2026-07-31</DeliveryDate>
+<Resource>
+<ResourceName>OTTAWA_BID:HUB</ResourceName>
+<ResourceType>LD</ResourceType>
+<ScheduleEnergies>
+<PriceType>Virtual Energy</PriceType>
+<HourlyEnergies>
+<HourlyEnergy>
+<DeliveryHour>19</DeliveryHour>
+<EnergyMW>-1</EnergyMW>
+</HourlyEnergy>
+<HourlyEnergy>
+<DeliveryHour>20</DeliveryHour>
+<EnergyMW>-1</EnergyMW>
+</HourlyEnergy>
+</HourlyEnergies>
+</ScheduleEnergies>
+</Resource>
+</DocBody>
+</Document>
