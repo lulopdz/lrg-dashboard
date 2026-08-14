@@ -57,13 +57,15 @@ jobs:
 
     - name: Guardar datos y regenerar dashboard
       run: |
+        python src/parse_reports.py
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv
+        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/historical_pnl.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py
         python src/generar_simulator.py
+        python src/generar_portfolio.py
         git push
 
     - name: Preparar artefacto de Pages
