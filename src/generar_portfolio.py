@@ -230,7 +230,7 @@ def build_portfolio():
     html = f"""<html>
 <head>
 <meta charset="utf-8">
-<title>Trading Portfolio</title>
+<title>Portfolio</title>
 <style>
   body {{ background:{COLORS['ring']}; color:#eee; margin:0; padding:24px;
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
@@ -288,7 +288,7 @@ def build_portfolio():
 <body>
 
 <a class="back-link" href="index.html">&larr; Back to dashboard</a>
-<h1>Trading Portfolio</h1>
+<h1>Portfolio</h1>
 <p class="subtitle">Monthly results for every LRG bid/offer submitted to the IESO market, built from the
 participation reports in data/reports. Virtual Gen profits when DAM clears above RTM; Virtual Load profits
 when RTM clears above DAM. The case grid shows every hour we could have traded that month, not just the
