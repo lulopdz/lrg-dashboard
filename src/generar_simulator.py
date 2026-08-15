@@ -115,7 +115,7 @@ SIM_DATA_JSON = json.dumps(data)
 html = f"""<html>
 <head>
 <meta charset="utf-8">
-<title>Trading Simulator</title>
+<title>Simulator</title>
 <style>
   body {{ background:#111; color:#eee; margin:0; padding:24px;
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
@@ -178,9 +178,9 @@ html = f"""<html>
 
 <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
   <a class="back-link" href="index.html" style="margin-bottom: 0;">&larr; Back to dashboard</a>
-  <a class="back-link" href="portfolio.html" style="margin-bottom: 0;">Trading Portfolio &rarr;</a>
+  <a class="back-link" href="portfolio.html" style="margin-bottom: 0;">Portfolio &rarr;</a>
 </div>
-<h1>Trading Simulator</h1>
+<h1>Simulator</h1>
 <p class="subtitle">Pick a past date and this page shows only what would have been known at
 that moment: DAM shows the previous day (D&minus;1, fully settled), RTM shows the chosen day
 (D) through HE{TRADING_CUTOFF_HOUR:02d} (normally when trades get decided), and Weather / Load
