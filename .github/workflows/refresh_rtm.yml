@@ -60,6 +60,7 @@ jobs:
         git pull --rebase origin main
         python src/generar_web.py
         python src/generar_simulator.py
+        python src/generar_portfolio.py
         git push
 
     - name: Preparar artefacto de Pages
