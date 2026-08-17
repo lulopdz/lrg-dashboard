@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .cache.sqlite
+venv/
+.venv/
 
 # Built by generar_web.py on every workflow run; published straight to GitHub Pages via
 # actions/deploy-pages instead of being committed (was the single biggest contributor to

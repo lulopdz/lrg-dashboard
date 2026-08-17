@@ -1,0 +1,6 @@
+# Normalize line endings to LF in the repository regardless of the checkout OS. This repo
+# gets edited from both Windows and Linux (CI runs on ubuntu-latest); a CRLF/LF mismatch on
+# Windows previously caused a spurious "local changes would be overwritten" error mid-rebase
+# that had nothing to do with the actual change being rebased. Existing tracked files keep
+# their current line endings until next touched -- this only changes behavior going forward.
+* text=auto eol=lf
