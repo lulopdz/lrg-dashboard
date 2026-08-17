@@ -161,23 +161,32 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     return fig
 
 
-def build_spread_detail_fig(polished=False):
+def build_spread_detail_fig(polished=False, compact_zones=False):
     """Two stacked subplots sharing the hour axis: DAM vs RTM on top, spread sign bars below.
     polished=True applies the same treatment as build_hourly_fig(polished=True): drops the
     redundant in-canvas title, adds ringed markers, and turns on unified crosshair hover.
     The two subplot_titles ('DAM vs RTM' / 'Spread...') stay either way -- unlike the main
-    title, they label two different panels and aren't repeated anywhere else on the page."""
+    title, they label two different panels and aren't repeated anywhere else on the page.
+    compact_zones=True mirrors build_hourly_fig's compact_zones: only the default zone's
+    day-by-day traces are pre-baked (still one hidden 3-trace set per day, toggled
+    instantly), plus 3 empty 'dynamic' placeholder traces -- one per row/col position a real
+    combo occupies -- that the page's JS fills in for any other zone. Unlike build_hourly_fig,
+    Spread doesn't need its own copy of the compact {zone: {date: [24]}} data: it's just
+    DAM - RTM, both of which zone_hourly_data() in generar_web.py already embeds for the
+    DAM/RTM hourly tabs, so the JS derives the spread client-side instead of shipping a
+    third copy of the same numbers."""
+    baked_zones = [DEFAULT_ZONE] if compact_zones else zones
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4],
         vertical_spacing=0.1,
         subplot_titles=('DAM vs RTM', 'Spread (DAM - RTM)')
     )
     marker = dict(size=7, line=dict(width=1.5, color=COLORS['ring'])) if polished else {}
-    for zi, zone in enumerate(zones):
+    for zi, zone in enumerate(baked_zones):
         dam_zone = dam[dam['location'] == zone]
         rtm_zone = rtm[rtm['location'] == zone]
         for di, date in enumerate(DAY_OPTIONS):
-            visible = (zi == default_idx and di == default_date_idx)
+            visible = di == default_date_idx if compact_zones else (zi == default_idx and di == default_date_idx)
             dam_z = dam_zone[dam_zone['interval_start_local'].dt.date == date].sort_values('hour')
             rtm_z = rtm_zone[rtm_zone['interval_start_local'].dt.date == date].sort_values('hour')
             merged = dam_z[['hour', 'lmp']].merge(rtm_z[['hour', 'lmp']], on='hour', suffixes=('_dam', '_rtm'))
@@ -197,6 +206,20 @@ def build_spread_detail_fig(polished=False):
                 visible=visible, showlegend=False,
                 hovertemplate='Hour %{x}<br>Spread: $%{y:.1f}<extra></extra>'
             ), row=2, col=1)
+
+    if compact_zones:
+        fig.add_trace(go.Scatter(
+            x=[], y=[], name='DAM', mode='lines+markers',
+            line=dict(color=COLORS['dam'], width=2), marker=marker, visible=False
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=[], y=[], name='RTM', mode='lines+markers',
+            line=dict(color=COLORS['rtm'], width=2), marker=marker, visible=False
+        ), row=1, col=1)
+        fig.add_trace(go.Bar(
+            x=[], y=[], marker_color=[], visible=False, showlegend=False,
+            hovertemplate='Hour %{x}<br>Spread: $%{y:.1f}<extra></extra>'
+        ), row=2, col=1)
 
     title = None if polished else f'Spread (DAM - RTM) - {DEFAULT_ZONE} ({DAY_OPTION_STRS[default_date_idx]})'
     fig.update_layout(
