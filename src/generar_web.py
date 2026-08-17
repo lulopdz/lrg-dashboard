@@ -59,7 +59,7 @@ COMPACT_ZONE_DATA_JSON = json.dumps({
     'rtm': zone_hourly_data(rtm, zones, DEFAULT_ZONE),
 })
 
-spread_hourly_fig = build_spread_detail_fig(polished=True)
+spread_hourly_fig = build_spread_detail_fig(polished=True, compact_zones=True)
 spread_table_fig = build_table_fig(spread, 'Spread (DAM - RTM)', diverging=True, polished=True)
 
 weather_grid_figs = build_weather_grid_figs(weather, 'timestamp', WEATHER_VARS, default_day_idx=default_forecast_date_idx)
@@ -262,16 +262,17 @@ WIND_ZONES_JSON = json.dumps(wind_zones)
 
 
 def register_fig(div_id, traces_per_combo, title_prefix, zones_json=None, y_axis_titles=None, date_sel_id=None,
-                  show_title=True, zone_sel_id=None, compact_zone_data=None, default_zone_idx=None):
+                  show_title=True, zone_sel_id=None, compact_zone_data=None, default_zone_idx=None, compact_kind=None):
     zones_json = zones_json if zones_json is not None else ZONES_JSON
     y_axis_json = json.dumps(y_axis_titles) if y_axis_titles else 'null'
     date_sel_json = json.dumps(date_sel_id) if date_sel_id else 'null'
     zone_sel_json = json.dumps(zone_sel_id) if zone_sel_id else 'null'
     compact_json = json.dumps(compact_zone_data) if compact_zone_data else 'null'
     default_zone_json = json.dumps(default_zone_idx) if default_zone_idx is not None else 'null'
+    compact_kind_json = json.dumps(compact_kind) if compact_kind else 'null'
     return (f"<script>registerFig('{div_id}', {zones_json}, {DATES_JSON}, {traces_per_combo}, "
             f"'{title_prefix}', {y_axis_json}, {date_sel_json}, {json.dumps(show_title)}, {zone_sel_json}, "
-            f"{compact_json}, {default_zone_json});</script>")
+            f"{compact_json}, {default_zone_json}, {compact_kind_json});</script>")
 
 
 def weather_stat_tiles_html():
@@ -456,12 +457,13 @@ function showTab(name, btn) {{
 const FIG_CONFIGS = {{}};
 const TABLE_CONFIGS = {{}};
 
-function registerFig(divId, zonesList, datesList, tracesPerCombo, titlePrefix, yAxisTitles, dateSelId, showTitle, zoneSelId, compactZoneData, defaultZoneIdx) {{
+function registerFig(divId, zonesList, datesList, tracesPerCombo, titlePrefix, yAxisTitles, dateSelId, showTitle, zoneSelId, compactZoneData, defaultZoneIdx, compactKind) {{
   FIG_CONFIGS[divId] = {{
     zones: zonesList, dates: datesList, tracesPerCombo: tracesPerCombo, titlePrefix: titlePrefix,
     yAxisTitles: yAxisTitles || null, dateSelId: dateSelId || 'global-date', showTitle: showTitle !== false,
     zoneSelId: zoneSelId || (divId + '-zone'),
-    compactZoneData: compactZoneData || null, defaultZoneIdx: defaultZoneIdx != null ? defaultZoneIdx : 0
+    compactZoneData: compactZoneData || null, defaultZoneIdx: defaultZoneIdx != null ? defaultZoneIdx : 0,
+    compactKind: compactKind || 'reference'
   }};
 }}
 
@@ -511,6 +513,30 @@ function showCompactZone(divId, cfg, zoneLabel, date) {{
   }}, [dynamicStart, dynamicStart + 1, dynamicStart + 2]);
 }}
 
+function showCompactSpreadZone(divId, cfg, zoneLabel, date) {{
+  // Spread's dynamic placeholders are a different shape than the reference-series ones
+  // (DAM line, RTM line, spread bar -- not avg/prev/day of one series), and Spread doesn't
+  // carry its own compact data: it reads the DAM/RTM compact data already embedded for
+  // those tabs (see build_spread_detail_fig's compact_zones docstring) and derives the
+  // spread client-side instead of shipping a third copy of the same numbers.
+  const damData = COMPACT_ZONE_DATA['dam'] && COMPACT_ZONE_DATA['dam'][zoneLabel];
+  const rtmData = COMPACT_ZONE_DATA['rtm'] && COMPACT_ZONE_DATA['rtm'][zoneLabel];
+  if (!damData || !rtmData) return;
+  const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
+  const dynamicStart = bakedTotal;
+  const hours = Array.from({{length: 24}}, (_, i) => i + 1);
+  const damVals = damData[date] || new Array(24).fill(null);
+  const rtmVals = rtmData[date] || new Array(24).fill(null);
+  const spreadVals = hours.map((_, i) => (damVals[i] == null || rtmVals[i] == null) ? null : damVals[i] - rtmVals[i]);
+  const barColors = spreadVals.map(v => v == null ? '{COLORS['muted']}' : (v >= 0 ? '{COLORS['positive']}' : '{COLORS['negative']}'));
+  Plotly.restyle(divId, {{visible: new Array(bakedTotal).fill(false)}},
+                  Array.from({{length: bakedTotal}}, (_, i) => i));
+  Plotly.restyle(divId, {{
+    x: [hours, hours, hours], y: [damVals, rtmVals, spreadVals], visible: [true, true, true]
+  }}, [dynamicStart, dynamicStart + 1, dynamicStart + 2]);
+  Plotly.restyle(divId, {{'marker.color': [barColors]}}, [dynamicStart + 2]);
+}}
+
 function showBakedZone(divId, cfg, dateIdx) {{
   // Restores the default zone's own pre-baked trace for the selected day, and hides the 3
   // dynamic placeholder traces in case a non-default zone had them showing.
@@ -542,10 +568,12 @@ function applyFigSelection(divId) {{
   if (cfg.compactZoneData) {{
     if (zoneIdx === cfg.defaultZoneIdx) {{
       showBakedZone(divId, cfg, dateIdx);
+    }} else if (cfg.compactKind === 'spread') {{
+      showCompactSpreadZone(divId, cfg, zoneLabel, dateSel.value);
     }} else {{
       showCompactZone(divId, cfg, zoneLabel, dateSel.value);
     }}
-    return; // DAM/RTM titles are already hidden (show_title=False) and have no per-zone y-axis unit
+    return; // DAM/RTM/Spread titles are already hidden (show_title=False) and have no per-zone y-axis unit
   }}
 
   const total = cfg.zones.length * cfg.dates.length * cfg.tracesPerCombo;
@@ -668,7 +696,7 @@ function copyTableTSV(btn, plotlyDivId) {{
     <h2>Hourly Profile (Positive = green, Negative = red)</h2>
   </div>
   {spread_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='spread-hourly')}
-  {register_fig('spread-hourly', 3, 'Spread (DAM - RTM) - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select')}
+  {register_fig('spread-hourly', 3, 'Spread (DAM - RTM) - Hourly Profile', show_title=False, zone_sel_id='tab-zone-select', compact_zone_data='spread', default_zone_idx=zones.index(DEFAULT_ZONE), compact_kind='spread')}
 </div>
 <div class="card">
   <div class="section-header">
