@@ -1,9 +1,6 @@
-import os
-from datetime import timedelta
 from pathlib import Path
 
-import pandas as pd
-from gridstatusio import GridStatusClient
+from update_common import fetch_and_merge
 
 DATASET_ID = "ieso_zonal_load_forecast_hourly"
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_load_forecast.csv"
@@ -12,36 +9,11 @@ FORECAST_HOURS = 48  # zonal load forecast is published up to ~2 days ahead
 
 
 def update_load_forecast():
-    api_key = os.getenv("GRIDSTATUS_API_KEY")
-    if not api_key:
-        raise RuntimeError("GRIDSTATUS_API_KEY environment variable is not set.")
-
-    client = GridStatusClient(api_key=api_key)
-
-    now = pd.Timestamp.now(tz="UTC").tz_convert("-05:00")
-    start = (now - timedelta(hours=PAST_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
-    end = (now + timedelta(hours=FORECAST_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
-
-    print(f"Fetching {DATASET_ID} from {start} to {end}...")
-    new_df = client.get_dataset(
-        dataset=DATASET_ID,
-        start=start,
-        end=end,
-        publish_time="latest",
-        timezone="market",
+    fetch_and_merge(
+        DATASET_ID, DATA_PATH,
+        dedup_subset=["interval_start_local"], sort_by="interval_start_local",
+        past_hours=PAST_HOURS, forecast_hours=FORECAST_HOURS,
     )
-    new_df["interval_start_local"] = pd.to_datetime(new_df["interval_start_local"])
-
-    if DATA_PATH.exists():
-        existing_df = pd.read_csv(DATA_PATH, parse_dates=["interval_start_local"])
-        combined = pd.concat([existing_df, new_df], axis=0)
-    else:
-        combined = new_df
-
-    combined = combined.drop_duplicates(subset=["interval_start_local"], keep="last")
-    combined = combined.sort_values("interval_start_local")
-    combined.to_csv(DATA_PATH, index=False)
-    print(f"Saved {len(combined)} rows to {DATA_PATH}")
 
 
 if __name__ == "__main__":
