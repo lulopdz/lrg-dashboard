@@ -15,6 +15,8 @@ from dashboard_data import (
 
 TABLE_BUCKET_SIZE = 100  # $/MWh step size for the discrete table color scales
 TABLE_ROW_HEIGHT = 26    # px per date row in the hourly heatmap tables -- height scales with TABLE_DAYS instead of being fixed
+PROFILE_HEIGHT = 380     # px for every single-panel line chart (hourly profile + forecast tabs) -- one shared value so they read as one page
+SPREAD_HEIGHT = 520      # px for the Spread tab's 2-panel chart -- shorter than before but still taller than a single panel needs
 
 
 def hour_xaxis(**extra):
@@ -156,7 +158,7 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
         yaxis=yaxis,
         hovermode='x unified' if polished else 'closest',
         margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
-        height=470 if polished else 500
+        height=PROFILE_HEIGHT if polished else 500
     )
     return fig
 
@@ -228,7 +230,7 @@ def build_spread_detail_fig(polished=False, compact_zones=False):
         legend=dict(orientation='v', yanchor='middle', y=0.8, xanchor='left', x=1.02),
         hovermode='x unified' if polished else 'closest',
         margin=dict(t=30, b=40, r=140) if polished else dict(t=60, b=40, r=140),
-        height=620 if polished else 650
+        height=SPREAD_HEIGHT if polished else 650
     )
     row_xaxis = hour_xaxis()
     if polished:
@@ -259,14 +261,14 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['analog_lmp'],
-        name=f"Similar day ({meta.get('analog_date')})", mode='lines+markers',
-        line=dict(color=COLORS['avg_legacy'], dash='dash'), marker=ring_marker
+        name=f"Similar #1 ({meta.get('analog_date')})", mode='lines+markers',
+        line=dict(color=COLORS['avg_legacy'], dash='dash', width=2.5), marker=ring_marker
     ))
     if 'analog_lmp_2' in forecast_df.columns and forecast_df['analog_lmp_2'].notna().any():
         fig.add_trace(go.Scatter(
             x=forecast_df['hour'], y=forecast_df['analog_lmp_2'],
-            name=f"2nd similar day ({meta.get('analog_date_2')})", mode='lines+markers',
-            line=dict(color=COLORS['muted'], dash='dot'), marker=ring_marker
+            name=f"Similar #2 ({meta.get('analog_date_2')})", mode='lines+markers',
+            line=dict(color=COLORS['muted'], dash='dot', width=2.5), marker=ring_marker
         ))
 
     # Confidence band: predicted +/- the model's historical per-hour MAE from the backtest
@@ -284,12 +286,12 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         fig.add_trace(go.Scatter(
             x=forecast_df['hour'], y=forecast_df['predicted_lmp'] + band_err, mode='lines',
             line=dict(width=0), fill='tonexty', fillcolor='rgba(155,89,182,0.18)',
-            hoverinfo='skip', name='Typical error range (±hist. MAE)'
+            hoverinfo='skip', name='Error range (±MAE)'
         ))
 
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['predicted_lmp'],
-        name=f"Predicted ({meta.get('target_date')})", mode='lines+markers',
+        name='Predicted', mode='lines+markers',
         line=dict(color=COLORS['predicted'], width=3), marker=dict(size=8, line=dict(width=2, color=COLORS['ring']))
     ))
     if is_spread:
@@ -313,7 +315,89 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         yaxis=dict(gridcolor=COLORS['grid'], hoverformat='.1f'),
         hovermode='x unified',
         margin=dict(t=30, b=60, r=140),
-        height=470
+        height=PROFILE_HEIGHT
+    )
+    return fig
+
+
+def build_analog_comparison_fig(meta):
+    """'Why this day?' as a dumbbell chart instead of a wide table: one row per analog-search
+    variable, each plotted as tomorrow's forecast expressed as a % difference from that
+    analog day's actual value (0% = exact match), with a stem back to the zero line. % is the
+    one unit every variable (MW, degC, mm, W/m2...) can share on one axis without a table's
+    column-per-unit sprawl. Marker size carries ANALOG_FEATURE_WEIGHTS -- the variables that
+    actually drove the similarity search stand out -- and rows are sorted the same way, most
+    heavily-weighted at top. A variable whose analog value is exactly 0 (e.g. no rain that
+    day) has no defined % difference and is skipped for that day, same as the table it
+    replaces did via 'n/a'. Returns None if there's nothing to compare (no analog found)."""
+    rows = meta.get('analog_comparison') or []
+    if not rows:
+        return None
+    rows_2 = meta.get('analog_comparison_2') or []
+    order = sorted(range(len(rows)), key=lambda i: -rows[i].get('weight', 1))
+    AXIS_LIMIT = 50  # a variable that swings further than this (e.g. rain forecast going to/from
+    # near-zero, which blows up a % difference) gets pinned to the edge instead of stretching
+    # the whole chart's scale to fit one outlier -- the arrow marker + hover note say so.
+
+    def pct(row):
+        return None if row['analog'] == 0 else (row['target'] - row['analog']) / row['analog'] * 100
+
+    def series(rows_ordered):
+        # Literal unicode (·, ±), not &middot;/&plusmn; -- Plotly hover text only understands
+        # a small fixed set of real HTML tags (<br>, <b>, <i>, ...), not named entities, so
+        # those would print as literal "&middot;" in the popup instead of being decoded.
+        stem_x, stem_y = [], []
+        dot_x, dot_y, dot_size, dot_symbol, hover = [], [], [], [], []
+        for i in order:
+            r = rows_ordered[i]
+            p = pct(r)
+            if p is None:
+                continue
+            clamped = max(-AXIS_LIMIT, min(AXIS_LIMIT, p))
+            overflow = clamped != p
+            stem_x += [0, clamped, None]
+            stem_y += [r['label'], r['label'], None]
+            dot_x.append(clamped)
+            dot_y.append(r['label'])
+            dot_size.append(8 + 6 * (r.get('weight', 1) - 1))
+            dot_symbol.append(('triangle-right' if p > 0 else 'triangle-left') if overflow else 'circle')
+            note = f" (chart capped at ±{AXIS_LIMIT}%)" if overflow else ""
+            hover.append(f"{r['target']:.1f} {r['unit']} vs {r['analog']:.1f} {r['unit']} · weight {r.get('weight', 1):g}x"
+                         f"<br>{p:+.0f}% vs analog{note}")
+        return stem_x, stem_y, dot_x, dot_y, dot_size, dot_symbol, hover
+
+    fig = go.Figure()
+    fig.add_vline(x=0, line_color=COLORS['muted'], line_width=1)
+
+    stem_x, stem_y, dot_x, dot_y, dot_size, dot_symbol, hover = series(rows)
+    fig.add_trace(go.Scatter(x=stem_x, y=stem_y, mode='lines', line=dict(color=COLORS['muted'], width=1.5),
+                              hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=dot_x, y=dot_y, mode='markers', name=f"Similar #1 ({meta.get('analog_date')})",
+        marker=dict(size=dot_size, symbol=dot_symbol, color=COLORS['avg_legacy'], line=dict(width=1.5, color=COLORS['ring'])),
+        customdata=hover, hovertemplate='%{y}<br>%{customdata}<extra></extra>'
+    ))
+
+    if rows_2:
+        stem_x2, stem_y2, dot_x2, dot_y2, dot_size2, dot_symbol2, hover2 = series(rows_2)
+        symbol2 = [(s + '-open' if s != 'circle' else 'diamond') for s in dot_symbol2]
+        fig.add_trace(go.Scatter(x=stem_x2, y=stem_y2, mode='lines', line=dict(color=COLORS['muted'], width=1, dash='dot'),
+                                  hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter(
+            x=dot_x2, y=dot_y2, mode='markers', name=f"Similar #2 ({meta.get('analog_date_2')})",
+            marker=dict(size=[max(4, s - 3) for s in dot_size2], symbol=symbol2, color=COLORS['muted'],
+                        line=dict(width=1.5, color=COLORS['ring'])),
+            customdata=hover2, hovertemplate='%{y}<br>%{customdata}<extra></extra>'
+        ))
+
+    fig.update_layout(
+        template='plotly_dark', title=None,
+        xaxis=dict(title="Tomorrow's forecast vs. analog day", ticksuffix='%', gridcolor=COLORS['grid'], zeroline=False,
+                    range=[-AXIS_LIMIT, AXIS_LIMIT]),
+        yaxis=dict(autorange='reversed', gridcolor=COLORS['grid']),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+        margin=dict(t=40, b=40, l=190, r=30),
+        height=60 + len(rows) * 34,
     )
     return fig
 
@@ -442,7 +526,7 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
         yaxis=yaxis,
         hovermode='x unified' if polished else 'closest',
         margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
-        height=470 if polished else 500
+        height=PROFILE_HEIGHT if polished else 500
     )
     return fig
 

@@ -3,6 +3,7 @@ built by parse_reports.py from the IESO participation XML reports in data/report
 grouped by month -- a Won/Lost/No-exposure breakdown, an hour-by-day case grid, and a
 per-trade log. Stats are month-scoped only, on purpose: an all-time accumulated view was
 tried and dropped -- the per-month cut is what's actually useful here."""
+import json
 import os
 
 import pandas as pd
@@ -15,19 +16,37 @@ os.makedirs('docs', exist_ok=True)
 
 BADGE_CLASS = {'Won': 'badge-won', 'Lost': 'badge-lost', 'Flat': 'badge-flat', 'Pending': 'badge-pending'}
 
+# "What if every missed order had filled?" -- No-exposure rows only record what actually
+# cleared (0 MW), not the size that was intended, so there's no way to derive a hypothetical
+# fill size from the report itself. 1 MW is the assumption: 91 of this book's 94 real trades
+# (97%) are exactly 1 MW, so it's the representative size, not an arbitrary round number.
+WHATIF_FILL_MW = 1.0
+
 # Case-grid heatmap: one flat color per outcome (not a magnitude scale) -- the point is the
 # category, not the size. 'blank' (an hour never listed in the report at all -- not a case)
 # sits right on the panel background so it disappears; 'No exposure' (explicitly 0 MW in the
 # report -- submitted, didn't clear) gets its own visible-but-calm gray so it reads as a real,
-# counted case instead of empty space.
-GRID_CATEGORY = {'blank': 0, 'No exposure': 1, 'Lost': 2, 'Won': 3, 'Pending': 4, 'Flat': 5}
+# counted case instead of empty space. 'Won (hyp.)'/'Lost (hyp.)' are only ever used in the
+# what-if overlay (see _grid_cell_arrays) -- same hues as the real outcomes at roughly half
+# the opacity, so a hypothetical result is legible as the same category but visibly softer,
+# never confusable with a real one.
+GRID_CATEGORY = {'blank': 0, 'No exposure': 1, 'Lost': 2, 'Won': 3, 'Pending': 4, 'Flat': 5,
+                  'Won (hyp.)': 6, 'Lost (hyp.)': 7}
 GRID_COLORS = ['#242424', 'rgba(102,102,102,0.5)', 'rgba(231,76,60,0.55)', 'rgba(46,204,113,0.55)',
-               'rgba(232,163,61,0.55)', 'rgba(150,150,150,0.55)']
+               'rgba(232,163,61,0.55)', 'rgba(150,150,150,0.55)', 'rgba(46,204,113,0.28)', 'rgba(231,76,60,0.28)']
 
 GRID_LEGEND = f'''<div class="chart-legend">
   <span><i class="sw" style="background:{GRID_COLORS[3]}"></i>Won</span>
   <span><i class="sw" style="background:{GRID_COLORS[2]}"></i>Lost</span>
   <span><i class="sw" style="background:{GRID_COLORS[1]}"></i>No exposure</span>
+  <span><i class="sw" style="background:{GRID_COLORS[4]}"></i>Pending</span>
+</div>'''
+
+GRID_LEGEND_WHATIF = f'''<div class="chart-legend">
+  <span><i class="sw" style="background:{GRID_COLORS[3]}"></i>Won</span>
+  <span><i class="sw" style="background:{GRID_COLORS[2]}"></i>Lost</span>
+  <span><i class="sw" style="background:{GRID_COLORS[6]}"></i>Won (hypothetical)</span>
+  <span><i class="sw" style="background:{GRID_COLORS[7]}"></i>Lost (hypothetical)</span>
   <span><i class="sw" style="background:{GRID_COLORS[4]}"></i>Pending</span>
 </div>'''
 
@@ -60,6 +79,16 @@ def pnl_cls(val):
     return 'pos' if val > 0 else 'neg'
 
 
+def whatif_pnl_of(outcome, position, spread):
+    """What a 'No exposure' hour's PnL would have been at WHATIF_FILL_MW, same side and the
+    real spread that hour -- None for every other outcome (nothing hypothetical to compute)
+    or if spread itself is missing (price join failed for that hour)."""
+    if outcome != 'No exposure' or pd.isna(spread):
+        return None
+    signed_size = WHATIF_FILL_MW if position == 'Virtual Gen' else -WHATIF_FILL_MW
+    return signed_size * spread
+
+
 def load_data():
     """df is every row parse_reports.py wrote -- every hour the report explicitly lists,
     whether it filled (energy_mw != 0) or not (energy_mw == 0, an order that never cleared).
@@ -73,6 +102,7 @@ def load_data():
     df['position'] = df['resource_type'].apply(lambda t: 'Virtual Gen' if t == 'GEN' else 'Virtual Load')
     df['size'] = df['energy_mw'].abs()
     df['outcome'] = df.apply(lambda r: outcome_of(r['energy_mw'], r['pnl']), axis=1)
+    df['whatif_pnl'] = df.apply(lambda r: whatif_pnl_of(r['outcome'], r['position'], r['spread']), axis=1)
     df = df.sort_values(['date', 'hour'])
 
     trades = df[df['energy_mw'] != 0].copy()
@@ -88,17 +118,14 @@ def _discrete_category_colorscale(colors):
     return scale
 
 
-def build_case_grid_fig(dates, month_df):
-    """One row per report date that month, one column per hour (HE01-HE24) plus a trailing
-    Total column, colored by outcome instead of magnitude -- every case at a glance. month_df
-    is every row the report lists for that month (blank/uninvolved hours just aren't in it,
-    and stay the near-invisible 'blank' color); this is what makes 'no exposure' a first-class,
-    visible category instead of just a subtracted count in a stat tile.
-    yaxis.type is forced to 'category': dates are strings that look like dates, and Plotly's
-    default type inference reads them as a real date axis, spacing rows by elapsed calendar
-    time instead of evenly -- rows for report dates separated by a weekend or a gap end up
-    stretched apart. The other hourly tables never hit this because they show a contiguous
-    day range with no gaps; report dates are inherently sparse."""
+def _grid_cell_arrays(dates, month_df, whatif=False):
+    """The z/text/hover arrays build_case_grid_fig plots (real mode) -- also called a second
+    time with whatif=True to get the 'what if every missed order had filled' overlay, so the
+    two states can be swapped client-side via Plotly.restyle instead of rendering two figures.
+    In whatif mode every other cell (real trades, pending, blank) is untouched; only
+    'No exposure' cells recolor to the (softer-opacity) hypothetical Won/Lost category, using
+    whatif_pnl (same position, real spread for that hour, WHATIF_FILL_MW instead of the 0 MW
+    that actually cleared)."""
     date_strs = [f"{d:%Y-%m-%d}" for d in dates]
     n = len(dates)
     row_of = {d: i for i, d in enumerate(dates)}
@@ -109,13 +136,22 @@ def build_case_grid_fig(dates, month_df):
 
     for _, r in month_df.iterrows():
         i, j = row_of[r['date']], int(r['hour']) - 1
+        if whatif and r['outcome'] == 'No exposure' and pd.notna(r['whatif_pnl']):
+            cat = 'Won (hyp.)' if r['whatif_pnl'] > 0 else 'Lost (hyp.)'
+            z[i][j] = GRID_CATEGORY[cat] + 0.5
+            text[i][j] = f"~{r['whatif_pnl']:+.0f}"
+            hover[i][j] = (f"{r['position']} {WHATIF_FILL_MW:g} MW (hypothetical -- this order didn't really clear)"
+                            f"<br>What-if PnL: {fmt_money(r['whatif_pnl'], signed=True)}")
+            continue
         z[i][j] = GRID_CATEGORY[r['outcome']] + 0.5
         if r['outcome'] == 'No exposure':
             text[i][j] = ''
             hover[i][j] = f"{r['position']} order sent, didn't clear (0 MW)"
             continue
+        # Literal "·" (not &middot;): Plotly hover text only decodes a small fixed set of real
+        # HTML tags (<br>, <b>, ...), not named entities -- those print as literal "&middot;".
         detail = (f"{r['position']} {r['size']:.1f} MW<br>DAM {fmt_money(r['lmp_dam'])} "
-                  f"&middot; RTM {fmt_money(r['lmp_rtm'])} &middot; Spread {fmt_money(r['spread'], signed=True)}")
+                  f"· RTM {fmt_money(r['lmp_rtm'])} · Spread {fmt_money(r['spread'], signed=True)}")
         if r['outcome'] == 'Pending':
             text[i][j] = '…'
             hover[i][j] = f"{detail}<br>Pending settlement"
@@ -123,17 +159,49 @@ def build_case_grid_fig(dates, month_df):
             text[i][j] = '0' if r['outcome'] == 'Flat' else f"{r['pnl']:+.0f}"
             hover[i][j] = f"{detail}<br>PnL: {fmt_money(r['pnl'], signed=True)} ({r['outcome']})"
 
-    # Trailing Total column: the day's net settled PnL (No-exposure rows contribute $0,
-    # Pending rows are excluded since their outcome isn't known yet -- can't total an unknown).
+    # Trailing Total column: the day's net PnL. In real mode that's just settled trades' pnl
+    # (No-exposure contributes $0, Pending is excluded -- unknown outcome). In whatif mode a
+    # day can have BOTH a real trade and a hypothetical one, and they need to net together --
+    # summing a single column (as an earlier version of this did) silently dropped whichever
+    # side wasn't in that column (real trades have no whatif_pnl, No-exposure rows have no
+    # pnl), understating the total on any day that mixed the two.
+    def _effective_pnl(row):
+        if row['outcome'] in ('Won', 'Lost', 'Flat'):
+            return row['pnl']
+        if whatif and row['outcome'] == 'No exposure':
+            return row['whatif_pnl']
+        return None
+
+    included_outcomes = ['Won', 'Lost', 'Flat'] + (['No exposure'] if whatif else [])
     for d in dates:
         i = row_of[d]
-        day_settled = month_df[(month_df['date'] == d) & (month_df['outcome'].isin(['Won', 'Lost', 'Flat']))]
-        if day_settled.empty:
+        day_rows = month_df[(month_df['date'] == d) & month_df['outcome'].isin(included_outcomes)]
+        if day_rows.empty:
             continue
-        day_total = day_settled['pnl'].sum()
+        day_effective = day_rows.apply(_effective_pnl, axis=1)
+        if day_effective.isna().all():
+            continue
+        day_total = day_effective.sum()
         z[i][TOTAL_COL] = GRID_CATEGORY['Won' if day_total > 0 else ('Lost' if day_total < 0 else 'Flat')] + 0.5
         text[i][TOTAL_COL] = f"{day_total:+.0f}"
         hover[i][TOTAL_COL] = f"Daily total: {fmt_money(day_total, signed=True)}"
+
+    return z, text, hover
+
+
+def build_case_grid_fig(dates, z, text, hover):
+    """One row per report date that month, one column per hour (HE01-HE24) plus a trailing
+    Total column, colored by outcome instead of magnitude -- every case at a glance. z/text/
+    hover come from _grid_cell_arrays (real mode) -- the caller builds them separately instead
+    of this function doing it internally so the same call can also produce the what-if arrays
+    without wiring a second Heatmap trace just to get at them.
+    yaxis.type is forced to 'category': dates are strings that look like dates, and Plotly's
+    default type inference reads them as a real date axis, spacing rows by elapsed calendar
+    time instead of evenly -- rows for report dates separated by a weekend or a gap end up
+    stretched apart. The other hourly tables never hit this because they show a contiguous
+    day range with no gaps; report dates are inherently sparse."""
+    date_strs = [f"{d:%Y-%m-%d}" for d in dates]
+    n = len(dates)
 
     fig = go.Figure(go.Heatmap(
         z=z, x=list(range(1, 26)), y=date_strs,
@@ -185,6 +253,7 @@ def build_portfolio():
 
     months = sorted(df['month'].unique(), reverse=True)
     tabs_html, sections_html = '', ''
+    whatif_grid_data = {}
     for i, m in enumerate(months):
         active = 'active' if i == 0 else ''
         month_label = pd.to_datetime(m + '-01').strftime('%B %Y')
@@ -210,12 +279,43 @@ def build_portfolio():
         if m_pending:
             month_tiles += stat_tile('Pending', _pct(m_pending))
 
-        grid_fig = build_case_grid_fig(m_dates, m_df)
+        # What-if: every 'No exposure' hour recategorized by its hypothetical PnL's sign
+        # (whatif_pnl_of, computed in load_data). Rows where whatif_pnl is None (spread was
+        # missing for that hour) stay uncategorized -- same 'No exposure' bucket, just
+        # relabeled so it's clear a couple of hours simply couldn't be projected.
+        no_exp_rows = m_df[m_df['outcome'] == 'No exposure']
+        wf_won = m_won + int((no_exp_rows['whatif_pnl'] > 0).sum())
+        wf_lost = m_lost + int((no_exp_rows['whatif_pnl'] < 0).sum())
+        wf_undetermined = int(no_exp_rows['whatif_pnl'].isna().sum())
+        wf_net = m_net + no_exp_rows['whatif_pnl'].sum()
+
+        whatif_tiles = stat_tile('Won', _pct(wf_won), cls='pos')
+        whatif_tiles += stat_tile('Lost', _pct(wf_lost), cls='neg')
+        whatif_tiles += stat_tile('No exposure', _pct(wf_undetermined),
+                                   sub='not enough data to project' if wf_undetermined else None)
+        whatif_tiles += stat_tile('Net PnL', fmt_money(wf_net, signed=True), cls=pnl_cls(wf_net), extra_cls='highlight',
+                                   sub=f'hypothetical -- assumes every missed order filled at {WHATIF_FILL_MW:g} MW')
+        if m_pending:
+            whatif_tiles += stat_tile('Pending', _pct(m_pending))
+
+        z_real, text_real, hover_real = _grid_cell_arrays(m_dates, m_df, whatif=False)
+        z_wf, text_wf, hover_wf = _grid_cell_arrays(m_dates, m_df, whatif=True)
+        grid_fig = build_case_grid_fig(m_dates, z_real, text_real, hover_real)
+        whatif_grid_data[m] = {
+            'real': {'z': z_real, 'text': text_real, 'customdata': hover_real},
+            'whatif': {'z': z_wf, 'text': text_wf, 'customdata': hover_wf},
+        }
         rows_html = '\n'.join(render_trade_row(r) for _, r in m_trades.iterrows())
 
         sections_html += f'''<div id="month-{m}" class="tab-content {active}">
-  <div class="stat-row month-stats">{month_tiles}</div>
-  {GRID_LEGEND}
+  <label class="whatif-toggle">
+    <input type="checkbox" onchange="toggleWhatIf('{m}', this.checked)">
+    What if every missed order had filled? <span class="stat-sub">(assumes {WHATIF_FILL_MW:g} MW each, same side, real market spread -- see hover for detail)</span>
+  </label>
+  <div class="stat-row month-stats" id="stats-real-{m}">{month_tiles}</div>
+  <div class="stat-row month-stats hidden" id="stats-whatif-{m}">{whatif_tiles}</div>
+  <div id="legend-real-{m}">{GRID_LEGEND}</div>
+  <div id="legend-whatif-{m}" class="hidden">{GRID_LEGEND_WHATIF}</div>
   <div class="table-container grid-container">
     {grid_fig.to_html(full_html=False, include_plotlyjs=('cdn' if i == 0 else False), div_id=f'grid-{m}')}
   </div>
@@ -266,6 +366,11 @@ def build_portfolio():
   .chart-legend .sw {{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }}
   .grid-container {{ padding:4px 8px; }}
 
+  .hidden {{ display:none; }}
+  .whatif-toggle {{ display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:13px; color:#ccc; cursor:pointer; }}
+  .whatif-toggle input {{ cursor:pointer; }}
+  .whatif-toggle .stat-sub {{ margin:0; }}
+
   .table-container {{ overflow-x:auto; max-width:100%; border:1px solid #333; border-radius:8px; }}
   .trade-table {{ border-collapse:collapse; width:100%; background:#1a1a1a; font-size:13px; }}
   .trade-table th, .trade-table td {{ padding:7px 12px; text-align:right; border-bottom:1px solid #2a2a2a; white-space:nowrap; font-variant-numeric:tabular-nums; }}
@@ -306,6 +411,19 @@ function showMonth(month, btn) {{
     document.getElementById('month-' + month).classList.add('active');
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     btn.classList.add('active');
+}}
+
+// {{month: {{real: {{z, text, customdata}}, whatif: {{...}}}}}} -- both states for every
+// month's case grid, swapped via Plotly.restyle instead of rendering two figures.
+const WHATIF_GRID = {json.dumps(whatif_grid_data)};
+
+function toggleWhatIf(month, on) {{
+    document.getElementById('stats-real-' + month).classList.toggle('hidden', on);
+    document.getElementById('stats-whatif-' + month).classList.toggle('hidden', !on);
+    document.getElementById('legend-real-' + month).classList.toggle('hidden', on);
+    document.getElementById('legend-whatif-' + month).classList.toggle('hidden', !on);
+    const data = WHATIF_GRID[month][on ? 'whatif' : 'real'];
+    Plotly.restyle('grid-' + month, {{z: [data.z], text: [data.text], customdata: [data.customdata]}}, [0]);
 }}
 </script>
 </body>
