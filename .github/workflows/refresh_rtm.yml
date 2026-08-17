@@ -2,7 +2,7 @@ name: Refrescar RTM
 
 on:
   schedule:
-    - cron: '0 10 * * *' # Mismo horario que el DAM: 10:00 UTC (6:00 AM EDT)
+    - cron: '5 10 * * *' # 5 min despues del DAM (10:00 UTC) -- antes coincidian exacto y ambos corrian un runner completo a la vez
   workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
     inputs:
       hours:
