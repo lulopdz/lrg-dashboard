@@ -13,7 +13,8 @@ from dashboard_data import (
 )
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
-    build_spread_detail_fig, build_supply_mix_fig, build_table_fig, build_weather_grid_figs,
+    build_adequacy_grid_figs, build_spread_detail_fig, build_supply_mix_fig, build_table_fig,
+    build_weather_grid_figs,
     build_wide_hourly_fig, build_wide_table_fig,
 )
 
@@ -78,15 +79,22 @@ load_table_fig = build_wide_table_fig(load_forecast, 'interval_start_local', LOA
 # renders the tab is guarded on this being non-None, same as the forecast tabs are guarded on
 # their predict_*.py having run.
 #
-# Opens on today, not tomorrow, even though it sits in the forecast tab group: the *_scheduled
-# columns are only populated once the day-ahead market has actually scheduled, so tomorrow is
-# entirely null for them and the stack would render empty. The report does carry *_offered for
-# future days, but offered and scheduled are different quantities and silently swapping one for
-# the other across the chart's x-axis would misstate what's plotted.
-supply_mix_fig = (build_supply_mix_fig(adequacy, SUPPLY_MIX, default_day_idx=default_date_idx)
+# The headline chart plots available capacity (capacity - outages), which the report publishes
+# ~34 days ahead, so this tab can open on tomorrow like the rest of the forecast group. The
+# *_scheduled columns would have been the more natural choice but only exist once the day-ahead
+# market has run -- they're in the grid below instead, where being blank for future days is
+# expected rather than looking broken. The report's *_offered columns are null for every fuel
+# on future days, so they aren't an option either.
+supply_mix_fig = (build_supply_mix_fig(adequacy, SUPPLY_MIX, mode='available',
+                                        default_day_idx=default_forecast_date_idx)
                   if adequacy is not None else None)
 supply_mix_tab_button = ('<button class="tab-btn group-forecast" onclick="showTab(\'supply\', this)">'
                           'Supply Mix</button>' if supply_mix_fig is not None else '')
+# Same default day as the headline chart and as TAB_DATES['supply']: showTab only writes the
+# Day picker's value, it doesn't restyle the figures, so a chart pre-baked on a different day
+# would sit there contradicting the picker until something moved it.
+adequacy_grid = (build_adequacy_grid_figs(adequacy, SUPPLY_MIX, default_day_idx=default_forecast_date_idx)
+                 if adequacy is not None else None)
 
 
 
@@ -271,8 +279,7 @@ TAB_DATES = {
     'wind': DAY_OPTION_STRS[default_forecast_date_idx],
 }
 if supply_mix_fig is not None:
-    # today, not tomorrow -- see the supply_mix_fig comment above
-    TAB_DATES['supply'] = DAY_OPTION_STRS[default_date_idx]
+    TAB_DATES['supply'] = DAY_OPTION_STRS[default_forecast_date_idx]
 TAB_DATES_JSON = json.dumps(TAB_DATES)
 
 
@@ -436,20 +443,30 @@ def weather_grid_html():
 
 
 def supply_mix_stat_tiles():
-    """Headline adequacy numbers for the same day the chart is showing. Baked for that one day
-    rather than wired to the Day picker, matching how the Weather tab's tiles work."""
-    target = DAY_OPTIONS[default_date_idx]
+    """Headline adequacy numbers for the same day the charts open on (tomorrow). Baked for that
+    one day rather than wired to the Day picker, matching how the Weather tab's tiles work.
+
+    Every figure here is computed from columns the report publishes ahead, so they all have a
+    value for tomorrow. A renewable *share* tile used to sit here; it needed scheduled output
+    in the denominator, which doesn't exist for future days -- see the Forecast renewable
+    output tile below, which reports MW instead of an invented percentage."""
+    target = DAY_OPTIONS[default_forecast_date_idx]
     day = adequacy[adequacy['interval_start_local'].dt.date == target]
     if day.empty:
         return ''
-    fuels = [c for c in SUPPLY_MIX if c in day.columns]
-    total = day[fuels].sum(axis=1)
-    peak_hour = int(day.loc[total.idxmax(), 'hour']) if total.notna().any() else None
+
+    def available(fuel):
+        cap, out = f'{fuel}_capacity', f'{fuel}_outages'
+        return (day[cap] - day[out]) if cap in day.columns and out in day.columns else None
+
+    fuels = [c.rsplit('_', 1)[0] for c in SUPPLY_MIX]
+    parts = [s for s in (available(f) for f in fuels) if s is not None]
+    total = sum(p.fillna(0) for p in parts) if parts else None
 
     tiles = []
-    if total.notna().any():
-        tiles.append(('Peak scheduled supply', f'{total.max():,.0f} MW',
-                       f'at HE{peak_hour:02d}' if peak_hour else None))
+    if total is not None and total.notna().any():
+        tiles.append(('Peak available supply', f'{total.max():,.0f} MW',
+                       f'at HE{int(day.loc[total.idxmax(), "hour"]):02d}'))
     if 'capacity_excess_shortfall' in day.columns and day['capacity_excess_shortfall'].notna().any():
         margin = day['capacity_excess_shortfall']
         tiles.append(('Tightest capacity margin', f'{margin.min():,.0f} MW',
@@ -460,11 +477,13 @@ def supply_mix_stat_tiles():
         out = day[outage_cols].sum(axis=1)
         if out.notna().any():
             tiles.append(('Capacity on outage', f'{out.mean():,.0f} MW', 'daily average'))
-    if total.notna().any() and total.max():
-        renew = [c for c in ('hydro_scheduled', 'wind_scheduled', 'solar_scheduled',
-                              'biofuel_scheduled') if c in day.columns]
-        share = day[renew].sum(axis=1).sum() / total.sum() * 100
-        tiles.append(('Renewable share', f'{share:.0f}%', 'hydro + wind + solar + biofuel'))
+    renew_cols = [c for c in ('hydro_forecasted_mwh', 'wind_forecasted', 'solar_forecasted')
+                  if c in day.columns]
+    if renew_cols:
+        renew = day[renew_cols].sum(axis=1)
+        if renew.notna().any():
+            tiles.append(('Peak renewable output', f'{renew.max():,.0f} MW',
+                           f'at HE{int(day.loc[renew.idxmax(), "hour"]):02d}'))
 
     return '\n'.join(
         f'<div class="stat-tile"><div class="stat-label">{label}</div>'
@@ -474,6 +493,22 @@ def supply_mix_stat_tiles():
     )
 
 
+def adequacy_grid_html():
+    """The three forward-looking adequacy charts, three across, same small-multiples layout as
+    the Weather tab's grid."""
+    if not adequacy_grid:
+        return ''
+    tiles = []
+    for key, (title, fig, traces) in adequacy_grid.items():
+        div_id = f'adequacy-{key}'
+        tiles.append(f"""<div class="weather-tile">
+  <h3>{title}</h3>
+  {fig.to_html(full_html=False, include_plotlyjs=False, div_id=div_id)}
+  {register_fig(div_id, traces, title, zones_json=json.dumps([title]), show_title=False)}
+</div>""")
+    return f'<div class="weather-grid">\n{chr(10).join(tiles)}\n</div>'
+
+
 supply_mix_tab_html = f"""
 <div id="tab-supply" class="tab-content">
 <div class="stat-row">
@@ -481,15 +516,20 @@ supply_mix_tab_html = f"""
 </div>
 <div class="card">
   <div class="section-header">
-    <h2>Scheduled generation by fuel</h2>
+    <h2>Available supply by fuel</h2>
   </div>
   {supply_mix_fig.to_html(full_html=False, include_plotlyjs=False, div_id='supply-mix')}
-  {register_fig('supply-mix', len(SUPPLY_MIX), 'Supply Mix', zones_json=json.dumps(['Supply Mix']), show_title=False)}
-  <p class="caveat">From IESO's adequacy report. Each band is that fuel's scheduled output, so the
-  top of the stack is the day's total scheduled supply. Note this is the latest published revision
-  of the report, which for hours already past includes after-the-fact corrections &mdash; it is the
-  best estimate of what happened, not what was known beforehand.</p>
+  {register_fig('supply-mix', len(SUPPLY_MIX) + 1, 'Supply Mix', zones_json=json.dumps(['Supply Mix']), show_title=False)}
+  <p class="caveat">From IESO's adequacy report: each band is that fuel's capacity minus what's on
+  outage, so the stack is what <em>could</em> run. Published up to ~34 days ahead, which is why this
+  covers tomorrow while the scheduled-generation chart below only covers days the day-ahead market
+  has already run. One quirk worth knowing: for wind and solar, IESO treats the gap between nameplate
+  capacity and expected output as an "outage", so their bands here already equal the forecast output.
+  The dispatchable fuels don't work that way &mdash; hydro's available capacity sits well above what
+  it will actually generate, because it is energy-limited rather than unavailable. Note also that
+  this is the report's latest revision, which for past hours folds in after-the-fact corrections.</p>
 </div>
+{adequacy_grid_html()}
 </div>
 """ if supply_mix_fig is not None else ''
 
