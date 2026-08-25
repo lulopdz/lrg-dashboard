@@ -40,14 +40,17 @@ jobs:
     - name: Actualizar datos del DAM
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
       run: python src/update_data.py
 
     - name: Actualizar datos del RTM
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
       run: python src/update_rtm.py
 
     - name: Actualizar datos del clima
+      continue-on-error: true
       run: python src/update_weather.py
 
     # Ensemble spread + run-to-run revisions for the Weather tab's confidence section.
@@ -59,16 +62,19 @@ jobs:
     - name: Actualizar pronóstico de demanda
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
       run: python src/update_load_forecast.py
 
     - name: Actualizar pronóstico de viento
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
       run: python src/update_wind_forecast.py
 
     - name: Actualizar reporte de adecuación (mix de generación)
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
       run: python src/update_adequacy.py
 
     - name: Guardar datos y regenerar dashboard
