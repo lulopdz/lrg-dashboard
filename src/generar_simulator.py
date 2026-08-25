@@ -44,12 +44,16 @@ TRADING_CUTOFF_HOUR = 8  # HE08 -- RTM context for the chosen day stops here
 # Mirrors dashboard_data.WEATHER_VARS (kept as its own copy -- this page is deliberately
 # standalone), including the display order its mini-grid renders 3 across.
 WEATHER_VARS = {
-    "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_100m_port_alma": ("Wind Speed (Port Alma, 100m)", "m/s"),
-    "relative_humidity_2m": ("Humidity", "%"),
+    "temperature_2m_toronto": ("Temperature · Toronto", "°C"),
+    "wind_speed_10m_toronto": ("Wind 10m · Toronto", "m/s"),
+    "relative_humidity_2m_toronto": ("Humidity · Toronto", "%"),
+    "temperature_2m": ("Temperature · Ottawa", "°C"),
+    "wind_speed_10m": ("Wind 10m · Ottawa", "m/s"),
+    "relative_humidity_2m": ("Humidity · Ottawa", "%"),
+    "wind_speed_100m_port_alma": ("Wind 100m · Port Alma", "m/s"),
+    "shortwave_radiation_port_alma": ("Solar Radiation · Port Alma", "W/m²"),
+    "shortwave_radiation": ("Solar Radiation · Ottawa", "W/m²"),
     "precipitation": ("Precipitation", "mm"),
-    "wind_speed_10m": ("Wind Speed (Ottawa, 10m)", "m/s"),
-    "shortwave_radiation": ("Solar Radiation", "W/m²"),
     "snowfall": ("Snowfall", "cm"),
 }
 LOAD_VARS = {
