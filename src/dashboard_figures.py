@@ -550,29 +550,146 @@ FUEL_COLORS = {
 }
 
 
-def build_supply_mix_fig(df, var_map, default_day_idx=None):
-    """Scheduled generation by fuel for the selected day, stacked -- the shape of the day's
-    supply, not just its total. One trace group per day in the Day picker, same visibility
-    machinery as every other chart here (registerFig / applyFigSelection).
+def _adequacy_mini_layout(y_title):
+    return dict(
+        template='plotly_dark', title=None, showlegend=False,
+        xaxis=hour_xaxis(dtick=4, showspikes=True, spikemode='across', spikesnap='cursor',
+                          spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'],
+                          gridcolor=COLORS['grid']),
+        yaxis=dict(title=y_title, gridcolor=COLORS['grid'], hoverformat=',.0f'),
+        hovermode='x unified', margin=dict(t=10, b=30, l=60, r=10), height=240,
+    )
 
-    Stacked area rather than lines: the fuels sum to the day's scheduled supply, so the
-    stack's outline is a real quantity and each band's thickness is that fuel's contribution.
-    Lines would show six unrelated curves and lose both."""
+
+def build_adequacy_grid_figs(df, var_map, default_day_idx=None):
+    """Three compact hourly charts that sit under the supply-mix stack: how tight the system
+    is, how much plant is out, and how much renewable output is expected.
+
+    Unlike the mix chart these work for future days: capacity_excess_shortfall, the *_outages
+    columns and the *_forecasted columns are all published ahead, while *_scheduled only fills
+    in once the day-ahead market has run. Returns {key: (title, fig)}; keys double as div-id
+    suffixes.
+
+    Renewable output is plotted in MW rather than as a share of supply. A share needs scheduled
+    output in the denominator and that doesn't exist for future days -- substituting
+    total_forecast_supply (available capacity) reads 16.6% against the real 24.6% on a day
+    where both can be computed, an 8-point bias, so it would be the same label reporting a
+    different quantity."""
+    default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
+    df_dates = df['interval_start_local'].dt.date
+
+    outage_cols = [('nuclear_outages', 'Nuclear'), ('gas_outages', 'Gas'), ('hydro_outages', 'Hydro'),
+                   ('wind_outages', 'Wind'), ('solar_outages', 'Solar')]
+    renew_cols = [('hydro_forecasted_mwh', 'Hydro'), ('wind_forecasted', 'Wind'),
+                  ('solar_forecasted', 'Solar')]
+
+    margin_fig, outage_fig, renew_fig = go.Figure(), go.Figure(), go.Figure()
+    for di, date in enumerate(DAY_OPTIONS):
+        visible = (di == default_day_idx)
+        day = df[df_dates == date].sort_values('hour')
+        hours = day['hour'].tolist()
+
+        margin = day['capacity_excess_shortfall'].tolist() if 'capacity_excess_shortfall' in day.columns else []
+        margin_fig.add_trace(go.Scatter(
+            x=hours, y=margin, mode='lines+markers', name='Capacity margin',
+            line=dict(color=COLORS['forecast'], width=2.5),
+            marker=dict(size=6, line=dict(width=1.5, color=COLORS['ring'])),
+            hovertemplate='Margin: %{y:,.0f} MW<extra></extra>', visible=visible,
+        ))
+        for target, cols, group in ((outage_fig, outage_cols, 'out'), (renew_fig, renew_cols, 'ren')):
+            total = None
+            for col, label in cols:
+                series = day[col] if col in day.columns else None
+                if series is not None:
+                    total = series.fillna(0) if total is None else total + series.fillna(0)
+                target.add_trace(go.Scatter(
+                    x=hours, y=series.tolist() if series is not None else [], name=label,
+                    mode='lines', stackgroup=group,
+                    line=dict(width=0.5, color=FUEL_COLORS.get(label, COLORS['muted'])),
+                    fillcolor=FUEL_COLORS.get(label, COLORS['muted']),
+                    hovertemplate=f'{label}: %{{y:,.0f}} MW<extra></extra>', visible=visible,
+                ))
+            # See build_supply_mix_fig: invisible, unstacked, purely to add a Total row to the
+            # unified hover box.
+            target.add_trace(go.Scatter(
+                x=hours, y=total.tolist() if total is not None else [], name='Total',
+                mode='lines', line=dict(width=0), opacity=0,
+                hovertemplate='<b>Total: %{y:,.0f} MW</b><extra></extra>',
+                showlegend=False, visible=visible,
+            ))
+
+    margin_fig.update_layout(**_adequacy_mini_layout('MW'))
+    outage_fig.update_layout(**_adequacy_mini_layout('MW'))
+    renew_fig.update_layout(**_adequacy_mini_layout('MW'))
+    scheduled_fig = build_supply_mix_fig(df, var_map, default_day_idx=default_day_idx,
+                                          mode='scheduled')
+    scheduled_fig.update_layout(**_adequacy_mini_layout('MW'))
+
+    # +1 on the stacked ones for the invisible Total trace appended per day.
+    return {
+        'margin': ('Capacity margin (supply &minus; requirement)', margin_fig, 1),
+        'outage': ('Capacity on outage, by fuel', outage_fig, len(outage_cols) + 1),
+        'scheduled': ('Scheduled generation (past days only)', scheduled_fig, len(var_map) + 1),
+    }
+
+
+def build_supply_mix_fig(df, var_map, default_day_idx=None, mode='scheduled'):
+    """The day's supply by fuel, stacked -- the shape of it, not just the total. One trace
+    group per day in the Day picker, same visibility machinery as every other chart here.
+
+    Stacked area rather than lines: the fuels sum to a real quantity, so the stack's outline
+    means something and each band's thickness is that fuel's contribution. Lines would show
+    six unrelated curves and lose both.
+
+    mode='scheduled' plots the *_scheduled columns: what the day-ahead market actually
+    scheduled. Only exists once that market has run, so it is blank for future days.
+
+    mode='available' plots capacity minus outages, which the report publishes for every fuel
+    up to ~34 days ahead, so it covers tomorrow. Worth knowing how IESO books wind and solar
+    here: their *_capacity is a constant nameplate and the gap to expected output is filed
+    under *_outages, so capacity - outages reproduces wind_forecasted / solar_forecasted to
+    within 1 MW. The dispatchable fuels behave the way you'd expect instead -- hydro's
+    available capacity sits ~2,100 MW above what it's forecast to generate, because it is
+    energy-limited rather than unavailable. So this stack is what *could* run, and for
+    wind/solar that happens to also be what's expected to run.
+
+    A third option, the report's *_offered columns, is not usable: they are null for every
+    fuel on future days."""
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
     df_dates = df['interval_start_local'].dt.date
     fig = go.Figure()
     for di, date in enumerate(DAY_OPTIONS):
         visible = (di == default_day_idx)
         day = df[df_dates == date].sort_values('hour')
+        hours = day['hour'].tolist()
+        total = None
         for col, label in var_map.items():
+            if mode == 'available':
+                fuel = col.rsplit('_', 1)[0]
+                cap, out = f'{fuel}_capacity', f'{fuel}_outages'
+                series = (day[cap] - day[out]) if cap in day.columns and out in day.columns else None
+            else:
+                series = day[col] if col in day.columns else None
+            values = series.tolist() if series is not None else []
+            if series is not None:
+                total = series.fillna(0) if total is None else total + series.fillna(0)
             fig.add_trace(go.Scatter(
-                x=day['hour'].tolist(), y=day[col].tolist() if col in day.columns else [],
+                x=hours, y=values,
                 name=label, mode='lines', stackgroup='mix',
                 line=dict(width=0.5, color=FUEL_COLORS.get(label, COLORS['muted'])),
                 fillcolor=FUEL_COLORS.get(label, COLORS['muted']),
                 hovertemplate=f'{label}: %{{y:,.0f}} MW<extra></extra>',
                 visible=visible,
             ))
+        # A zero-width trace carrying the stack total, so the unified hover box ends with a
+        # "Total" line. stackgroup is deliberately omitted -- joining the stack would add the
+        # total on top of itself and double the plotted height.
+        fig.add_trace(go.Scatter(
+            x=hours, y=total.tolist() if total is not None else [],
+            name='Total', mode='lines', line=dict(width=0), opacity=0,
+            hovertemplate='<b>Total: %{y:,.0f} MW</b><extra></extra>',
+            showlegend=False, visible=visible,
+        ))
     fig.update_layout(
         template='plotly_dark', title=None,
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
