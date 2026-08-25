@@ -319,39 +319,50 @@ def register_fig(div_id, traces_per_combo, title_prefix, zones_json=None, y_axis
             f"{compact_json}, {default_zone_json}, {compact_kind_json});</script>")
 
 
-def weather_stat_tiles_html():
-    """One stat tile per weather variable: tomorrow's forecast daily average, with the delta
-    vs today's so a glance answers 'is tomorrow warmer/windier/etc than today'. First pass --
-    baked once at generation time for tomorrow vs today specifically (not wired to the Day
-    selector), since that's the comparison that was actually asked for; making it track an
-    arbitrary selected day would be a separate, bigger step."""
-    tomorrow_date = today_date + pd.Timedelta(days=1)
-    today_day = weather[weather['timestamp'].dt.date == today_date]
-    tomorrow_day = weather[weather['timestamp'].dt.date == tomorrow_date]
+def weather_tile_data():
+    """{date_str: [{value, delta, direction} or None, ...]} for every day in the picker.
 
-    tiles = []
-    for v in weather_var_keys:
-        label, unit = weather_label_html(v), WEATHER_VARS[v][1]
-        tomorrow_avg = tomorrow_day[v].mean() if len(tomorrow_day) else None
-        if tomorrow_avg is None or pd.isna(tomorrow_avg):
+    Was baked once for tomorrow-vs-today while the charts below followed the Day selector, so
+    moving the day left these showing another day's averages -- the same defect just fixed on
+    the Supply Mix tab. Following the picker also generalises the comparison: the delta is now
+    against the day before whichever day is selected, not against today specifically."""
+    dates = weather['timestamp'].dt.date
+    by_day = {d: weather[dates == d] for d in DAY_OPTIONS}
+    out = {}
+    for date in DAY_OPTIONS:
+        day = by_day.get(date)
+        if day is None or day.empty:
             continue
-        today_avg = today_day[v].mean() if len(today_day) else None
-        if today_avg is not None and not pd.isna(today_avg):
-            delta = tomorrow_avg - today_avg
-            direction = 'up' if delta > 0.05 else ('down' if delta < -0.05 else 'flat')
-            arrow = {'up': '▲', 'down': '▼', 'flat': '–'}[direction]
-            delta_html = f'<div class="stat-delta {direction}">{arrow} {delta:+.1f} {unit} vs today</div>'
-        else:
-            delta_html = '<div class="stat-sub">No data for today</div>'
-        # "(avg, tomorrow)" used to be repeated on every tile; it's now said once in the
-        # section heading instead, which is what lets these sit two-abreast next to the
-        # revision table rather than stretching across the full width.
-        tiles.append(f"""<div class="stat-tile">
-  <div class="stat-label">{label}</div>
-  <div class="stat-value">{tomorrow_avg:.1f} {unit}</div>
-  {delta_html}
-</div>""")
-    return '\n'.join(tiles)
+        prev = by_day.get(date - pd.Timedelta(days=1))
+        entries = []
+        for v in weather_var_keys:
+            unit = WEATHER_VARS[v][1]
+            avg = day[v].mean() if v in day.columns else None
+            if avg is None or pd.isna(avg):
+                entries.append(None)
+                continue
+            entry = {'value': f'{avg:.1f} {unit}'}
+            prev_avg = prev[v].mean() if prev is not None and not prev.empty and v in prev.columns else None
+            if prev_avg is not None and not pd.isna(prev_avg):
+                delta = avg - prev_avg
+                direction = 'up' if delta > 0.05 else ('down' if delta < -0.05 else 'flat')
+                arrow = {'up': '▲', 'down': '▼', 'flat': '–'}[direction]
+                entry['direction'] = direction
+                entry['delta'] = f'{arrow} {delta:+.1f} {unit} vs previous day'
+            entries.append(entry)
+        if any(entries):
+            out[str(date)] = entries
+    return out
+
+
+def weather_stat_tiles_html():
+    """Empty shells; updateWeatherTiles() fills them from WEATHER_TILE_DATA for the selected
+    day. The label is baked in since it never changes."""
+    return '\n'.join(
+        f'<div class="stat-tile" id="weather-tile-{i}"><div class="stat-label">{weather_label_html(v)}</div>'
+        f'<div class="stat-value"></div><div class="stat-delta"></div></div>'
+        for i, v in enumerate(weather_var_keys)
+    )
 
 
 def weather_stability_html():
@@ -519,6 +530,7 @@ def supply_mix_stat_tiles():
 
 
 SUPPLY_TILE_DATA_JSON = json.dumps(supply_mix_tile_data() if adequacy is not None else {})
+WEATHER_TILE_DATA_JSON = json.dumps(weather_tile_data())
 SUPPLY_TILE_LABELS_JSON = json.dumps(SUPPLY_TILE_LABELS)
 
 
@@ -682,6 +694,7 @@ const COMPACT_ZONE_DATA = {COMPACT_ZONE_DATA_JSON};
 // Per-day Supply Mix tile values, so the tiles follow the Day picker like the charts do.
 const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
 const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
+const WEATHER_TILE_DATA = {WEATHER_TILE_DATA_JSON};
 let currentTab = 'dam';
 
 function showTab(name, btn) {{
@@ -719,6 +732,7 @@ function showTab(name, btn) {{
   }}
 
   updateSupplyTiles();
+  updateWeatherTiles();
 }}
 
 const FIG_CONFIGS = {{}};
@@ -870,9 +884,23 @@ function updateSupplyTiles() {{
   }});
 }}
 
+function updateWeatherTiles() {{
+  const day = WEATHER_TILE_DATA[document.getElementById('global-date').value];
+  document.querySelectorAll('[id^="weather-tile-"]').forEach(tile => {{
+    const entry = day ? day[+tile.id.split('-')[2]] : null;
+    tile.style.display = entry ? '' : 'none';
+    if (!entry) return;
+    tile.querySelector('.stat-value').textContent = entry.value;
+    const d = tile.querySelector('.stat-delta');
+    d.textContent = entry.delta || '';
+    d.className = 'stat-delta ' + (entry.direction || '');
+  }});
+}}
+
 function applyAllFigs() {{
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
   updateSupplyTiles();
+  updateWeatherTiles();
 }}
 
 function applyZoneChange() {{
@@ -908,7 +936,7 @@ function copyTableTSV(btn, plotlyDivId) {{
 
 // This script block runs before the body, so the tiles it fills don't exist yet -- they start
 // as empty shells and get their first paint once the DOM is up.
-document.addEventListener('DOMContentLoaded', updateSupplyTiles);
+document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); updateWeatherTiles(); }});
 </script>
 
 <div class="tabs-row">
@@ -1000,7 +1028,7 @@ document.addEventListener('DOMContentLoaded', updateSupplyTiles);
 <div id="tab-weather" class="tab-content">
 <div class="summary-split">
   <div class="summary-half wide">
-    <h3>Tomorrow's daily average</h3>
+    <h3>Daily average for the selected day</h3>
     <div class="stat-row">
 {weather_stat_tiles_html()}
     </div>
