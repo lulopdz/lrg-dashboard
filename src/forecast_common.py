@@ -12,9 +12,27 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 ZONE = "OTTAWA"
-WIND_ZONE = "Ontario Total"
+# IESO publishes its wind forecast per zone. 'Ontario Total' looks like the natural choice but
+# only exists from 2026-06-27 -- 13% of the training history -- so the models were being fed a
+# column that was NaN for most of what they trained on. 'West' covers the full history
+# (2025-05-20 on), is equally complete for the target day, and is where the wind fleet actually
+# sits (Port Alma, the secondary weather station, is in the same region). Walk-forward: DAM
+# MAE $11.46 -> $10.86, RTM $34.05 -> $33.77.
+WIND_ZONE = "West"
 BACKTEST_DAYS = 21   # trailing holdout window used to report honest accuracy
 MIN_TRAIN_DAYS = 60  # need enough history before the holdout window to bother training
+
+# Default booster settings. ~11k training rows against ~40 features is small for
+# unbounded-depth boosting, so capping depth is plain regularization; a 6-fold walk-forward
+# showed it clearly helps the noisier RTM and Spread series (RTM MAE $34.05 -> $32.97, Spread
+# $34.77 -> $32.73, each winning 4-5 of 6 folds) while leaving DAM flat ($11.46 -> $11.48).
+# predict_dam.py therefore overrides this back to scikit-learn's defaults; see MODEL_PARAMS
+# in each predict_*.py.
+DEFAULT_MODEL_PARAMS = dict(max_depth=4, learning_rate=0.05, max_iter=300)
+
+# backtest() returns the raw holdout series under these keys for directional_backtest() to
+# score; run_forecast() drops them before writing the meta JSON (see the comment in backtest).
+BACKTEST_SERIES_KEYS = ("test_actual", "test_predicted")
 
 # The full set of forecasted variables we have for tomorrow (IESO load forecast +
 # IESO wind forecast + Open-Meteo weather forecast) -- "similar day" means closest
@@ -118,10 +136,11 @@ def usable_feature_cols(df, feature_cols):
     return [c for c in feature_cols if df[c].notna().any()]
 
 
-def backtest(df_hist, feature_cols, naive_col):
+def backtest(df_hist, feature_cols, naive_col, model_params=None):
     """Trailing holdout: honest accuracy vs. a naive 'same hour last week' baseline, plus
     a per-hour-of-day error breakdown (which hours the model has historically nailed vs.
-    missed) used to recommend the hour we're most confident in."""
+    missed) used to recommend the hour we're most confident in. model_params must match what
+    fit_final_model uses, or the reported accuracy won't describe the shipped model."""
     cutoff = df_hist["interval_start_local"].max() - pd.Timedelta(days=BACKTEST_DAYS)
     train = df_hist[df_hist["interval_start_local"] < cutoff]
     test = df_hist[df_hist["interval_start_local"] >= cutoff]
@@ -129,7 +148,7 @@ def backtest(df_hist, feature_cols, naive_col):
         return None
 
     usable_cols = usable_feature_cols(train, feature_cols)
-    model = HistGradientBoostingRegressor(random_state=0)
+    model = HistGradientBoostingRegressor(random_state=0, **(model_params or {}))
     model.fit(train[usable_cols], train["lmp"])
     pred = model.predict(test[usable_cols])
 
@@ -148,6 +167,59 @@ def backtest(df_hist, feature_cols, naive_col):
         "model_rmse": float(np.sqrt(mean_squared_error(test["lmp"], pred))),
         "naive_mae": float(mean_absolute_error(test["lmp"], naive)),
         "hourly_mae": {int(h): (None if pd.isna(v) else float(v)) for h, v in hourly_mae.items()},
+        # Raw holdout series, kept so a caller (see directional_backtest) can re-score the same
+        # window as Long/Short calls rather than an error magnitude. Stripped by run_forecast
+        # before the meta dict is written -- they're ~500 values each and only the derived
+        # summary is ever read back, so persisting them just bloats a file the bot commits daily.
+        BACKTEST_SERIES_KEYS[0]: [float(v) for v in test["lmp"].values],
+        BACKTEST_SERIES_KEYS[1]: [float(v) for v in pred],
+    }
+
+
+def directional_backtest(metrics):
+    """Scores the model's own backtest predictions exactly like the Trading Simulator scores a
+    human's Long/Short calls (see generar_simulator.py's reveal()): a predicted value > 0 is a
+    Long call, < 0 is Short; PnL is +actual on a correct call, -actual on a wrong one (actual
+    can itself be negative); optimal PnL is sum(abs(actual)) -- what a perfect-hindsight caller
+    would have made. Reframes 'how accurate is this model' as a track record ('you'd have gone
+    14-7 and made $342 of $510 possible') instead of a dollar error, which answers 'should I
+    trust tomorrow's call' more directly than an MAE number does. Sign-based, no deadband --
+    the model always has an opinion, same as it always outputs some nonzero predicted value.
+    Only called for the spread predictor; DAM/RTM prices don't have a natural direction to
+    call. Returns None if there's no backtest to score."""
+    if not metrics or not metrics.get("test_actual"):
+        return None
+    actual = np.asarray(metrics["test_actual"], dtype=float)
+    predicted = np.asarray(metrics["test_predicted"], dtype=float)
+    pnl = np.where(predicted > 0, actual, -actual)
+    optimal_pnl = float(np.abs(actual).sum())
+    total_pnl = float(pnl.sum())
+    correct = int((pnl > 0).sum())
+    n = len(actual)
+
+    def pct(value):
+        return round(value / optimal_pnl * 100, 1) if optimal_pnl else None
+
+    # The bar the model has to clear isn't zero -- it's "pick one side and never change your
+    # mind". The spread is positive ~66% of hours, so always-Virtual-Gen wins most hours
+    # outright; whether it also makes money depends on the period, since the negative hours
+    # are the big ones. Reporting both keeps a mediocre-looking win rate honest in each
+    # direction: a model can win fewer hours than always-Gen and still make far more money,
+    # or beat it on win rate while losing to always-Load on P&L.
+    always_gen = float(actual.sum())
+    return {
+        "n_hours": n,
+        "correct": correct,
+        "win_rate": round(correct / n * 100, 1) if n else None,
+        "total_pnl": round(total_pnl, 2),
+        "optimal_pnl": round(optimal_pnl, 2),
+        "pct_of_optimal": pct(total_pnl),
+        "naive_gen_pnl": round(always_gen, 2),
+        "naive_gen_pct": pct(always_gen),
+        "naive_gen_win_rate": round(float((actual > 0).mean()) * 100, 1) if n else None,
+        "naive_load_pnl": round(-always_gen, 2),
+        "naive_load_pct": pct(-always_gen),
+        "naive_load_win_rate": round(float((actual < 0).mean()) * 100, 1) if n else None,
     }
 
 
@@ -171,11 +243,11 @@ def recommend_hour(metrics, df_target, feature_cols):
     return best_hour, candidates[best_hour]
 
 
-def fit_final_model(df_hist, feature_cols):
+def fit_final_model(df_hist, feature_cols, model_params=None):
     """Returns (model, usable_cols) -- usable_cols is feature_cols minus anything entirely
     missing in df_hist; predict() calls must select the same columns, not the original list."""
     usable_cols = usable_feature_cols(df_hist, feature_cols)
-    model = HistGradientBoostingRegressor(random_state=0)
+    model = HistGradientBoostingRegressor(random_state=0, **(model_params or {}))
     model.fit(df_hist[usable_cols], df_hist["lmp"])
     return model, usable_cols
 
@@ -240,7 +312,8 @@ def find_similar_day(df, df_hist, target_date, n=2):
     return analogs
 
 
-def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False):
+def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
+                 model_params=None):
     """End-to-end driver shared by predict_dam.py/predict_rtm.py/predict_spread.py: builds the
     hourly grid, optionally attaches the same-hour DAM price as a feature, backtests, fits the
     final model, predicts tomorrow, finds a similar-day analog, and writes
@@ -250,7 +323,11 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False)
     and the output files. series_df is the series being predicted (DAM/RTM price, or the
     DAM-RTM spread); dam is always the DAM price series, used both to anchor "tomorrow" and,
     when attach_dam_feature=True, merged in as the 'dam_price' feature (predict_rtm.py/
-    predict_spread.py's FEATURE_COLS must include it; predict_dam.py doesn't need it)."""
+    predict_spread.py's FEATURE_COLS must include it; predict_dam.py doesn't need it).
+    model_params overrides DEFAULT_MODEL_PARAMS for this series (pass {} for scikit-learn's
+    own defaults); the same value is used for both the backtest and the shipped model so the
+    reported accuracy describes what actually produced the forecast."""
+    model_params = DEFAULT_MODEL_PARAMS if model_params is None else model_params
     load_fc, wind_fc, weather = load_forecast_inputs()
     target_date = determine_target_date(dam)
     tz = series_df["interval_start_local"].dt.tz
@@ -269,14 +346,23 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False)
         print("Note: data/dam_forecast.csv not found -- run predict_dam.py first for a same-hour DAM "
               "feature on the target day; tomorrow's hours will have no DAM info this run.")
 
-    metrics = backtest(df_hist, feature_cols, naive_col=f"{prefix}_lag_7d")
+    metrics = backtest(df_hist, feature_cols, naive_col=f"{prefix}_lag_7d", model_params=model_params)
     if metrics:
         print(f"Backtest (last {BACKTEST_DAYS}d): model MAE ${metrics['model_mae']:.2f} vs. "
               f"naive-lag-7d MAE ${metrics['naive_mae']:.2f} (RMSE ${metrics['model_rmse']:.2f})")
     else:
         print("Not enough history yet for a holdout backtest.")
 
-    model, usable_cols = fit_final_model(df_hist, feature_cols)
+    track_record = directional_backtest(metrics) if prefix == "spread" else None
+    if metrics:  # scored above; drop the raw series so they don't land in the meta JSON
+        for key in BACKTEST_SERIES_KEYS:
+            metrics.pop(key, None)
+    if track_record:
+        print(f"Directional track record: {track_record['correct']}-{track_record['n_hours'] - track_record['correct']} "
+              f"({track_record['win_rate']:.0f}% win rate), ${track_record['total_pnl']:.0f} of "
+              f"${track_record['optimal_pnl']:.0f} possible ({track_record['pct_of_optimal']:.0f}% of optimal)")
+
+    model, usable_cols = fit_final_model(df_hist, feature_cols, model_params=model_params)
     missing_features = df_target[feature_cols].isna().any(axis=1).sum()
     if missing_features:
         print(f"Warning: {missing_features} of {len(df_target)} target hours have missing inputs -- "
@@ -337,6 +423,7 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False)
         "analog_comparison_2": comparison_display(1),
         "recommended_hour": {"hour": best_hour, "expected_error": best_hour_mae} if best_hour else None,
         "backtest": metrics,
+        "directional_backtest": track_record,
     }
     if attach_dam_feature:
         meta["used_dam_forecast_feature"] = used_dam_forecast

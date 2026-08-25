@@ -106,6 +106,45 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
 <h3>Why this day? Tomorrow's forecast vs. the closest historical day{'s' if meta.get('analog_comparison_2') else ''}</h3>
 {analog_fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-analog')}""" if analog_fig else ''
 
+    # Directional track record (spread only -- DAM/RTM prices have no Long/Short to call):
+    # the model's own backtest predictions scored exactly like the Trading Simulator scores a
+    # human's calls (see forecast_common.directional_backtest). "Would I have trusted this
+    # model?" is a more direct question than the $ MAE above answers on its own.
+    track = meta.get('directional_backtest')
+    track_section_html = ''
+    if track:
+        pnl_cls = 'pos' if track['total_pnl'] > 0 else ('neg' if track['total_pnl'] < 0 else '')
+        # The naive rows are the honest bar: the spread is positive most hours, so always
+        # taking one side wins a lot of them. Beating zero is not the achievement -- beating
+        # these is. Which naive side wins flips between periods, so both are shown.
+        beats = max(track['naive_gen_pct'] or 0, track['naive_load_pct'] or 0)
+        verdict = ('beats both naive strategies' if (track['pct_of_optimal'] or 0) > beats
+                   else 'does NOT beat picking one side and holding it')
+        track_section_html = f"""
+<h3>If you'd followed this model's own calls (last {track['n_hours']}h backtest)</h3>
+<div class="stat-row">
+  <div class="stat-tile"><div class="stat-label">Record</div><div class="stat-value">{track['correct']}-{track['n_hours'] - track['correct']}</div>
+    <div class="stat-sub">{track['win_rate']:.0f}% win rate</div></div>
+  <div class="stat-tile highlight"><div class="stat-label">P&amp;L vs. optimal</div>
+    <div class="stat-value {pnl_cls}">${track['total_pnl']:,.0f} / ${track['optimal_pnl']:,.0f}</div>
+    <div class="stat-sub">{track['pct_of_optimal']:.0f}% of optimal (perfect hindsight)</div></div>
+</div>
+<table class="naive-table">
+  <thead><tr><th>Strategy</th><th>Win rate</th><th>P&amp;L</th><th>% of optimal</th></tr></thead>
+  <tbody>
+    <tr class="model-row"><td>This model</td><td>{track['win_rate']:.0f}%</td>
+      <td>${track['total_pnl']:,.0f}</td><td>{track['pct_of_optimal']:.0f}%</td></tr>
+    <tr><td>Always Virtual Gen</td><td>{track['naive_gen_win_rate']:.0f}%</td>
+      <td>${track['naive_gen_pnl']:,.0f}</td><td>{track['naive_gen_pct']:.0f}%</td></tr>
+    <tr><td>Always Virtual Load</td><td>{track['naive_load_win_rate']:.0f}%</td>
+      <td>${track['naive_load_pnl']:,.0f}</td><td>{track['naive_load_pct']:.0f}%</td></tr>
+  </tbody>
+</table>
+<p class="caveat">On this window the model {verdict}. Win rate alone is misleading here: the spread
+is positive most hours, so always going Virtual Gen wins more of them, but the losing hours are the
+big ones. Which naive side comes out ahead flips from period to period, so treat a single window as
+weak evidence.</p>"""
+
     tab_content_html = f"""
 <div id="tab-{tab_id}" class="tab-content">
 <h2>{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
@@ -114,6 +153,7 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
   <div class="stat-tile"><div class="stat-label">Naive baseline MAE</div><div class="stat-value">{naive_mae}</div></div>
   <div class="stat-tile"><div class="stat-label">Most confident hour</div><div class="stat-value">{confident_hour_label}</div></div>
 </div>
+{track_section_html}
 {fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-forecast')}
 {analog_section_html}
 </div>
@@ -347,7 +387,17 @@ html = f"""<html>
   .stat-tile {{ background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:12px 20px; }}
   .stat-label {{ color:#888; font-size:12px; }}
   .stat-value {{ color:#eee; font-size:22px; font-weight:600; margin-top:4px; }}
+  .stat-value.pos {{ color:{COLORS['positive']}; }}
+  .stat-value.neg {{ color:{COLORS['negative']}; }}
+  .stat-tile.highlight {{ border-color:#555; background:#202020; }}
   .stat-sub {{ color:#777; font-size:11px; margin-top:2px; }}
+  .naive-table {{ border-collapse:collapse; margin:4px 0 8px; font-size:13px; }}
+  .naive-table th, .naive-table td {{ padding:5px 22px 5px 0; text-align:right; border-bottom:1px solid #2a2a2a; font-variant-numeric:tabular-nums; }}
+  .naive-table th:first-child, .naive-table td:first-child {{ text-align:left; }}
+  .naive-table th {{ color:#888; font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }}
+  .naive-table td {{ color:#bbb; }}
+  .naive-table tr.model-row td {{ color:#eee; font-weight:600; }}
+  .caveat {{ color:#888; font-size:12px; max-width:760px; margin:0 0 8px; }}
   .stat-delta {{ font-size:12px; font-weight:600; margin-top:4px; }}
   .stat-delta.up {{ color:{COLORS['positive']}; }}
   .stat-delta.down {{ color:{COLORS['negative']}; }}

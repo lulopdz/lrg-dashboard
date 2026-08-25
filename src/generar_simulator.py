@@ -33,7 +33,11 @@ import os
 import pandas as pd
 
 DEFAULT_ZONE = 'OTTAWA'
-WIND_ZONE = 'Ontario Total'
+# 'West' rather than the headline 'Ontario Total': IESO only started publishing Ontario Total
+# on 2026-06-27, which left 401 of the 461 playable dates with an empty Wind Forecast tab.
+# West goes back to 2025-05-20 and is the region the wind fleet is actually in, so nearly
+# every simulated date now has wind context. Matches forecast_common.WIND_ZONE.
+WIND_ZONE = 'West'
 CONTEXT_DAYS = 14  # minimum trailing history required before a date becomes playable
 TRADING_CUTOFF_HOUR = 8  # HE08 -- RTM context for the chosen day stops here
 
