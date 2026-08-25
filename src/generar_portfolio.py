@@ -9,8 +9,7 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 
-from dashboard_data import COLORS
-from dashboard_figures import TABLE_ROW_HEIGHT
+from theme import COLORS, TABLE_ROW_HEIGHT
 
 os.makedirs('docs', exist_ok=True)
 
@@ -186,39 +185,75 @@ def _grid_cell_arrays(dates, month_df, whatif=False):
         text[i][TOTAL_COL] = f"{day_total:+.0f}"
         hover[i][TOTAL_COL] = f"Daily total: {fmt_money(day_total, signed=True)}"
 
+    # Trailing "Total" row: the mirror of the Total column above -- summed down each hour
+    # across every date in the month instead of across every hour within one date. Its
+    # bottom-right cell (Total row x Total column) is the grand total for the month, reached
+    # by summing the same rows a third way (by hour instead of by day); it should always match
+    # the Net PnL stat tile.
+    total_row = [GRID_CATEGORY['blank'] + 0.5] * 25
+    total_text = [''] * 25
+    total_hover = [''] * 25
+    for h in range(1, 25):
+        hour_rows = month_df[(month_df['hour'] == h) & month_df['outcome'].isin(included_outcomes)]
+        if hour_rows.empty:
+            continue
+        hour_effective = hour_rows.apply(_effective_pnl, axis=1)
+        if hour_effective.isna().all():
+            continue
+        hour_total = hour_effective.sum()
+        col = h - 1
+        total_row[col] = GRID_CATEGORY['Won' if hour_total > 0 else ('Lost' if hour_total < 0 else 'Flat')] + 0.5
+        total_text[col] = f"{hour_total:+.0f}"
+        total_hover[col] = f"HE{h:02d} total: {fmt_money(hour_total, signed=True)}"
+
+    month_rows = month_df[month_df['outcome'].isin(included_outcomes)]
+    month_effective = month_rows.apply(_effective_pnl, axis=1)
+    if month_effective.notna().any():
+        month_total = month_effective.sum()
+        total_row[TOTAL_COL] = GRID_CATEGORY['Won' if month_total > 0 else ('Lost' if month_total < 0 else 'Flat')] + 0.5
+        total_text[TOTAL_COL] = f"{month_total:+.0f}"
+        total_hover[TOTAL_COL] = f"Month total: {fmt_money(month_total, signed=True)}"
+
+    z.append(total_row)
+    text.append(total_text)
+    hover.append(total_hover)
+
     return z, text, hover
 
 
 def build_case_grid_fig(dates, z, text, hover):
-    """One row per report date that month, one column per hour (HE01-HE24) plus a trailing
-    Total column, colored by outcome instead of magnitude -- every case at a glance. z/text/
-    hover come from _grid_cell_arrays (real mode) -- the caller builds them separately instead
-    of this function doing it internally so the same call can also produce the what-if arrays
-    without wiring a second Heatmap trace just to get at them.
+    """One row per report date that month plus a trailing Total row, one column per hour
+    (HE01-HE24) plus a trailing Total column, colored by outcome instead of magnitude -- every
+    case at a glance. z/text/hover come from _grid_cell_arrays (real mode) -- the caller builds
+    them separately instead of this function doing it internally so the same call can also
+    produce the what-if arrays without wiring a second Heatmap trace just to get at them; that
+    also means z/text/hover already carry the trailing Total row/column baked in, so this
+    function just needs to grow date_strs by one label to line up with them.
     yaxis.type is forced to 'category': dates are strings that look like dates, and Plotly's
     default type inference reads them as a real date axis, spacing rows by elapsed calendar
     time instead of evenly -- rows for report dates separated by a weekend or a gap end up
     stretched apart. The other hourly tables never hit this because they show a contiguous
     day range with no gaps; report dates are inherently sparse."""
-    date_strs = [f"{d:%Y-%m-%d}" for d in dates]
+    row_labels = [f"{d:%Y-%m-%d}" for d in dates] + ['Total']
     n = len(dates)
 
     fig = go.Figure(go.Heatmap(
-        z=z, x=list(range(1, 26)), y=date_strs,
+        z=z, x=list(range(1, 26)), y=row_labels,
         text=text, texttemplate='%{text}', textfont=dict(size=10, color='#eee'),
-        customdata=hover, hovertemplate='Date %{y}, Hour %{x}<br>%{customdata}<extra></extra>',
+        customdata=hover, hovertemplate='%{y}, Hour %{x}<br>%{customdata}<extra></extra>',
         colorscale=_discrete_category_colorscale(GRID_COLORS), zmin=0, zmax=len(GRID_COLORS),
         showscale=False, xgap=2, ygap=2,
     ))
     fig.add_vline(x=24.5, line_color=COLORS['muted'], line_width=1)
+    fig.add_hline(y=n - 0.5, line_color=COLORS['muted'], line_width=1)
     fig.update_layout(
         template='plotly_dark', title=None,
         xaxis=dict(tickmode='array', tickvals=list(range(1, 25)) + [25], ticktext=[str(h) for h in range(1, 25)] + ['Total'],
                    range=[0.5, 25.5], side='top', gridcolor=COLORS['grid']),
-        yaxis=dict(type='category', tickmode='array', tickvals=date_strs, ticktext=date_strs,
+        yaxis=dict(type='category', tickmode='array', tickvals=row_labels, ticktext=row_labels,
                    autorange='reversed'),
         margin=dict(t=30, b=10, l=90, r=10),
-        height=40 + n * TABLE_ROW_HEIGHT,
+        height=40 + (n + 1) * TABLE_ROW_HEIGHT,
     )
     return fig
 
