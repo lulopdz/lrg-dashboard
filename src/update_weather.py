@@ -7,14 +7,22 @@ import requests_cache
 from retry_requests import retry
 
 OTTAWA_COORDS = {"lat": 45.4000, "lon": -75.7000}
-PORT_ALMA_COORDS = {"lat": 42.1808, "lon": -82.2444}  # secondary wind-speed station
+PORT_ALMA_COORDS = {"lat": 42.1808, "lon": -82.2444}  # the wind fleet's site, Chatham-Kent
+TORONTO_COORDS = {"lat": 43.6532, "lon": -79.3832}    # the province's load centre
 
 # Wind is pulled at both 10m (the standard met-station height) and 100m. 100m is roughly
 # turbine hub height, and since wind power scales with the cube of speed, the two are not
 # interchangeable -- at Port Alma the 100m mean runs ~1.7x the 10m mean, so 10m badly
 # understates what the fleet actually sees. 10m is kept because it's what the existing
 # history is built on and it stays the right number for a "what's the weather" read.
-PORT_ALMA_WIND_VARS = ["wind_speed_10m", "wind_speed_100m"]
+# Solar is here too: Port Alma is where generation actually sits, so its irradiance is the
+# one that matters for supply, while Ottawa's is a local-conditions read.
+PORT_ALMA_VARS = ["wind_speed_10m", "wind_speed_100m", "shortwave_radiation"]
+
+# Toronto drives provincial demand far more than Ottawa does, so its temperature, wind and
+# humidity are load signals rather than local colour. Only those three -- precipitation and
+# snowfall there would be noise nothing reads.
+TORONTO_VARS = ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"]
 
 WEATHER_VARIABLES = [
     "temperature_2m",
@@ -24,6 +32,12 @@ WEATHER_VARIABLES = [
     "wind_speed_10m",
     "shortwave_radiation",
     "global_tilted_irradiance",
+]
+
+# (coords, variables, suffix) for every station joined onto the Ottawa frame.
+SECONDARY_STATIONS = [
+    (PORT_ALMA_COORDS, PORT_ALMA_VARS, "port_alma"),
+    (TORONTO_COORDS, TORONTO_VARS, "toronto"),
 ]
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "OTTAWA_weather.csv"
@@ -82,9 +96,12 @@ def update_weather():
     df_new.index.name = "timestamp"
     df_new = df_new.reset_index()
 
-    port_alma = _fetch(openmeteo, PORT_ALMA_COORDS, PORT_ALMA_WIND_VARS, past_days, FORECAST_DAYS)
-    port_alma = port_alma.rename(columns={v: f"{v}_port_alma" for v in PORT_ALMA_WIND_VARS})
-    df_new = df_new.set_index("timestamp").join(port_alma, how="left").reset_index()
+    df_new = df_new.set_index("timestamp")
+    for coords, variables, suffix in SECONDARY_STATIONS:
+        station = _fetch(openmeteo, coords, variables, past_days, FORECAST_DAYS)
+        station = station.rename(columns={v: f"{v}_{suffix}" for v in variables})
+        df_new = df_new.join(station, how="left")
+    df_new = df_new.reset_index()
 
     if DATA_PATH.exists():
         existing_df = pd.read_csv(DATA_PATH)

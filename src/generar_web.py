@@ -5,11 +5,12 @@ import pandas as pd
 
 from dashboard_data import (
     COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
-    SUPPLY_MIX, TABLE_DAYS, WEATHER_VARS, adequacy, dam, default_date_idx,
+    SUPPLY_MIX, TABLE_DAYS, WEATHER_GROUPS, WEATHER_VARS, adequacy, dam, default_date_idx,
     default_forecast_date_idx, default_load_idx, default_weather_idx, default_wind_idx,
     latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
-    today_date, weather, weather_confidence, weather_latest_ts, weather_var_keys,
-    wind_forecast, wind_latest_ts, wind_zones, zones,
+    today_date, weather, weather_confidence, weather_label, weather_label_html,
+    weather_latest_ts,
+    weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
@@ -248,8 +249,8 @@ TAB_ZONES = {
     'spread': {'label': 'Zone', 'options': zones, 'default': DEFAULT_ZONE, 'hourlyDiv': 'spread-hourly', 'tableDiv': 'spread-table'},
     'weather': {
         'label': 'Variable',
-        'options': [WEATHER_VARS[v][0] for v in weather_var_keys],
-        'default': WEATHER_VARS[weather_var_keys[default_weather_idx]][0],
+        'options': [weather_label(v) for v in weather_var_keys],
+        'default': weather_label(weather_var_keys[default_weather_idx]),
         'tableDiv': 'weather-table',
     },
     'load': {
@@ -296,7 +297,7 @@ os.makedirs('docs', exist_ok=True)
 
 ZONES_JSON = json.dumps(zones)
 DATES_JSON = json.dumps(DAY_OPTION_STRS)
-WEATHER_LABELS_JSON = json.dumps([WEATHER_VARS[v][0] for v in weather_var_keys])
+WEATHER_LABELS_JSON = json.dumps([weather_label(v) for v in weather_var_keys])
 
 LOAD_LABELS_JSON = json.dumps([LOAD_VARS[v][0] for v in load_var_keys])
 LOAD_Y_AXIS_TITLES = [f'{LOAD_VARS[v][0]} ({LOAD_VARS[v][1]})' for v in load_var_keys]
@@ -330,7 +331,7 @@ def weather_stat_tiles_html():
 
     tiles = []
     for v in weather_var_keys:
-        label, unit = WEATHER_VARS[v]
+        label, unit = weather_label_html(v), WEATHER_VARS[v][1]
         tomorrow_avg = tomorrow_day[v].mean() if len(tomorrow_day) else None
         if tomorrow_avg is None or pd.isna(tomorrow_avg):
             continue
@@ -402,7 +403,7 @@ def weather_stability_html():
 
     rows = []
     for v in weather_var_keys:
-        label, unit = WEATHER_VARS[v]
+        label, unit = weather_label_html(v), WEATHER_VARS[v][1]
         rev1, rev2 = revision(v, 1), revision(v, 2)
         if rev1 is None and rev2 is None:
             continue
@@ -415,7 +416,7 @@ def weather_stability_html():
     return f"""
 <h3>How much tomorrow's forecast has been moving</h3>
 <table class="naive-table">
-  <thead><tr><th>Variable</th><th>vs. yesterday's run</th><th>vs. 2 days ago</th></tr></thead>
+  <thead><tr><th>Variable</th><th>1 day ago</th><th>2 days ago</th></tr></thead>
   <tbody>
 {chr(10).join(rows)}
   </tbody>
@@ -427,18 +428,30 @@ Percentages are against each variable's normal hourly swing (30-day std), so row
 
 def weather_grid_html():
     """One small chart per weather variable (see build_weather_grid_figs) instead of one big
-    chart with a variable dropdown -- every variable visible at once."""
-    tiles = []
-    for i, v in enumerate(weather_var_keys):
-        label, unit = WEATHER_VARS[v]
-        div_id = f'weather-grid-{i}'
-        fig_html = weather_grid_figs[v].to_html(full_html=False, include_plotlyjs=False, div_id=div_id)
-        tiles.append(f"""<div class="weather-tile">
+    chart with a variable dropdown -- every variable visible at once.
+
+    Grouped by site rather than run as one long grid: with three sites sharing the same three
+    core variables, the useful comparison is across sites, and a three-column section per site
+    puts Toronto's temperature directly above Ottawa's. Charts keep the bare variable name --
+    the section heading says where."""
+    idx = {v: i for i, v in enumerate(weather_var_keys)}
+    sections = []
+    for heading, keys in WEATHER_GROUPS.items():
+        tiles = []
+        for v in keys:
+            label, unit = WEATHER_VARS[v]
+            div_id = f'weather-grid-{idx[v]}'
+            fig_html = weather_grid_figs[v].to_html(full_html=False, include_plotlyjs=False, div_id=div_id)
+            tiles.append(f"""<div class="weather-tile">
   <h3>{label} ({unit})</h3>
   {fig_html}
   {register_fig(div_id, 3 + ENSEMBLE_TRACES, label, zones_json=json.dumps([label]), show_title=False)}
 </div>""")
-    return '\n'.join(tiles)
+        sections.append(f"""<h3 class="grid-section">{heading}</h3>
+<div class="weather-grid">
+{chr(10).join(tiles)}
+</div>""")
+    return '\n'.join(sections)
 
 
 
@@ -602,12 +615,19 @@ html = f"""<html>
      which a wide table would otherwise blow past. */
   .summary-split {{ display:flex; gap:24px; align-items:flex-start; margin:16px 0; }}
   .summary-half {{ flex:1 1 0; min-width:0; }}
+  /* 1.5 : 1 is a 60/40 split. Opt-in rather than the default because the Spread Forecast
+     tab shares this layout and its table is four columns wide, so it needs the even halves. */
+  .summary-half.wide {{ flex:1.5 1 0; }}
   .summary-half h3 {{ margin:0 0 10px; font-size:13px; color:#ccc; font-weight:600; }}
   .summary-half .stat-row {{ margin:0; gap:12px; }}
   .summary-half .stat-tile {{ flex:1 1 150px; padding:10px 16px; }}
   .summary-half .stat-value {{ font-size:19px; }}
   .summary-half .naive-table {{ width:100%; }}
-  .summary-half .naive-table th, .summary-half .naive-table td {{ padding:5px 10px 5px 0; }}
+  .summary-half .naive-table {{ font-size:12px; }}
+  .summary-half .naive-table th, .summary-half .naive-table td {{ padding:3px 10px 3px 0; }}
+  /* Site qualifier on a variable name: present but recessive, so the variable stays the
+     thing you scan down and the extra words don't widen the column. */
+  .site {{ color:#777; font-size:0.85em; }}
   @media (max-width: 1100px) {{ .summary-split {{ flex-direction:column; }} }}
   .stat-delta {{ font-size:12px; font-weight:600; margin-top:4px; }}
   .stat-delta.up {{ color:{COLORS['positive']}; }}
@@ -617,6 +637,11 @@ html = f"""<html>
   .chart-legend {{ display:flex; gap:20px; align-items:center; font-size:12px; color:#aaa; margin:16px 0 8px; }}
   .chart-legend i {{ display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; }}
   .chart-legend i.band {{ height:10px; border-radius:2px; }}
+  /* Section label above each site's row of charts. Kept light so it separates the groups
+     without competing with the card headings on the rest of the page. */
+  .grid-section {{ margin:20px 0 8px; font-size:12px; font-weight:600; color:#999;
+    text-transform:uppercase; letter-spacing:0.6px; }}
+  .grid-section:first-of-type {{ margin-top:8px; }}
   .weather-grid {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:0 0 16px; }}
   @media (max-width: 900px) {{ .weather-grid {{ grid-template-columns:repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .weather-grid {{ grid-template-columns:1fr; }} }}
@@ -932,7 +957,7 @@ function copyTableTSV(btn, plotlyDivId) {{
 
 <div id="tab-weather" class="tab-content">
 <div class="summary-split">
-  <div class="summary-half">
+  <div class="summary-half wide">
     <h3>Tomorrow's daily average</h3>
     <div class="stat-row">
 {weather_stat_tiles_html()}
@@ -948,9 +973,7 @@ function copyTableTSV(btn, plotlyDivId) {{
   <span><i style="background:{COLORS['dam']}"></i>Selected day</span>
   <span><i class="band" style="background:rgba(52,152,219,0.35)"></i>Ensemble p10&ndash;p90</span>
 </div>
-<div class="weather-grid">
 {weather_grid_html()}
-</div>
 <div class="card">
   <div class="section-header">
     <h2>Hourly Table (last {TABLE_DAYS} days)</h2>

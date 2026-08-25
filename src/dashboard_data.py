@@ -82,14 +82,62 @@ default_idx = zones.index(DEFAULT_ZONE)
 # moves price; Ottawa's is the pricing zone's own weather. The two sit in the same grid
 # column (positions 2 and 5) so they stack vertically and can be read against each other.
 WEATHER_VARS = {
+    # Toronto -- the province's load centre, so its weather is a demand signal. Its wind and
+    # humidity correlate only ~0.45-0.48 with Ottawa's, i.e. they carry their own information
+    # rather than restating it; temperature tracks closely (0.96) but runs ~2 C warmer.
+    "temperature_2m_toronto": ("Temperature", "°C"),
+    "wind_speed_10m_toronto": ("Wind 10m", "m/s"),
+    "relative_humidity_2m_toronto": ("Humidity", "%"),
+    # Ottawa -- the pricing zone itself.
     "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_100m_port_alma": ("Wind 100m · Port Alma", "m/s"),
+    "wind_speed_10m": ("Wind 10m", "m/s"),
     "relative_humidity_2m": ("Humidity", "%"),
-    "precipitation": ("Precipitation", "mm"),
-    "wind_speed_10m": ("Wind 10m · Ottawa", "m/s"),
+    # Port Alma -- where the wind fleet sits, so these are supply signals.
+    "wind_speed_100m_port_alma": ("Wind 100m", "m/s"),
+    "shortwave_radiation_port_alma": ("Solar Radiation", "W/m²"),
+    # Remaining Ottawa conditions.
     "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    "precipitation": ("Precipitation", "mm"),
     "snowfall": ("Snowfall", "cm"),
 }
+
+# Section -> variables, in render order. Labels above are deliberately bare (no site name)
+# because the section heading carries it; that also keeps the three-column grid aligned, so
+# Toronto's temperature sits directly above Ottawa's and the two read as one comparison.
+WEATHER_GROUPS = {
+    "Demand centre · Toronto": ["temperature_2m_toronto", "wind_speed_10m_toronto",
+                                 "relative_humidity_2m_toronto"],
+    "Pricing zone · Ottawa": ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"],
+    "Generation site · Port Alma": ["wind_speed_100m_port_alma", "shortwave_radiation_port_alma"],
+    "Other conditions · Ottawa": ["shortwave_radiation", "precipitation", "snowfall"],
+}
+
+# Where a label appears away from its section heading (stat tiles, the revision table, the
+# hourly table's variable picker) it needs the site spelled out -- including Ottawa's, which
+# would otherwise be the only unlabelled ones and read as if the site were missing rather
+# than implied.
+WEATHER_SITE = {
+    "temperature_2m_toronto": "Toronto", "wind_speed_10m_toronto": "Toronto",
+    "relative_humidity_2m_toronto": "Toronto",
+    "wind_speed_100m_port_alma": "Port Alma", "shortwave_radiation_port_alma": "Port Alma",
+    "temperature_2m": "Ottawa", "wind_speed_10m": "Ottawa", "relative_humidity_2m": "Ottawa",
+    "shortwave_radiation": "Ottawa", "precipitation": "Ottawa", "snowfall": "Ottawa",
+}
+
+
+def weather_label(key, qualified=True):
+    """Display label for a weather variable, optionally with its site."""
+    label = WEATHER_VARS[key][0]
+    site = WEATHER_SITE.get(key)
+    return f"{label} · {site}" if qualified and site else label
+
+
+def weather_label_html(key):
+    """Same, with the site as a dimmer suffix so the variable name stays the thing you scan
+    and the qualifier doesn't widen the column as much as plain text would."""
+    label = WEATHER_VARS[key][0]
+    site = WEATHER_SITE.get(key)
+    return f'{label} <span class="site">{site}</span>' if site else label
 weather_var_keys = list(WEATHER_VARS.keys())
 default_weather_idx = 0  # Temperature
 

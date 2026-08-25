@@ -32,6 +32,7 @@ MODEL = "ecmwf_ifs025"
 
 OTTAWA = {"lat": 45.4000, "lon": -75.7000}
 PORT_ALMA = {"lat": 42.1808, "lon": -82.2444}
+TORONTO = {"lat": 43.6532, "lon": -79.3832}
 
 # (request variable, column prefix used in the output + in OTTAWA_weather.csv)
 OTTAWA_VARS = [
@@ -42,7 +43,15 @@ OTTAWA_VARS = [
     ("wind_speed_10m", "wind_speed_10m"),
     ("shortwave_radiation", "shortwave_radiation"),
 ]
-PORT_ALMA_VARS = [("wind_speed_100m", "wind_speed_100m_port_alma")]
+PORT_ALMA_VARS = [
+    ("wind_speed_100m", "wind_speed_100m_port_alma"),
+    ("shortwave_radiation", "shortwave_radiation_port_alma"),
+]
+TORONTO_VARS = [
+    ("temperature_2m", "temperature_2m_toronto"),
+    ("wind_speed_10m", "wind_speed_10m_toronto"),
+    ("relative_humidity_2m", "relative_humidity_2m_toronto"),
+]
 
 PAST_DAYS = 3      # as far back as the ensemble endpoint serves
 FORECAST_DAYS = 3
@@ -115,7 +124,8 @@ def run_revisions(coords, variables):
 def build():
     frames = []
     for coords, variables, label in [(OTTAWA, OTTAWA_VARS, "Ottawa"),
-                                      (PORT_ALMA, PORT_ALMA_VARS, "Port Alma")]:
+                                      (PORT_ALMA, PORT_ALMA_VARS, "Port Alma"),
+                                      (TORONTO, TORONTO_VARS, "Toronto")]:
         spread = ensemble_spread(coords, variables)
         revisions = run_revisions(coords, variables)
         merged = spread.merge(revisions, on="timestamp", how="outer")
