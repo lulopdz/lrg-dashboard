@@ -455,55 +455,71 @@ def weather_grid_html():
 
 
 
-def supply_mix_stat_tiles():
-    """Headline adequacy numbers for the same day the charts open on (tomorrow). Baked for that
-    one day rather than wired to the Day picker, matching how the Weather tab's tiles work.
+SUPPLY_TILE_LABELS = ['Peak available supply', 'Tightest capacity margin',
+                      'Capacity on outage', 'Peak renewable output']
 
-    Every figure here is computed from columns the report publishes ahead, so they all have a
-    value for tomorrow. A renewable *share* tile used to sit here; it needed scheduled output
-    in the denominator, which doesn't exist for future days -- see the Forecast renewable
-    output tile below, which reports MW instead of an invented percentage."""
-    target = DAY_OPTIONS[default_forecast_date_idx]
-    day = adequacy[adequacy['interval_start_local'].dt.date == target]
-    if day.empty:
-        return ''
 
-    def available(fuel):
-        cap, out = f'{fuel}_capacity', f'{fuel}_outages'
-        return (day[cap] - day[out]) if cap in day.columns and out in day.columns else None
+def supply_mix_tile_data():
+    """{date_str: [{value, sub}, ...]} for every day in the picker, so the tiles can track the
+    Day selector instead of being frozen on the day the page happened to be generated. They
+    used to be baked for one day and silently kept showing it while the charts moved, which
+    read as the numbers simply being wrong.
 
+    Every figure here comes from columns the report publishes ahead, so future days are
+    covered. A renewable *share* tile used to sit here; its denominator needs scheduled
+    output, which future days don't have -- hence renewable output in MW instead of an
+    invented percentage."""
     fuels = [c.rsplit('_', 1)[0] for c in SUPPLY_MIX]
-    parts = [s for s in (available(f) for f in fuels) if s is not None]
-    total = sum(p.fillna(0) for p in parts) if parts else None
-
-    tiles = []
-    if total is not None and total.notna().any():
-        tiles.append(('Peak available supply', f'{total.max():,.0f} MW',
-                       f'at HE{int(day.loc[total.idxmax(), "hour"]):02d}'))
-    if 'capacity_excess_shortfall' in day.columns and day['capacity_excess_shortfall'].notna().any():
-        margin = day['capacity_excess_shortfall']
-        tiles.append(('Tightest capacity margin', f'{margin.min():,.0f} MW',
-                       f'at HE{int(day.loc[margin.idxmin(), "hour"]):02d}'))
     outage_cols = [c for c in ('nuclear_outages', 'gas_outages', 'hydro_outages',
-                                'wind_outages', 'solar_outages') if c in day.columns]
-    if outage_cols:
-        out = day[outage_cols].sum(axis=1)
-        if out.notna().any():
-            tiles.append(('Capacity on outage', f'{out.mean():,.0f} MW', 'daily average'))
+                                'wind_outages', 'solar_outages') if c in adequacy.columns]
     renew_cols = [c for c in ('hydro_forecasted_mwh', 'wind_forecasted', 'solar_forecasted')
-                  if c in day.columns]
-    if renew_cols:
-        renew = day[renew_cols].sum(axis=1)
-        if renew.notna().any():
-            tiles.append(('Peak renewable output', f'{renew.max():,.0f} MW',
-                           f'at HE{int(day.loc[renew.idxmax(), "hour"]):02d}'))
+                  if c in adequacy.columns]
+    adq_dates = adequacy['interval_start_local'].dt.date
 
+    def tile(value, sub):
+        return {'value': value, 'sub': sub}
+
+    out = {}
+    for date in DAY_OPTIONS:
+        day = adequacy[adq_dates == date]
+        if day.empty:
+            continue
+        entries = []
+
+        parts = [(day[f'{f}_capacity'] - day[f'{f}_outages']) for f in fuels
+                 if f'{f}_capacity' in day.columns and f'{f}_outages' in day.columns]
+        total = sum(p.fillna(0) for p in parts) if parts else None
+        entries.append(tile(f'{total.max():,.0f} MW', f'at HE{int(day.loc[total.idxmax(), "hour"]):02d}')
+                       if total is not None and total.notna().any() else None)
+
+        margin = day['capacity_excess_shortfall'] if 'capacity_excess_shortfall' in day.columns else None
+        entries.append(tile(f'{margin.min():,.0f} MW', f'at HE{int(day.loc[margin.idxmin(), "hour"]):02d}')
+                       if margin is not None and margin.notna().any() else None)
+
+        outage = day[outage_cols].sum(axis=1) if outage_cols else None
+        entries.append(tile(f'{outage.mean():,.0f} MW', 'daily average')
+                       if outage is not None and outage.notna().any() else None)
+
+        renew = day[renew_cols].sum(axis=1) if renew_cols else None
+        entries.append(tile(f'{renew.max():,.0f} MW', f'at HE{int(day.loc[renew.idxmax(), "hour"]):02d}')
+                       if renew is not None and renew.notna().any() else None)
+
+        if any(entries):
+            out[str(date)] = entries
+    return out
+
+
+def supply_mix_stat_tiles():
+    """Empty shells; updateSupplyTiles() fills them from SUPPLY_TILE_DATA for the selected day."""
     return '\n'.join(
-        f'<div class="stat-tile"><div class="stat-label">{label}</div>'
-        f'<div class="stat-value">{value}</div>'
-        + (f'<div class="stat-sub">{sub}</div>' if sub else '') + '</div>'
-        for label, value, sub in tiles
+        f'<div class="stat-tile" id="supply-tile-{i}"><div class="stat-label">{label}</div>'
+        f'<div class="stat-value"></div><div class="stat-sub"></div></div>'
+        for i, label in enumerate(SUPPLY_TILE_LABELS)
     )
+
+
+SUPPLY_TILE_DATA_JSON = json.dumps(supply_mix_tile_data() if adequacy is not None else {})
+SUPPLY_TILE_LABELS_JSON = json.dumps(SUPPLY_TILE_LABELS)
 
 
 def adequacy_grid_html():
@@ -663,6 +679,9 @@ const TAB_DATES = {TAB_DATES_JSON};
 // traces. Read by showCompactZone() to recompute DAM/RTM on the fly when a non-default zone
 // is picked, instead of shipping every zone x day combination pre-baked.
 const COMPACT_ZONE_DATA = {COMPACT_ZONE_DATA_JSON};
+// Per-day Supply Mix tile values, so the tiles follow the Day picker like the charts do.
+const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
+const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
 let currentTab = 'dam';
 
 function showTab(name, btn) {{
@@ -698,6 +717,8 @@ function showTab(name, btn) {{
   }} else {{
     zoneGroup.style.display = 'none';
   }}
+
+  updateSupplyTiles();
 }}
 
 const FIG_CONFIGS = {{}};
@@ -833,8 +854,25 @@ function applyFigSelection(divId) {{
   Plotly.relayout(divId, relayout);
 }}
 
+// The Supply Mix tiles are per-day like the charts beside them, so they have to be repainted
+// whenever the Day picker moves -- otherwise they sit showing another day's numbers with
+// nothing on screen saying so.
+function updateSupplyTiles() {{
+  const day = SUPPLY_TILE_DATA[document.getElementById('global-date').value];
+  SUPPLY_TILE_LABELS.forEach((_, i) => {{
+    const tile = document.getElementById('supply-tile-' + i);
+    if (!tile) return;
+    const entry = day ? day[i] : null;
+    tile.style.display = entry ? '' : 'none';
+    if (!entry) return;
+    tile.querySelector('.stat-value').textContent = entry.value;
+    tile.querySelector('.stat-sub').textContent = entry.sub || '';
+  }});
+}}
+
 function applyAllFigs() {{
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
+  updateSupplyTiles();
 }}
 
 function applyZoneChange() {{
@@ -867,6 +905,10 @@ function copyTableTSV(btn, plotlyDivId) {{
     .then(() => {{ btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1800); }})
     .catch(() => {{ btn.textContent = 'Failed';  setTimeout(() => btn.textContent = 'Copy', 1800); }});
 }}
+
+// This script block runs before the body, so the tiles it fills don't exist yet -- they start
+// as empty shells and get their first paint once the DOM is up.
+document.addEventListener('DOMContentLoaded', updateSupplyTiles);
 </script>
 
 <div class="tabs-row">
