@@ -25,7 +25,7 @@ FEATURE_COLS = [
     "ontario", "ontario_northeast", "ontario_northwest", "ontario_southwest", "ontario_southeast",
     "wind_forecast",
     "temperature_2m", "relative_humidity_2m", "precipitation", "snowfall", "wind_speed_10m", "shortwave_radiation",
-    "wind_speed_10m_port_alma",  # wind at the turbine site (Chatham-Kent), full history
+    "wind_speed_100m_port_alma",  # wind at turbine hub height, Chatham-Kent (see update_weather.py)
     "dam_price",
     "rtm_lag_1d", "rtm_lag_7d", "rtm_roll_7d", "rtm_roll_28d",
 ]

@@ -7,12 +7,13 @@ from dashboard_data import (
     COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
     TABLE_DAYS, WEATHER_VARS, dam, default_date_idx, default_forecast_date_idx, default_load_idx,
     default_weather_idx, default_wind_idx, latest_ts, load_forecast, load_latest_ts,
-    load_var_keys, rtm, rtm_latest_ts, spread, today_date, weather,
+    load_var_keys, rtm, rtm_latest_ts, spread, today_date, weather, weather_confidence,
     weather_latest_ts, weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from dashboard_figures import (
-    build_analog_comparison_fig, build_forecast_fig, build_hourly_fig, build_spread_detail_fig,
-    build_table_fig, build_weather_grid_figs, build_wide_hourly_fig, build_wide_table_fig,
+    ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
+    build_spread_detail_fig, build_table_fig, build_weather_grid_figs, build_wide_hourly_fig,
+    build_wide_table_fig,
 )
 
 
@@ -62,7 +63,9 @@ COMPACT_ZONE_DATA_JSON = json.dumps({
 spread_hourly_fig = build_spread_detail_fig(polished=True, compact_zones=True)
 spread_table_fig = build_table_fig(spread, 'Spread (DAM - RTM)', diverging=True, polished=True)
 
-weather_grid_figs = build_weather_grid_figs(weather, 'timestamp', WEATHER_VARS, default_day_idx=default_forecast_date_idx)
+weather_grid_figs = build_weather_grid_figs(weather, 'timestamp', WEATHER_VARS,
+                                             default_day_idx=default_forecast_date_idx,
+                                             confidence=weather_confidence)
 weather_table_fig = build_wide_table_fig(weather, 'timestamp', WEATHER_VARS, default_weather_idx, 'Weather', polished=True)
 
 load_hourly_fig = build_wide_hourly_fig(load_forecast, 'interval_start_local', LOAD_VARS, default_load_idx, 'Load Forecast',
@@ -121,29 +124,35 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
         verdict = ('beats both naive strategies' if (track['pct_of_optimal'] or 0) > beats
                    else 'does NOT beat picking one side and holding it')
         track_section_html = f"""
-<h3>If you'd followed this model's own calls (last {track['n_hours']}h backtest)</h3>
-<div class="stat-row">
-  <div class="stat-tile"><div class="stat-label">Record</div><div class="stat-value">{track['correct']}-{track['n_hours'] - track['correct']}</div>
-    <div class="stat-sub">{track['win_rate']:.0f}% win rate</div></div>
-  <div class="stat-tile highlight"><div class="stat-label">P&amp;L vs. optimal</div>
-    <div class="stat-value {pnl_cls}">${track['total_pnl']:,.0f} / ${track['optimal_pnl']:,.0f}</div>
-    <div class="stat-sub">{track['pct_of_optimal']:.0f}% of optimal (perfect hindsight)</div></div>
-</div>
-<table class="naive-table">
-  <thead><tr><th>Strategy</th><th>Win rate</th><th>P&amp;L</th><th>% of optimal</th></tr></thead>
-  <tbody>
-    <tr class="model-row"><td>This model</td><td>{track['win_rate']:.0f}%</td>
-      <td>${track['total_pnl']:,.0f}</td><td>{track['pct_of_optimal']:.0f}%</td></tr>
-    <tr><td>Always Virtual Gen</td><td>{track['naive_gen_win_rate']:.0f}%</td>
-      <td>${track['naive_gen_pnl']:,.0f}</td><td>{track['naive_gen_pct']:.0f}%</td></tr>
-    <tr><td>Always Virtual Load</td><td>{track['naive_load_win_rate']:.0f}%</td>
-      <td>${track['naive_load_pnl']:,.0f}</td><td>{track['naive_load_pct']:.0f}%</td></tr>
-  </tbody>
-</table>
-<p class="caveat">On this window the model {verdict}. Win rate alone is misleading here: the spread
-is positive most hours, so always going Virtual Gen wins more of them, but the losing hours are the
-big ones. Which naive side comes out ahead flips from period to period, so treat a single window as
-weak evidence.</p>"""
+<div class="summary-split">
+  <div class="summary-half">
+    <h3>If you'd followed this model's own calls (last {track['n_hours']}h)</h3>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="stat-label">Record</div><div class="stat-value">{track['correct']}-{track['n_hours'] - track['correct']}</div>
+        <div class="stat-sub">{track['win_rate']:.0f}% win rate</div></div>
+      <div class="stat-tile highlight"><div class="stat-label">P&amp;L vs. optimal</div>
+        <div class="stat-value {pnl_cls}">${track['total_pnl']:,.0f} / ${track['optimal_pnl']:,.0f}</div>
+        <div class="stat-sub">{track['pct_of_optimal']:.0f}% of optimal (perfect hindsight)</div></div>
+    </div>
+  </div>
+  <div class="summary-half">
+    <h3>Versus never changing your mind</h3>
+    <table class="naive-table">
+      <thead><tr><th>Strategy</th><th>Win rate</th><th>P&amp;L</th><th>% of optimal</th></tr></thead>
+      <tbody>
+        <tr class="model-row"><td>This model</td><td>{track['win_rate']:.0f}%</td>
+          <td>${track['total_pnl']:,.0f}</td><td>{track['pct_of_optimal']:.0f}%</td></tr>
+        <tr><td>Always Virtual Gen</td><td>{track['naive_gen_win_rate']:.0f}%</td>
+          <td>${track['naive_gen_pnl']:,.0f}</td><td>{track['naive_gen_pct']:.0f}%</td></tr>
+        <tr><td>Always Virtual Load</td><td>{track['naive_load_win_rate']:.0f}%</td>
+          <td>${track['naive_load_pnl']:,.0f}</td><td>{track['naive_load_pct']:.0f}%</td></tr>
+      </tbody>
+    </table>
+    <p class="caveat">Here the model {verdict}. Win rate misleads: the spread is positive most hours,
+    so always going Virtual Gen wins more of them &mdash; but the losing hours are the big ones. Which
+    naive side wins flips between periods, so one window is weak evidence.</p>
+  </div>
+</div>"""
 
     tab_content_html = f"""
 <div id="tab-{tab_id}" class="tab-content">
@@ -304,12 +313,87 @@ def weather_stat_tiles_html():
             delta_html = f'<div class="stat-delta {direction}">{arrow} {delta:+.1f} {unit} vs today</div>'
         else:
             delta_html = '<div class="stat-sub">No data for today</div>'
+        # "(avg, tomorrow)" used to be repeated on every tile; it's now said once in the
+        # section heading instead, which is what lets these sit two-abreast next to the
+        # revision table rather than stretching across the full width.
         tiles.append(f"""<div class="stat-tile">
-  <div class="stat-label">{label} (avg, tomorrow)</div>
+  <div class="stat-label">{label}</div>
   <div class="stat-value">{tomorrow_avg:.1f} {unit}</div>
   {delta_html}
 </div>""")
     return '\n'.join(tiles)
+
+
+def weather_stability_html():
+    """How much tomorrow's forecast has moved between successive model runs -- one column per
+    lead time, so you can see whether it is converging or still wandering.
+
+    Reading two lead times together is what makes this useful: if the 2-day-ago column is
+    large and the 1-day-ago column is small, the forecast has settled and can be trusted. If
+    both are large it is still moving. If the 1-day column is the larger of the two, something
+    changed late, which is the least comfortable case.
+
+    The ensemble spread (how far apart ECMWF's members are) is not repeated here -- it is
+    already drawn as the shaded band on each chart above."""
+    if weather_confidence is None:
+        return ''
+    tomorrow_date = today_date + pd.Timedelta(days=1)
+    conf = weather_confidence[weather_confidence['timestamp'].dt.date == tomorrow_date]
+    fc = weather[weather['timestamp'].dt.date == tomorrow_date]
+    if conf.empty or fc.empty:
+        return ''
+
+    # Both figures are also shown as a share of how much the variable normally moves (its
+    # hourly standard deviation over the trailing 30 days). The raw numbers can't be compared
+    # across variables or judged on their own -- 67 W/m2 of solar spread sounds alarming until
+    # you see solar's normal swing is 289, making it the *most* trustworthy row here. Dividing
+    # by the mean instead would be wrong: temperature in Celsius is an interval scale (a "% of
+    # 16 degrees" means nothing), and precipitation/snowfall average ~0 so it would explode.
+    recent = weather[weather['timestamp'] >= weather['timestamp'].max() - pd.Timedelta(days=30)]
+
+    def relative(value, var):
+        sd = recent[var].std()
+        if value is None or pd.isna(value) or not sd or sd < 1e-9:
+            return ''
+        return f' <span class="rel">({value / sd * 100:.0f}%)</span>'
+
+    def cell(value, var, unit):
+        if value is None or pd.isna(value):
+            return '—'
+        return f'{value:.1f} {unit}{relative(value, var)}'
+
+    def revision(var, days_ago):
+        """Mean absolute gap between the current forecast for tomorrow and what the run
+        `days_ago` days earlier said for those same hours."""
+        col = f'{var}_prev{days_ago}'
+        if col not in conf.columns or not conf[col].notna().any():
+            return None
+        merged = fc[['hour', var]].merge(conf[['hour', col]], on='hour', how='inner').dropna()
+        return (merged[var] - merged[col]).abs().mean() if not merged.empty else None
+
+    rows = []
+    for v in weather_var_keys:
+        label, unit = WEATHER_VARS[v]
+        rev1, rev2 = revision(v, 1), revision(v, 2)
+        if rev1 is None and rev2 is None:
+            continue
+        rows.append(f"""<tr><td>{label}</td>
+  <td>{cell(rev1, v, unit)}</td>
+  <td>{cell(rev2, v, unit)}</td></tr>""")
+    if not rows:
+        return ''
+
+    return f"""
+<h3>How much tomorrow's forecast has been moving</h3>
+<table class="naive-table">
+  <thead><tr><th>Variable</th><th>vs. yesterday's run</th><th>vs. 2 days ago</th></tr></thead>
+  <tbody>
+{chr(10).join(rows)}
+  </tbody>
+</table>
+<p class="caveat">Shift from what the model said 1 and 2 days ago for the same hours. Big 2-day next to
+small 1-day = it has settled; both big = still wandering; 1-day bigger = something changed late.
+Percentages are against each variable's normal hourly swing (30-day std), so rows compare.</p>"""
 
 
 def weather_grid_html():
@@ -323,7 +407,7 @@ def weather_grid_html():
         tiles.append(f"""<div class="weather-tile">
   <h3>{label} ({unit})</h3>
   {fig_html}
-  {register_fig(div_id, 3, label, zones_json=json.dumps([label]), show_title=False)}
+  {register_fig(div_id, 3 + ENSEMBLE_TRACES, label, zones_json=json.dumps([label]), show_title=False)}
 </div>""")
     return '\n'.join(tiles)
 
@@ -398,6 +482,20 @@ html = f"""<html>
   .naive-table td {{ color:#bbb; }}
   .naive-table tr.model-row td {{ color:#eee; font-weight:600; }}
   .caveat {{ color:#888; font-size:12px; max-width:760px; margin:0 0 8px; }}
+  .naive-table .rel {{ color:#888; font-size:12px; }}
+  /* A headline block and its supporting table read as a pair, so they share a row instead of
+     stacking (Weather's averages + revisions, Spread Forecast's record + naive comparison).
+     min-width:0 lets each half actually shrink to 50% -- flex items default to min-content,
+     which a wide table would otherwise blow past. */
+  .summary-split {{ display:flex; gap:24px; align-items:flex-start; margin:16px 0; }}
+  .summary-half {{ flex:1 1 0; min-width:0; }}
+  .summary-half h3 {{ margin:0 0 10px; font-size:13px; color:#ccc; font-weight:600; }}
+  .summary-half .stat-row {{ margin:0; gap:12px; }}
+  .summary-half .stat-tile {{ flex:1 1 150px; padding:10px 16px; }}
+  .summary-half .stat-value {{ font-size:19px; }}
+  .summary-half .naive-table {{ width:100%; }}
+  .summary-half .naive-table th, .summary-half .naive-table td {{ padding:5px 10px 5px 0; }}
+  @media (max-width: 1100px) {{ .summary-split {{ flex-direction:column; }} }}
   .stat-delta {{ font-size:12px; font-weight:600; margin-top:4px; }}
   .stat-delta.up {{ color:{COLORS['positive']}; }}
   .stat-delta.down {{ color:{COLORS['negative']}; }}
@@ -405,6 +503,7 @@ html = f"""<html>
   .card {{ background:#161616; border:1px solid #2a2a2a; border-radius:8px; padding:16px 20px; margin:16px 0; }}
   .chart-legend {{ display:flex; gap:20px; align-items:center; font-size:12px; color:#aaa; margin:16px 0 8px; }}
   .chart-legend i {{ display:inline-block; width:14px; height:3px; margin-right:6px; vertical-align:middle; }}
+  .chart-legend i.band {{ height:10px; border-radius:2px; }}
   .weather-grid {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:0 0 16px; }}
   @media (max-width: 900px) {{ .weather-grid {{ grid-template-columns:repeat(2, 1fr); }} }}
   @media (max-width: 600px) {{ .weather-grid {{ grid-template-columns:1fr; }} }}
@@ -718,13 +817,22 @@ function copyTableTSV(btn, plotlyDivId) {{
 </div>
 
 <div id="tab-weather" class="tab-content">
-<div class="stat-row">
+<div class="summary-split">
+  <div class="summary-half">
+    <h3>Tomorrow's daily average</h3>
+    <div class="stat-row">
 {weather_stat_tiles_html()}
+    </div>
+  </div>
+  <div class="summary-half">
+{weather_stability_html()}
+  </div>
 </div>
 <div class="chart-legend">
   <span><i style="background:{COLORS['avg']}"></i>7d Average</span>
   <span><i style="background:{COLORS['prev_day']}"></i>Previous day</span>
   <span><i style="background:{COLORS['dam']}"></i>Selected day</span>
+  <span><i class="band" style="background:rgba(52,152,219,0.35)"></i>Ensemble p10&ndash;p90</span>
 </div>
 <div class="weather-grid">
 {weather_grid_html()}

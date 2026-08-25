@@ -534,7 +534,10 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
     return fig
 
 
-def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
+ENSEMBLE_TRACES = 2  # the p10/p90 pair build_weather_grid_figs prepends to each day's group
+
+
+def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None, confidence=None):
     """Small multiples: one compact chart per variable instead of one big chart with a
     variable dropdown, so every variable (temperature, wind, precipitation...) is visible
     at a glance. Same 7d-avg / previous-day / selected-day trace layout as
@@ -542,15 +545,40 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
     is explained once via an external legend instead of repeating a legend on every tile.
     Each figure is registered with a single-item 'zones' list (itself) purely so it can
     reuse the existing registerFig/applyFigSelection date-sync machinery -- there's no
-    per-tile selector, only the shared Day picker."""
+    per-tile selector, only the shared Day picker.
+
+    confidence (see update_weather_confidence.py) adds an ensemble p10-p90 band behind the
+    selected-day line: how far apart ECMWF's 51 members are for that hour, i.e. how much the
+    forecast itself is worth trusting. It's drawn first so it sits behind the lines, and it's
+    best-effort -- the ensemble endpoint only serves a few days around now, so most days in
+    the picker get an empty (but still present, to keep the trace count fixed) band."""
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
     df_dates = df[time_col].dt.date
+    conf_dates = confidence['timestamp'].dt.date if confidence is not None else None
     figs = {}
     for var in var_map:
         fig = go.Figure()
         for di, date in enumerate(DAY_OPTIONS):
             visible = (di == default_day_idx)
             day_z, prev_z, avg_z, prev_date = _reference_series(df, df_dates, var, date)
+
+            lo_x, lo_y, hi_y = [], [], []
+            if confidence is not None and f'{var}_p10' in confidence.columns:
+                band = confidence[conf_dates == date].sort_values('hour')
+                band = band[band[f'{var}_p10'].notna() & band[f'{var}_p90'].notna()]
+                if not band.empty:
+                    lo_x = band['hour'].tolist()
+                    lo_y = band[f'{var}_p10'].tolist()
+                    hi_y = band[f'{var}_p90'].tolist()
+            fig.add_trace(go.Scatter(
+                x=lo_x, y=lo_y, mode='lines', line=dict(width=0),
+                hoverinfo='skip', showlegend=False, visible=visible
+            ))
+            fig.add_trace(go.Scatter(
+                x=lo_x, y=hi_y, mode='lines', line=dict(width=0), fill='tonexty',
+                fillcolor='rgba(52,152,219,0.16)', name='Ensemble p10-p90',
+                hoverinfo='skip', showlegend=False, visible=visible
+            ))
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',

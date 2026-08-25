@@ -41,13 +41,16 @@ WIND_ZONE = 'West'
 CONTEXT_DAYS = 14  # minimum trailing history required before a date becomes playable
 TRADING_CUTOFF_HOUR = 8  # HE08 -- RTM context for the chosen day stops here
 
+# Mirrors dashboard_data.WEATHER_VARS (kept as its own copy -- this page is deliberately
+# standalone), including the display order its mini-grid renders 3 across.
 WEATHER_VARS = {
     "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_10m": ("Wind Speed", "m/s"),
-    "precipitation": ("Precipitation", "mm"),
-    "snowfall": ("Snowfall", "cm"),
-    "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    "wind_speed_100m_port_alma": ("Wind Speed (Port Alma, 100m)", "m/s"),
     "relative_humidity_2m": ("Humidity", "%"),
+    "precipitation": ("Precipitation", "mm"),
+    "wind_speed_10m": ("Wind Speed (Ottawa, 10m)", "m/s"),
+    "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    "snowfall": ("Snowfall", "cm"),
 }
 LOAD_VARS = {
     "ontario": ("Ontario (Total)", "MW"),

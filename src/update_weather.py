@@ -9,6 +9,13 @@ from retry_requests import retry
 OTTAWA_COORDS = {"lat": 45.4000, "lon": -75.7000}
 PORT_ALMA_COORDS = {"lat": 42.1808, "lon": -82.2444}  # secondary wind-speed station
 
+# Wind is pulled at both 10m (the standard met-station height) and 100m. 100m is roughly
+# turbine hub height, and since wind power scales with the cube of speed, the two are not
+# interchangeable -- at Port Alma the 100m mean runs ~1.7x the 10m mean, so 10m badly
+# understates what the fleet actually sees. 10m is kept because it's what the existing
+# history is built on and it stays the right number for a "what's the weather" read.
+PORT_ALMA_WIND_VARS = ["wind_speed_10m", "wind_speed_100m"]
+
 WEATHER_VARIABLES = [
     "temperature_2m",
     "relative_humidity_2m",
@@ -75,8 +82,8 @@ def update_weather():
     df_new.index.name = "timestamp"
     df_new = df_new.reset_index()
 
-    port_alma = _fetch(openmeteo, PORT_ALMA_COORDS, ["wind_speed_10m"], past_days, FORECAST_DAYS)
-    port_alma = port_alma.rename(columns={"wind_speed_10m": "wind_speed_10m_port_alma"})
+    port_alma = _fetch(openmeteo, PORT_ALMA_COORDS, PORT_ALMA_WIND_VARS, past_days, FORECAST_DAYS)
+    port_alma = port_alma.rename(columns={v: f"{v}_port_alma" for v in PORT_ALMA_WIND_VARS})
     df_new = df_new.set_index("timestamp").join(port_alma, how="left").reset_index()
 
     if DATA_PATH.exists():
