@@ -6,13 +6,15 @@ DATASET_ID = "ieso_zonal_load_forecast_hourly"
 DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_load_forecast.csv"
 PAST_HOURS = 24  # re-fetch a safety window in case IESO issues late corrections
 FORECAST_HOURS = 48  # zonal load forecast is published up to ~2 days ahead
+KEEP_COLS = ["interval_start_local", "ontario", "ontario_northeast", "ontario_northwest",
+             "ontario_southwest", "ontario_southeast"]
 
 
 def update_load_forecast():
     fetch_and_merge(
         DATASET_ID, DATA_PATH,
         dedup_subset=["interval_start_local"], sort_by="interval_start_local",
-        past_hours=PAST_HOURS, forecast_hours=FORECAST_HOURS,
+        past_hours=PAST_HOURS, forecast_hours=FORECAST_HOURS, keep_cols=KEEP_COLS,
     )
 
 

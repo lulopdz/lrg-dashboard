@@ -9,14 +9,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from dashboard_data import (
-    COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, SELECTABLE_DATE_STRS, TABLE_DAYS,
+    DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, SELECTABLE_DATE_STRS, TABLE_DAYS,
     dam, default_date_idx, default_idx, rtm, table_start_date, today_date, zones,
 )
-
-TABLE_BUCKET_SIZE = 100  # $/MWh step size for the discrete table color scales
-TABLE_ROW_HEIGHT = 26    # px per date row in the hourly heatmap tables -- height scales with TABLE_DAYS instead of being fixed
-PROFILE_HEIGHT = 380     # px for every single-panel line chart (hourly profile + forecast tabs) -- one shared value so they read as one page
-SPREAD_HEIGHT = 520      # px for the Spread tab's 2-panel chart -- shorter than before but still taller than a single panel needs
+from theme import COLORS, PROFILE_HEIGHT, SPREAD_HEIGHT, TABLE_BUCKET_SIZE, TABLE_ROW_HEIGHT
 
 
 def hour_xaxis(**extra):
@@ -25,17 +21,22 @@ def hour_xaxis(**extra):
     return base
 
 
-def _reference_series(df, time_col, value_col, date):
+def _reference_series(df, dates, value_col, date):
     """The three reference series every 'hourly profile' chart plots for a given day: the day
     itself, the day before it, and the trailing 7-day average leading up to it (all sorted by
     hour). Shared by build_hourly_fig, build_wide_hourly_fig, and build_weather_grid_figs,
     which otherwise differ too much in trace styling (marker size, fill, legend grouping) to
-    also unify into one function."""
+    also unify into one function.
+
+    `dates` is df's timestamp column already reduced to plain dates (pass df[col].dt.date).
+    It's a parameter rather than computed here because every caller loops this over all 31
+    DAY_OPTIONS with the same df: .dt.date materializes a full object-dtype column, and doing
+    it 4x per call inside those loops was the single most expensive thing in the page build."""
     prev_date = date - pd.Timedelta(days=1)
-    day_z = df[df[time_col].dt.date == date].sort_values('hour')
-    prev_z = df[df[time_col].dt.date == prev_date].sort_values('hour')
+    day_z = df[dates == date].sort_values('hour')
+    prev_z = df[dates == prev_date].sort_values('hour')
     week_start = date - pd.Timedelta(days=6)
-    avg_window = df[(df[time_col].dt.date > week_start) & (df[time_col].dt.date <= date)]
+    avg_window = df[(dates > week_start) & (dates <= date)]
     avg_z = avg_window.groupby('hour')[value_col].mean().reset_index().sort_values('hour')
     return day_z, prev_z, avg_z, prev_date
 
@@ -91,9 +92,10 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     fig = go.Figure()
     for zi, zone in enumerate(baked_zones):
         df_zone = df[df[location_col] == zone]
+        zone_dates = df_zone['interval_start_local'].dt.date
         for di, date in enumerate(DAY_OPTIONS):
             visible = di == default_day_idx if compact_zones else (zi == default_zone_idx and di == default_day_idx)
-            day_z, prev_z, avg_z, prev_date = _reference_series(df_zone, 'interval_start_local', value_col, date)
+            day_z, prev_z, avg_z, prev_date = _reference_series(df_zone, zone_dates, value_col, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[value_col], name='7d Average', mode='lines',
@@ -484,11 +486,12 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
     var_keys = list(var_map.keys())
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
 
+    df_dates = df[time_col].dt.date
     fig = go.Figure()
     for vi, var in enumerate(var_keys):
         for di, date in enumerate(DAY_OPTIONS):
             visible = (vi == default_var_idx and di == default_day_idx)
-            day_z, prev_z, avg_z, prev_date = _reference_series(df, time_col, var, date)
+            day_z, prev_z, avg_z, prev_date = _reference_series(df, df_dates, var, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
@@ -541,12 +544,13 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None):
     reuse the existing registerFig/applyFigSelection date-sync machinery -- there's no
     per-tile selector, only the shared Day picker."""
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
+    df_dates = df[time_col].dt.date
     figs = {}
     for var in var_map:
         fig = go.Figure()
         for di, date in enumerate(DAY_OPTIONS):
             visible = (di == default_day_idx)
-            day_z, prev_z, avg_z, prev_date = _reference_series(df, time_col, var, date)
+            day_z, prev_z, avg_z, prev_date = _reference_series(df, df_dates, var, date)
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
