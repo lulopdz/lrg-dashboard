@@ -520,14 +520,6 @@ supply_mix_tab_html = f"""
   </div>
   {supply_mix_fig.to_html(full_html=False, include_plotlyjs=False, div_id='supply-mix')}
   {register_fig('supply-mix', len(SUPPLY_MIX) + 1, 'Supply Mix', zones_json=json.dumps(['Supply Mix']), show_title=False)}
-  <p class="caveat">From IESO's adequacy report: each band is that fuel's capacity minus what's on
-  outage, so the stack is what <em>could</em> run. Published up to ~34 days ahead, which is why this
-  covers tomorrow while the scheduled-generation chart below only covers days the day-ahead market
-  has already run. One quirk worth knowing: for wind and solar, IESO treats the gap between nameplate
-  capacity and expected output as an "outage", so their bands here already equal the forecast output.
-  The dispatchable fuels don't work that way &mdash; hydro's available capacity sits well above what
-  it will actually generate, because it is energy-limited rather than unavailable. Note also that
-  this is the report's latest revision, which for past hours folds in after-the-fact corrections.</p>
 </div>
 {adequacy_grid_html()}
 </div>
