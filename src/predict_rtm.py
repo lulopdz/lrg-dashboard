@@ -19,10 +19,13 @@ data/rtm_forecast_meta.json, which generar_web.py reads if present.
 from forecast_common import load_price_series, run_forecast
 
 FEATURE_COLS = [
-    "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos", "is_weekend",
+    # raw `hour` sits alongside hour_sin/cos so a tree can split directly on hour of day
+    # instead of reconstructing it from the two smooth features
+    "hour", "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos", "is_weekend",
     "ontario", "ontario_northeast", "ontario_northwest", "ontario_southwest", "ontario_southeast",
     "wind_forecast",
     "temperature_2m", "relative_humidity_2m", "precipitation", "snowfall", "wind_speed_10m", "shortwave_radiation",
+    "wind_speed_10m_port_alma",  # wind at the turbine site (Chatham-Kent), full history
     "dam_price",
     "rtm_lag_1d", "rtm_lag_7d", "rtm_roll_7d", "rtm_roll_28d",
 ]
