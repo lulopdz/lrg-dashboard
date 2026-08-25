@@ -536,6 +536,56 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
 
 ENSEMBLE_TRACES = 2  # the p10/p90 pair build_weather_grid_figs prepends to each day's group
 
+# Fuel colors for the supply-mix chart. Not from COLORS: those encode series *roles*
+# (DAM/RTM/predicted/positive/negative) and reusing them here would make e.g. gas share a
+# color with "RTM" for no reason. These are picked for the fuels themselves -- nuclear and
+# hydro cool and steady, gas warm, wind and solar in their conventional greens/yellows.
+FUEL_COLORS = {
+    'Nuclear': '#7f8fa6',
+    'Hydro': '#2980b9',
+    'Gas': '#e67e22',
+    'Wind': '#27ae60',
+    'Solar': '#f1c40f',
+    'Biofuel': '#8e6e53',
+}
+
+
+def build_supply_mix_fig(df, var_map, default_day_idx=None):
+    """Scheduled generation by fuel for the selected day, stacked -- the shape of the day's
+    supply, not just its total. One trace group per day in the Day picker, same visibility
+    machinery as every other chart here (registerFig / applyFigSelection).
+
+    Stacked area rather than lines: the fuels sum to the day's scheduled supply, so the
+    stack's outline is a real quantity and each band's thickness is that fuel's contribution.
+    Lines would show six unrelated curves and lose both."""
+    default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
+    df_dates = df['interval_start_local'].dt.date
+    fig = go.Figure()
+    for di, date in enumerate(DAY_OPTIONS):
+        visible = (di == default_day_idx)
+        day = df[df_dates == date].sort_values('hour')
+        for col, label in var_map.items():
+            fig.add_trace(go.Scatter(
+                x=day['hour'].tolist(), y=day[col].tolist() if col in day.columns else [],
+                name=label, mode='lines', stackgroup='mix',
+                line=dict(width=0.5, color=FUEL_COLORS.get(label, COLORS['muted'])),
+                fillcolor=FUEL_COLORS.get(label, COLORS['muted']),
+                hovertemplate=f'{label}: %{{y:,.0f}} MW<extra></extra>',
+                visible=visible,
+            ))
+    fig.update_layout(
+        template='plotly_dark', title=None,
+        legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
+        xaxis_title='Hour', yaxis_title='Scheduled generation (MW)',
+        xaxis=hour_xaxis(showspikes=True, spikemode='across', spikesnap='cursor',
+                          spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'],
+                          gridcolor=COLORS['grid']),
+        yaxis=dict(gridcolor=COLORS['grid'], hoverformat=',.0f'),
+        hovermode='x unified',
+        margin=dict(t=30, b=60, r=140), height=PROFILE_HEIGHT,
+    )
+    return fig
+
 
 def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None, confidence=None):
     """Small multiples: one compact chart per variable instead of one big chart with a

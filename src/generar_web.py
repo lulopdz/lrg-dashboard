@@ -5,15 +5,16 @@ import pandas as pd
 
 from dashboard_data import (
     COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
-    TABLE_DAYS, WEATHER_VARS, dam, default_date_idx, default_forecast_date_idx, default_load_idx,
-    default_weather_idx, default_wind_idx, latest_ts, load_forecast, load_latest_ts,
-    load_var_keys, rtm, rtm_latest_ts, spread, today_date, weather, weather_confidence,
-    weather_latest_ts, weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
+    SUPPLY_MIX, TABLE_DAYS, WEATHER_VARS, adequacy, dam, default_date_idx,
+    default_forecast_date_idx, default_load_idx, default_weather_idx, default_wind_idx,
+    latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
+    today_date, weather, weather_confidence, weather_latest_ts, weather_var_keys,
+    wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
-    build_spread_detail_fig, build_table_fig, build_weather_grid_figs, build_wide_hourly_fig,
-    build_wide_table_fig,
+    build_spread_detail_fig, build_supply_mix_fig, build_table_fig, build_weather_grid_figs,
+    build_wide_hourly_fig, build_wide_table_fig,
 )
 
 
@@ -72,6 +73,23 @@ load_hourly_fig = build_wide_hourly_fig(load_forecast, 'interval_start_local', L
                                          default_day_idx=default_forecast_date_idx, polished=True)
 load_table_fig = build_wide_table_fig(load_forecast, 'interval_start_local', LOAD_VARS, default_load_idx, 'Load Forecast',
                                        colorscale='Viridis', polished=True)
+
+# Optional: absent on a checkout whose data/ predates update_adequacy.py. Everything that
+# renders the tab is guarded on this being non-None, same as the forecast tabs are guarded on
+# their predict_*.py having run.
+#
+# Opens on today, not tomorrow, even though it sits in the forecast tab group: the *_scheduled
+# columns are only populated once the day-ahead market has actually scheduled, so tomorrow is
+# entirely null for them and the stack would render empty. The report does carry *_offered for
+# future days, but offered and scheduled are different quantities and silently swapping one for
+# the other across the chart's x-axis would misstate what's plotted.
+supply_mix_fig = (build_supply_mix_fig(adequacy, SUPPLY_MIX, default_day_idx=default_date_idx)
+                  if adequacy is not None else None)
+supply_mix_tab_button = ('<button class="tab-btn group-forecast" onclick="showTab(\'supply\', this)">'
+                          'Supply Mix</button>' if supply_mix_fig is not None else '')
+
+
+
 
 wind_hourly_fig = build_hourly_fig(wind_forecast, 'Wind Forecast', location_col='zone', value_col='generation_forecast',
                                     y_axis_title='Generation (MW)', zones_list=wind_zones, default_zone_idx=default_wind_idx,
@@ -196,6 +214,7 @@ TAB_REFRESH = {
     'weather': ('dashboard.yml', 'Refresh Weather Forecast'),
     'load': ('dashboard.yml', 'Refresh Load Forecast'),
     'wind': ('dashboard.yml', 'Refresh Wind Forecast'),
+    'supply': ('dashboard.yml', 'Refresh Supply Mix'),
 }
 if dam_forecast_tab_button:
     TAB_REFRESH['forecast'] = ('predict.yml', 'Refresh Forecasts')
@@ -251,6 +270,9 @@ TAB_DATES = {
     'load': DAY_OPTION_STRS[default_forecast_date_idx],
     'wind': DAY_OPTION_STRS[default_forecast_date_idx],
 }
+if supply_mix_fig is not None:
+    # today, not tomorrow -- see the supply_mix_fig comment above
+    TAB_DATES['supply'] = DAY_OPTION_STRS[default_date_idx]
 TAB_DATES_JSON = json.dumps(TAB_DATES)
 
 
@@ -411,6 +433,65 @@ def weather_grid_html():
 </div>""")
     return '\n'.join(tiles)
 
+
+
+def supply_mix_stat_tiles():
+    """Headline adequacy numbers for the same day the chart is showing. Baked for that one day
+    rather than wired to the Day picker, matching how the Weather tab's tiles work."""
+    target = DAY_OPTIONS[default_date_idx]
+    day = adequacy[adequacy['interval_start_local'].dt.date == target]
+    if day.empty:
+        return ''
+    fuels = [c for c in SUPPLY_MIX if c in day.columns]
+    total = day[fuels].sum(axis=1)
+    peak_hour = int(day.loc[total.idxmax(), 'hour']) if total.notna().any() else None
+
+    tiles = []
+    if total.notna().any():
+        tiles.append(('Peak scheduled supply', f'{total.max():,.0f} MW',
+                       f'at HE{peak_hour:02d}' if peak_hour else None))
+    if 'capacity_excess_shortfall' in day.columns and day['capacity_excess_shortfall'].notna().any():
+        margin = day['capacity_excess_shortfall']
+        tiles.append(('Tightest capacity margin', f'{margin.min():,.0f} MW',
+                       f'at HE{int(day.loc[margin.idxmin(), "hour"]):02d}'))
+    outage_cols = [c for c in ('nuclear_outages', 'gas_outages', 'hydro_outages',
+                                'wind_outages', 'solar_outages') if c in day.columns]
+    if outage_cols:
+        out = day[outage_cols].sum(axis=1)
+        if out.notna().any():
+            tiles.append(('Capacity on outage', f'{out.mean():,.0f} MW', 'daily average'))
+    if total.notna().any() and total.max():
+        renew = [c for c in ('hydro_scheduled', 'wind_scheduled', 'solar_scheduled',
+                              'biofuel_scheduled') if c in day.columns]
+        share = day[renew].sum(axis=1).sum() / total.sum() * 100
+        tiles.append(('Renewable share', f'{share:.0f}%', 'hydro + wind + solar + biofuel'))
+
+    return '\n'.join(
+        f'<div class="stat-tile"><div class="stat-label">{label}</div>'
+        f'<div class="stat-value">{value}</div>'
+        + (f'<div class="stat-sub">{sub}</div>' if sub else '') + '</div>'
+        for label, value, sub in tiles
+    )
+
+
+supply_mix_tab_html = f"""
+<div id="tab-supply" class="tab-content">
+<div class="stat-row">
+{supply_mix_stat_tiles()}
+</div>
+<div class="card">
+  <div class="section-header">
+    <h2>Scheduled generation by fuel</h2>
+  </div>
+  {supply_mix_fig.to_html(full_html=False, include_plotlyjs=False, div_id='supply-mix')}
+  {register_fig('supply-mix', len(SUPPLY_MIX), 'Supply Mix', zones_json=json.dumps(['Supply Mix']), show_title=False)}
+  <p class="caveat">From IESO's adequacy report. Each band is that fuel's scheduled output, so the
+  top of the stack is the day's total scheduled supply. Note this is the latest published revision
+  of the report, which for hours already past includes after-the-fact corrections &mdash; it is the
+  best estimate of what happened, not what was known beforehand.</p>
+</div>
+</div>
+""" if supply_mix_fig is not None else ''
 
 html = f"""<html>
 <head>
@@ -739,6 +820,7 @@ function copyTableTSV(btn, plotlyDivId) {{
     <button class="tab-btn group-forecast tab-group-start" onclick="showTab('weather', this)">Weather Forecast</button>
     <button class="tab-btn group-forecast" onclick="showTab('load', this)">Load Forecast</button>
     <button class="tab-btn group-forecast" onclick="showTab('wind', this)">Wind Forecast</button>
+    {supply_mix_tab_button}
     {dam_forecast_tab_button}
     {rtm_forecast_tab_button}
     {spread_forecast_tab_button}
@@ -882,6 +964,8 @@ function copyTableTSV(btn, plotlyDivId) {{
   <script>registerTable('wind-table', {WIND_ZONES_JSON});</script>
 </div>
 </div>
+
+{supply_mix_tab_html}
 {dam_forecast_tab_html}
 {rtm_forecast_tab_html}
 {spread_forecast_tab_html}

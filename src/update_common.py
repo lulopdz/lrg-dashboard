@@ -18,7 +18,10 @@ def fetch_and_merge(dataset_id, data_path, dedup_subset, sort_by, past_hours, fo
     here reads (UTC mirrors of the local timestamps, publish/last-modified stamps, DAM's
     energy/congestion/loss breakdown), and keeping those tripled the on-disk size of files the
     daily workflow re-commits. Applied to both sides of the merge, so a file written before
-    this existed gets trimmed on its next update instead of needing a separate migration."""
+    this existed gets trimmed on its next update instead of needing a separate migration.
+
+    Pass keep_cols=None to store the response as-is -- used by the adequacy feed, where the
+    whole point is the full generation-mix breakdown and picking a subset would defeat it."""
     api_key = os.getenv("GRIDSTATUS_API_KEY")
     if not api_key:
         raise RuntimeError("GRIDSTATUS_API_KEY environment variable is not set.")
@@ -39,14 +42,17 @@ def fetch_and_merge(dataset_id, data_path, dedup_subset, sort_by, past_hours, fo
     )
     new_df["interval_start_local"] = pd.to_datetime(new_df["interval_start_local"])
 
-    missing = [c for c in keep_cols if c not in new_df.columns]
-    if missing:
-        raise RuntimeError(f"{dataset_id} response is missing expected columns: {missing}")
-    new_df = new_df[keep_cols]
+    if keep_cols is not None:
+        missing = [c for c in keep_cols if c not in new_df.columns]
+        if missing:
+            raise RuntimeError(f"{dataset_id} response is missing expected columns: {missing}")
+        new_df = new_df[keep_cols]
 
     if data_path.exists():
         existing_df = pd.read_csv(data_path, parse_dates=["interval_start_local"])
-        combined = pd.concat([existing_df[keep_cols], new_df], axis=0)
+        if keep_cols is not None:
+            existing_df = existing_df[keep_cols]
+        combined = pd.concat([existing_df, new_df], axis=0)
     else:
         combined = new_df
 
