@@ -3,6 +3,8 @@ day options that both dashboard_figures.py and generar_web.py build on.
 
 Importing this module reads every price/weather CSV (~20MB). Anything that only needs the
 palette or figure sizes should import theme.py instead, which has no data dependency."""
+import os
+
 import pandas as pd
 
 from theme import COLORS  # noqa: F401 -- re-exported: existing importers read COLORS from here
@@ -28,6 +30,18 @@ weather = pd.read_csv('data/OTTAWA_weather.csv', parse_dates=['timestamp'])
 weather = weather.sort_values('timestamp')
 weather['hour'] = weather['timestamp'].dt.hour + 1
 
+# How much to trust the forecast above -- ensemble percentiles and run-to-run revisions,
+# written by update_weather_confidence.py. Optional: it only started being collected recently
+# and the ensemble endpoint serves a short window, so it covers a handful of days around now
+# rather than the full weather history. Everything downstream treats it as best-effort.
+_confidence_path = 'data/weather_confidence.csv'
+if os.path.exists(_confidence_path):
+    weather_confidence = pd.read_csv(_confidence_path, parse_dates=['timestamp'])
+    weather_confidence = weather_confidence.sort_values('timestamp')
+    weather_confidence['hour'] = weather_confidence['timestamp'].dt.hour + 1
+else:
+    weather_confidence = None
+
 load_forecast = pd.read_csv('data/ieso_load_forecast.csv', parse_dates=['interval_start_local'])
 load_forecast = load_forecast.sort_values('interval_start_local')
 load_forecast['hour'] = load_forecast['interval_start_local'].dt.hour + 1
@@ -39,13 +53,19 @@ wind_forecast['hour'] = wind_forecast['interval_start_local'].dt.hour + 1
 zones = sorted(dam['location'].unique())
 default_idx = zones.index(DEFAULT_ZONE)
 
+# Order is the display order of the Weather tab's small-multiples grid (3 across), so the
+# first three fill the top row: temperature, wind at the turbine site, humidity. Port Alma
+# (42.18N, -82.24W, Chatham-Kent) is where the wind fleet sits, so it's the wind speed that
+# moves price; Ottawa's is the pricing zone's own weather. The two sit in the same grid
+# column (positions 2 and 5) so they stack vertically and can be read against each other.
 WEATHER_VARS = {
     "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_10m": ("Wind Speed", "m/s"),
-    "precipitation": ("Precipitation", "mm"),
-    "snowfall": ("Snowfall", "cm"),
-    "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    "wind_speed_100m_port_alma": ("Wind 100m · Port Alma", "m/s"),
     "relative_humidity_2m": ("Humidity", "%"),
+    "precipitation": ("Precipitation", "mm"),
+    "wind_speed_10m": ("Wind 10m · Ottawa", "m/s"),
+    "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    "snowfall": ("Snowfall", "cm"),
 }
 weather_var_keys = list(WEATHER_VARS.keys())
 default_weather_idx = 0  # Temperature
