@@ -66,12 +66,17 @@ jobs:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       run: python src/update_wind_forecast.py
 
+    - name: Actualizar reporte de adecuación (mix de generación)
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      run: python src/update_adequacy.py
+
     - name: Guardar datos y regenerar dashboard
       run: |
         python src/parse_reports.py
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_dam_prices.csv data/ieso_rtm_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/historical_pnl.csv
+        git add data/ieso_dam_prices.csv data/ieso_rtm_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/ieso_adequacy.csv data/historical_pnl.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py

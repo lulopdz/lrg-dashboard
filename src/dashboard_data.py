@@ -46,6 +46,29 @@ load_forecast = pd.read_csv('data/ieso_load_forecast.csv', parse_dates=['interva
 load_forecast = load_forecast.sort_values('interval_start_local')
 load_forecast['hour'] = load_forecast['interval_start_local'].dt.hour + 1
 
+# IESO's adequacy report: scheduled generation by fuel, outages, interchange and reserve.
+# Optional like weather_confidence -- update_adequacy.py is newer than the other feeds, so a
+# checkout without it should still build the rest of the page.
+_adequacy_path = 'data/ieso_adequacy.csv'
+if os.path.exists(_adequacy_path):
+    adequacy = pd.read_csv(_adequacy_path, parse_dates=['interval_start_local'])
+    adequacy = adequacy.sort_values('interval_start_local')
+    adequacy['hour'] = adequacy['interval_start_local'].dt.hour + 1
+else:
+    adequacy = None
+
+# Fuel -> display label for the supply-mix chart, ordered the way they stack: the big,
+# steady baseload at the bottom and the small intermittent ones on top, so the visually
+# noisy series don't shift everything above them up and down hour to hour.
+SUPPLY_MIX = {
+    'nuclear_scheduled': 'Nuclear',
+    'hydro_scheduled': 'Hydro',
+    'gas_scheduled': 'Gas',
+    'wind_scheduled': 'Wind',
+    'solar_scheduled': 'Solar',
+    'biofuel_scheduled': 'Biofuel',
+}
+
 wind_forecast = pd.read_csv('data/ieso_wind_forecast.csv', parse_dates=['interval_start_local'])
 wind_forecast = wind_forecast.sort_values(['zone', 'interval_start_local'])
 wind_forecast['hour'] = wind_forecast['interval_start_local'].dt.hour + 1
