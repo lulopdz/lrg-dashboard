@@ -54,10 +54,15 @@ jobs:
 
     - name: Guardar datos y regenerar dashboard
       run: |
-        python src/parse_reports.py
+        # Este workflow es dueño de ieso_rtm_prices.csv y de nada mas. historical_pnl.csv lo
+        # comitea dashboard.yml, que es quien corre parse_reports.py: depende de los reportes
+        # XML, no del RTM. Cuando los dos lo comiteaban, un reporte nuevo hacia que ambos
+        # generaran una version distinta a la vez y el rebase del segundo fallaba -- ver la
+        # nota en dashboard.yml sobre por que el grupo de concurrency no lo evita.
+        # El sitio se regenera igual mas abajo, leyendo el historical_pnl.csv ya comiteado.
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_rtm_prices.csv data/historical_pnl.csv
+        git add data/ieso_rtm_prices.csv
         git commit -m "RTM actualizado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py

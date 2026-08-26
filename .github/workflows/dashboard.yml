@@ -43,11 +43,10 @@ jobs:
       continue-on-error: true
       run: python src/update_data.py
 
-    - name: Actualizar datos del RTM
-      env:
-        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
-      continue-on-error: true
-      run: python src/update_rtm.py
+    # El RTM lo trae y comitea refresh_rtm.yml, que corre a las 10:05 UTC y tambien regenera
+    # y publica el sitio. Si este workflow tambien lo trajera, los dos comitearian el mismo
+    # archivo y el rebase del que llegue segundo choca (ver la nota de propiedad mas abajo).
+    # Aqui se lee el ieso_rtm_prices.csv ya comiteado, que basta para regenerar.
 
     - name: Actualizar datos del clima
       continue-on-error: true
@@ -82,7 +81,13 @@ jobs:
         python src/parse_reports.py
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_dam_prices.csv data/ieso_rtm_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/ieso_adequacy.csv data/historical_pnl.csv
+        # Un solo workflow es dueño de cada archivo. actions/checkout clona el commit que
+        # disparó el run, no la punta de main, así que dos workflows que comiteen el mismo
+        # archivo chocan en el rebase por mucho que el grupo de concurrency los encole: el
+        # segundo ya clonó antes de entrar en la cola. Este es dueño de todo menos del RTM
+        # (refresh_rtm.yml) y de los forecasts (predict.yml). historical_pnl.csv se queda
+        # aquí porque depende de los reportes XML, no del RTM.
+        git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/ieso_adequacy.csv data/historical_pnl.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/generar_web.py
