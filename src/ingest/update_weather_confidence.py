@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "weather_confidence.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "weather_confidence.csv"
 
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"

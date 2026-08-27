@@ -12,7 +12,7 @@ predict_dam.py/predict_rtm.py, plus the same-hour DAM price (actual historically
 predict_dam.py's own prediction for tomorrow) since spread magnitude often tracks the
 price level itself. Run predict_dam.py first for the best results on tomorrow's hours.
 
-Run manually: `python src/predict_spread.py`. Writes data/spread_forecast.csv and
+Run manually: `python src/forecast/predict_spread.py`. Writes data/spread_forecast.csv and
 data/spread_forecast_meta.json, which generar_web.py reads if present.
 """
 from forecast_common import load_price_series, run_forecast

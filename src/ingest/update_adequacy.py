@@ -3,7 +3,7 @@ from pathlib import Path
 from update_common import fetch_and_merge
 
 DATASET_ID = "ieso_adequacy_report_forecast"
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_adequacy.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_adequacy.csv"
 PAST_HOURS = 48       # re-fetch a safety window in case IESO reissues a report
 FORECAST_HOURS = 48   # IESO publishes up to ~34 days out; we only plot/model two days
 

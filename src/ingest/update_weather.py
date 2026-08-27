@@ -40,8 +40,8 @@ SECONDARY_STATIONS = [
     (TORONTO_COORDS, TORONTO_VARS, "toronto"),
 ]
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "OTTAWA_weather.csv"
-CACHE_PATH = Path(__file__).resolve().parent.parent / ".cache"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "OTTAWA_weather.csv"
+CACHE_PATH = Path(__file__).resolve().parents[2] / ".cache"
 DEFAULT_PAST_DAYS = 7  # used only when there's no existing file to anchor from
 FORECAST_DAYS = 3
 

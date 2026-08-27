@@ -11,5 +11,5 @@ docs/
 
 # A manual export of the adequacy report that kept every forecast vintage (~106 publishes per
 # delivery hour) instead of just the latest -- 444 MB, which GitHub blocks outright at 100 MB.
-# data/ieso_adequacy.csv holds the same period in ~5 MB; see src/update_adequacy.py.
+# data/ieso_adequacy.csv holds the same period in ~5 MB; see src/ingest/update_adequacy.py.
 data/ieso_adequacy_forecast.csv

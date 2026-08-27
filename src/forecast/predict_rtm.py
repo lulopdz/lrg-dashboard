@@ -13,7 +13,7 @@ published DAM; for tomorrow (not yet published) it falls back to predict_dam.py'
 prediction if data/dam_forecast.csv exists. Run predict_dam.py first for best results --
 this script still runs without it, just with a weaker feature for tomorrow's hours.
 
-Run manually: `python src/predict_rtm.py`. Writes data/rtm_forecast.csv and
+Run manually: `python src/forecast/predict_rtm.py`. Writes data/rtm_forecast.csv and
 data/rtm_forecast_meta.json, which generar_web.py reads if present.
 """
 from forecast_common import load_price_series, run_forecast
