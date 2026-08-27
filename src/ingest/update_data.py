@@ -3,7 +3,7 @@ from pathlib import Path
 from update_common import fetch_and_merge
 
 DATASET_ID = "ieso_lmp_day_ahead_hourly_virtual_zonal"
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_dam_prices.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_dam_prices.csv"
 PAST_HOURS = 48  # re-fetch a safety window in case IESO issues late corrections
 FORECAST_HOURS = 36  # DAM is published a day ahead, so the full next day is already available
 KEEP_COLS = ["interval_start_local", "location", "lmp"]  # same stored schema as ieso_rtm_prices.csv

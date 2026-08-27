@@ -7,7 +7,7 @@ import pandas as pd
 from gridstatusio import GridStatusClient
 
 DATASET_ID = "ieso_lmp_real_time_5_min_virtual_zonal"
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_rtm_prices.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_rtm_prices.csv"
 DEFAULT_LOOKBACK_HOURS = 24  # used only when there's no existing file to anchor from
 SAFETY_BUFFER_HOURS = 2  # re-fetch a small overlap in case IESO revises recent values
 

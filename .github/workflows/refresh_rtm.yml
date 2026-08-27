@@ -56,9 +56,9 @@ jobs:
         HOURS_INPUT: ${{ github.event.inputs.hours }}
       run: |
         if [ -n "$HOURS_INPUT" ]; then
-          python src/update_rtm.py --hours "$HOURS_INPUT"
+          python src/ingest/update_rtm.py --hours "$HOURS_INPUT"
         else
-          python src/update_rtm.py
+          python src/ingest/update_rtm.py
         fi
 
     - name: Guardar datos y regenerar dashboard
@@ -74,9 +74,9 @@ jobs:
         git add data/ieso_rtm_prices.csv
         git commit -m "RTM actualizado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
-        python src/generar_web.py
-        python src/generar_simulator.py
-        python src/generar_portfolio.py
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py
         git push
 
     - name: Preparar artefacto de Pages

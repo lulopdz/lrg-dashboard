@@ -41,13 +41,13 @@ jobs:
       run: pip install -r requirements.txt
 
     - name: Predecir DAM de mañana
-      run: python src/predict_dam.py
+      run: python src/forecast/predict_dam.py
 
     - name: Predecir RTM de mañana
-      run: python src/predict_rtm.py
+      run: python src/forecast/predict_rtm.py
 
     - name: Predecir Spread de mañana
-      run: python src/predict_spread.py
+      run: python src/forecast/predict_spread.py
 
     - name: Guardar predicciones y regenerar dashboard
       run: |
@@ -56,9 +56,9 @@ jobs:
         git add data/dam_forecast.csv data/dam_forecast_meta.json data/rtm_forecast.csv data/rtm_forecast_meta.json data/spread_forecast.csv data/spread_forecast_meta.json
         git commit -m "Predicciones actualizadas" || echo "Sin cambios nuevos"
         git pull --rebase origin main
-        python src/generar_web.py
-        python src/generar_simulator.py
-        python src/generar_portfolio.py
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py
         git push
 
     - name: Preparar artefacto de Pages

@@ -3,7 +3,7 @@ from pathlib import Path
 from update_common import fetch_and_merge
 
 DATASET_ID = "ieso_wind_market_participant_forecast"
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "ieso_wind_forecast.csv"
+DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_wind_forecast.csv"
 PAST_HOURS = 24  # re-fetch a safety window in case IESO issues late corrections
 FORECAST_HOURS = 48  # wind forecast is published up to ~2 days ahead
 KEEP_COLS = ["interval_start_local", "zone", "generation_forecast"]

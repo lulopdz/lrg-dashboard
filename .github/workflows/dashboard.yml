@@ -46,7 +46,7 @@ jobs:
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/update_data.py
+      run: python src/ingest/update_data.py
 
     # El RTM lo trae y comitea refresh_rtm.yml, que arranca encadenado al terminar este
     # workflow y tambien regenera y publica el sitio. Si este workflow tambien lo trajera,
@@ -56,35 +56,35 @@ jobs:
 
     - name: Actualizar datos del clima
       continue-on-error: true
-      run: python src/update_weather.py
+      run: python src/ingest/update_weather.py
 
     # Ensemble spread + run-to-run revisions for the Weather tab's confidence section.
     # Best-effort: a failure here must not block the dashboard, the data is supplementary.
     - name: Actualizar confianza del pronostico (Open-Meteo ensemble)
       continue-on-error: true
-      run: python src/update_weather_confidence.py
+      run: python src/ingest/update_weather_confidence.py
 
     - name: Actualizar pronóstico de demanda
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/update_load_forecast.py
+      run: python src/ingest/update_load_forecast.py
 
     - name: Actualizar pronóstico de viento
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/update_wind_forecast.py
+      run: python src/ingest/update_wind_forecast.py
 
     - name: Actualizar reporte de adecuación (mix de generación)
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/update_adequacy.py
+      run: python src/ingest/update_adequacy.py
 
     - name: Guardar datos y regenerar dashboard
       run: |
-        python src/parse_reports.py
+        python src/ingest/parse_reports.py
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
         # Un solo workflow es dueño de cada archivo. actions/checkout clona el commit que
@@ -96,9 +96,9 @@ jobs:
         git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/ieso_adequacy.csv data/historical_pnl.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
-        python src/generar_web.py
-        python src/generar_simulator.py
-        python src/generar_portfolio.py
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py
         git push
 
     - name: Preparar artefacto de Pages

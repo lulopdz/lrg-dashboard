@@ -10,7 +10,7 @@ weather forecast, and same-hour price lags/rolling means. Also finds the single
 most similar historical day (by forecasted load/wind/weather/weekend-ness) and
 reports its actual price curve as an analog reference.
 
-Run manually: `python src/predict_dam.py`. Writes data/dam_forecast.csv and
+Run manually: `python src/forecast/predict_dam.py`. Writes data/dam_forecast.csv and
 data/dam_forecast_meta.json, which generar_web.py reads if present.
 """
 from forecast_common import load_price_series, run_forecast
