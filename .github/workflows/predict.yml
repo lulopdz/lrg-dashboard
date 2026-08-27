@@ -1,8 +1,11 @@
 name: Predicciones DAM/RTM/Spread
 
 on:
-  schedule:
-    - cron: '30 10 * * *' # 30 min después del refresco diario de datos (10:00 UTC), para correr ya con carga/viento/clima/DAM frescos
+  # Último eslabón de la cadena dashboard -> RTM -> predicciones, para correr ya con
+  # carga, viento, clima, DAM y RTM frescos. Antes era un tercer cron independiente.
+  workflow_run:
+    workflows: ["Refrescar RTM"]
+    types: [completed]
   workflow_dispatch: # Disparado por el botón "Refresh Forecasts" del dashboard, o manualmente desde Actions
 
 # Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean y publican a
@@ -21,6 +24,8 @@ permissions:
 jobs:
   predecir:
     runs-on: ubuntu-latest
+    # Si el eslabón anterior se saltó (cadena que venía de un push), este también.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'skipped'
 
     steps:
     - name: Traer el código
