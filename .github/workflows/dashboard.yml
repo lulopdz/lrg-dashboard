@@ -4,7 +4,12 @@ on:
   push:
     branches: [ main ] # Se ejecutará cada vez que subas código para que lo veas ya
   schedule:
-    - cron: '0 10 * * *' # Se ejecutará todos los días a las 10:00 UTC (6:00 AM EDT)
+    # Dos veces al día, y en minuto 23 a propósito: GitHub retrasa o directamente descarta
+    # el evento schedule cuando hay carga alta, y el filo de la hora es el peor momento.
+    # Dos disparos también dan margen si uno se cae, como pasó el 27/08/2026.
+    - cron: '23 10 * * *' # 06:23 EDT: clima, carga, viento y adecuación del día
+    - cron: '23 19 * * *' # 15:23 EDT / 14:23 EST: el IESO publica el DAM de mañana ~13:30 local,
+                          # así que la corrida de la mañana nunca alcanzaba a traerlo
   workflow_dispatch: # Permite disparar el workflow manualmente desde la pestaña Actions
 
 # Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean y publican a
@@ -43,10 +48,11 @@ jobs:
       continue-on-error: true
       run: python src/update_data.py
 
-    # El RTM lo trae y comitea refresh_rtm.yml, que corre a las 10:05 UTC y tambien regenera
-    # y publica el sitio. Si este workflow tambien lo trajera, los dos comitearian el mismo
-    # archivo y el rebase del que llegue segundo choca (ver la nota de propiedad mas abajo).
-    # Aqui se lee el ieso_rtm_prices.csv ya comiteado, que basta para regenerar.
+    # El RTM lo trae y comitea refresh_rtm.yml, que arranca encadenado al terminar este
+    # workflow y tambien regenera y publica el sitio. Si este workflow tambien lo trajera,
+    # los dos comitearian el mismo archivo y el rebase del que llegue segundo choca (ver la
+    # nota de propiedad mas abajo). Aqui se lee el ieso_rtm_prices.csv ya comiteado, que
+    # basta para regenerar.
 
     - name: Actualizar datos del clima
       continue-on-error: true

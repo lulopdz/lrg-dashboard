@@ -36,11 +36,13 @@ lrg-dashboard/
 
 ## Pipelines de Automatización (GitHub Actions)
 
-El proyecto se ejecuta de forma autónoma gracias a los siguientes flujos de trabajo configurados para comitear los datos nuevos y publicar en *GitHub Pages*:
+El proyecto se ejecuta de forma autónoma gracias a los siguientes flujos de trabajo configurados para comitear los datos nuevos y publicar en *GitHub Pages*. Los tres forman **una cadena**: solo el primero tiene horario propio, y cada uno arranca al terminar el anterior (`workflow_run`). Así un único disparo refresca todo, y cada eslabón clona la punta de `main` con el commit del anterior ya adentro, de modo que dos flujos nunca reescriben el mismo archivo a la vez.
 
-1. **Actualizar Dashboard DAM Diariamente (`dashboard.yml`)**: Ejecutado todos los días a las 10:00 UTC (6:00 AM EDT). Descarga los datos DAM, clima, carga y viento; procesa los reportes de participación (`parse_reports.py`) y regenera el HTML interactivo, el simulador y el portfolio.
-2. **Refrescar RTM (`refresh_rtm.yml`)**: Ejecutado a las 10:05 UTC, 5 minutos después del DAM. Actualiza los valores reales del mercado RTM y reconstruye la web. Puede lanzarse manualmente para forzar una actualización puntual.
-3. **Predicciones DAM/RTM/Spread (`predict.yml`)**: Ejecutado todos los días a las 10:30 UTC. Aprovecha que los flujos anteriores ya han renovado las variables para lanzar los modelos de IA sobre datos frescos y proyectar el día de mañana.
+1. **Actualizar Dashboard DAM Diariamente (`dashboard.yml`)**: Dos veces al día, 10:23 y 19:23 UTC (06:23 y 15:23 EDT). Descarga los datos DAM, clima, confianza del pronóstico, carga, viento y adecuación; procesa los reportes de participación (`parse_reports.py`) y regenera el HTML interactivo, el simulador y el portfolio. La corrida de la tarde existe porque el IESO publica el DAM de mañana alrededor de la 1:30 PM local, después de la corrida matutina. El minuto 23 es a propósito: GitHub retrasa o descarta el evento `schedule` en horas de carga alta, y el filo de la hora es el peor momento.
+2. **Refrescar RTM (`refresh_rtm.yml`)**: Arranca al terminar el flujo anterior. Actualiza los valores reales del mercado RTM y reconstruye la web. Puede lanzarse manualmente, desde el botón *Refresh RTM* del dashboard o desde Actions, para forzar una actualización puntual.
+3. **Predicciones DAM/RTM/Spread (`predict.yml`)**: Último eslabón, arranca al terminar el RTM. Aprovecha que los flujos anteriores ya han renovado las variables para lanzar los modelos sobre datos frescos y proyectar el día de mañana.
+
+Un `push` de código dispara solo el primer flujo: la cadena completa queda para los horarios y los botones. Cada archivo de `data/` tiene un único flujo dueño que lo comitea, y esa es la regla que hay que respetar al añadir uno nuevo.
 
 ## Configuración y Uso Local
 

@@ -1,8 +1,14 @@
 name: Refrescar RTM
 
 on:
-  schedule:
-    - cron: '5 10 * * *' # 5 min despues del DAM (10:00 UTC) -- antes coincidian exacto y ambos corrian un runner completo a la vez
+  # Encadenado detrás del dashboard en vez de tener su propio cron. Así un solo disparo
+  # refresca todo: al quitarle el paso de RTM a dashboard.yml, una corrida manual del
+  # dashboard traía el DAM pero dejaba el RTM viejo, y sin RTM fresco no hay spread nuevo.
+  # De paso elimina la carrera de rebase: workflow_run clona la punta de main, ya con el
+  # push del dashboard adentro, no el commit que disparó la corrida.
+  workflow_run:
+    workflows: ["Actualizar Dashboard DAM Diariamente"]
+    types: [completed]
   workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
     inputs:
       hours:
@@ -26,6 +32,9 @@ permissions:
 jobs:
   refrescar-rtm:
     runs-on: ubuntu-latest
+    # Un push de código dispara el dashboard, y no hace falta arrastrar la cadena entera
+    # detrás de cada push. Los cron y los botones del dashboard sí la arrastran.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event != 'push'
 
     steps:
     - name: Traer el código
