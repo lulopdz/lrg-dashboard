@@ -1,58 +1,58 @@
 {
   "zone": "OTTAWA",
-  "target_date": "2026-09-09",
-  "generated_at": "2026-09-08T18:03:00.337962+00:00",
-  "analog_date": "2026-07-29",
-  "analog_distance": 1.9595942050047306,
+  "target_date": "2026-09-10",
+  "generated_at": "2026-09-08T21:58:35.562974+00:00",
+  "analog_date": "2025-06-20",
+  "analog_distance": 0.980709572110704,
   "analog_comparison": [
     {
       "label": "Ontario load forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 18482.916666666668,
-      "analog": 18091.541666666668
+      "target": 17218.941176470587,
+      "analog": 16334.208333333334
     },
     {
       "label": "SE Ontario load forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 9952.625,
-      "analog": 9922.958333333334
+      "target": 9247.70588235294,
+      "analog": 8887.833333333334
     },
     {
       "label": "Wind generation forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 583.0833333333334,
-      "analog": 681.6708333333333
+      "target": 173.6125,
+      "analog": 264.37916666666666
     },
     {
       "label": "Temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 18.00058360894521,
-      "analog": 20.698500394821167
+      "target": 17.236618694506195,
+      "analog": 17.963083666666666
     },
     {
       "label": "Max temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 21.11100006103516,
-      "analog": 22.461000442504883
+      "target": 19.89550018310547,
+      "analog": 22.861
     },
     {
       "label": "Wind speed",
       "unit": "m/s",
       "weight": 1.0,
-      "target": 3.518930991490682,
-      "analog": 2.7296423936883607
+      "target": 4.646803617477417,
+      "analog": 4.504774520833333
     },
     {
       "label": "Precipitation",
       "unit": "mm",
       "weight": 1.0,
-      "target": 0.5250000022351742,
-      "analog": 0.016666666915019352
+      "target": 0.0,
+      "analog": 0.075
     },
     {
       "label": "Snowfall",
@@ -65,68 +65,68 @@
       "label": "Humidity",
       "unit": "%",
       "weight": 1.0,
-      "target": 89.16666666666667,
-      "analog": 91.625
+      "target": 69.75,
+      "analog": 68.70833333333333
     },
     {
       "label": "Solar radiation",
       "unit": "W/m\u00b2",
       "weight": 1.0,
-      "target": 73.375,
-      "analog": 146.125
+      "target": 294.61842105263156,
+      "analog": 312.875
     }
   ],
-  "analog_date_2": "2026-06-10",
-  "analog_distance_2": 2.202955644046112,
+  "analog_date_2": "2026-05-26",
+  "analog_distance_2": 1.5866320821877906,
   "analog_comparison_2": [
     {
       "label": "Ontario load forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 18482.916666666668,
-      "analog": 19269.416666666668
+      "target": 17218.941176470587,
+      "analog": 16469.375
     },
     {
       "label": "SE Ontario load forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 9952.625,
-      "analog": 10739.625
+      "target": 9247.70588235294,
+      "analog": 8996.5
     },
     {
       "label": "Wind generation forecast",
       "unit": "MW",
       "weight": 2.0,
-      "target": 583.0833333333334,
-      "analog": 520.4916666666667
+      "target": 173.6125,
+      "analog": 71.6125
     },
     {
       "label": "Temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 18.00058360894521,
-      "analog": 21.948500394821167
+      "target": 17.236618694506195,
+      "analog": 21.029750333333332
     },
     {
       "label": "Max temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 21.11100006103516,
-      "analog": 24.86100006103516
+      "target": 19.89550018310547,
+      "analog": 29.811
     },
     {
       "label": "Wind speed",
       "unit": "m/s",
       "weight": 1.0,
-      "target": 3.518930991490682,
-      "analog": 2.1013828640182814
+      "target": 4.646803617477417,
+      "analog": 4.1755885975
     },
     {
       "label": "Precipitation",
       "unit": "mm",
       "weight": 1.0,
-      "target": 0.5250000022351742,
-      "analog": 0.20833333333333334
+      "target": 0.0,
+      "analog": 0.0
     },
     {
       "label": "Snowfall",
@@ -139,66 +139,66 @@
       "label": "Humidity",
       "unit": "%",
       "weight": 1.0,
-      "target": 89.16666666666667,
-      "analog": 89.54166666666667
+      "target": 69.75,
+      "analog": 61.208333333333336
     },
     {
       "label": "Solar radiation",
       "unit": "W/m\u00b2",
       "weight": 1.0,
-      "target": 73.375,
-      "analog": 119.04166666666667
+      "target": 294.61842105263156,
+      "analog": 334.7916666666667
     }
   ],
   "recommended_hour": {
     "hour": 2,
-    "expected_error": 3.8006553878752554
+    "expected_error": 3.8590847465936626
   },
   "backtest": {
     "n_test_hours": 505,
-    "model_mae": 15.385670426635588,
-    "model_rmse": 23.20625564755122,
-    "naive_mae": 22.46997194719472,
+    "model_mae": 15.072124893658817,
+    "model_rmse": 22.40449107918045,
+    "naive_mae": 22.572861386138612,
     "hourly_mae": {
-      "1": 6.172474287036215,
-      "2": 3.8006553878752554,
-      "3": 5.772331834360137,
-      "4": 4.701052116968928,
-      "5": 6.304391286086687,
-      "6": 10.697809036057881,
-      "7": 12.417695165870244,
-      "8": 14.334707966098867,
-      "9": 11.160731604543768,
-      "10": 16.63324248983957,
-      "11": 16.55975471614392,
-      "12": 17.580494934465957,
-      "13": 10.120255876372196,
-      "14": 14.556926046846653,
-      "15": 18.31104870676983,
-      "16": 23.197590864836293,
-      "17": 31.47643126331586,
-      "18": 31.74997776716812,
-      "19": 31.39039308449804,
-      "20": 23.2729545686475,
-      "21": 20.831371990213444,
-      "22": 17.04708034765394,
-      "23": 9.696942518995058,
-      "24": 11.72051040479279
+      "1": 6.2055088347644,
+      "2": 3.8590847465936626,
+      "3": 5.827899330996551,
+      "4": 4.644747584623339,
+      "5": 6.264861963776448,
+      "6": 10.907799936661794,
+      "7": 12.363459785122778,
+      "8": 14.125527366238083,
+      "9": 11.020740820387498,
+      "10": 16.825459861047214,
+      "11": 16.96709403585983,
+      "12": 17.9265465252147,
+      "13": 10.192478336368858,
+      "14": 13.286183518338579,
+      "15": 18.371904233253296,
+      "16": 22.77863576529104,
+      "17": 29.24645489410898,
+      "18": 30.47850364524987,
+      "19": 29.329352334108638,
+      "20": 22.04098647241588,
+      "21": 19.689641442114482,
+      "22": 17.106257936095304,
+      "23": 9.912736218622465,
+      "24": 11.684163765298345
     }
   },
   "directional_backtest": {
     "n_hours": 505,
-    "correct": 296,
-    "win_rate": 58.6,
-    "total_pnl": 2602.78,
-    "optimal_pnl": 7979.63,
-    "pct_of_optimal": 32.6,
-    "naive_gen_pnl": 3720.28,
-    "naive_gen_pct": 46.6,
-    "naive_gen_win_rate": 71.9,
-    "naive_load_pnl": -3720.28,
-    "naive_load_pct": -46.6,
-    "naive_load_win_rate": 28.1
+    "correct": 275,
+    "win_rate": 54.5,
+    "total_pnl": 2467.47,
+    "optimal_pnl": 7897.99,
+    "pct_of_optimal": 31.2,
+    "naive_gen_pnl": 3637.63,
+    "naive_gen_pct": 46.1,
+    "naive_gen_win_rate": 71.7,
+    "naive_load_pnl": -3637.63,
+    "naive_load_pct": -46.1,
+    "naive_load_win_rate": 28.3
   },
   "used_dam_forecast_feature": true
 }
