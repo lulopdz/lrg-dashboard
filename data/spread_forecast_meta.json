@@ -1,7 +1,7 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-14",
-  "generated_at": "2026-09-13T14:10:50.795182+00:00",
+  "generated_at": "2026-09-13T14:32:47.478571+00:00",
   "analog_date": "2026-05-06",
   "analog_distance": 0.7831081532467506,
   "analog_comparison": [
@@ -156,9 +156,9 @@
   },
   "backtest": {
     "n_test_hours": 505,
-    "model_mae": 14.657783959837738,
-    "model_rmse": 21.85959085945516,
-    "naive_mae": 22.378795379537955,
+    "model_mae": 14.666625543996155,
+    "model_rmse": 21.86179688106191,
+    "naive_mae": 22.387636963696373,
     "hourly_mae": {
       "1": 6.1659896866334,
       "2": 3.89938644835958,
@@ -169,7 +169,7 @@
       "7": 11.016871203421138,
       "8": 13.979321135210228,
       "9": 11.726566958890377,
-      "10": 14.295602572811259,
+      "10": 14.498557118265802,
       "11": 14.345844574317136,
       "12": 15.670413416010078,
       "13": 9.890624752757573,
@@ -190,14 +190,14 @@
     "n_hours": 505,
     "correct": 204,
     "win_rate": 40.4,
-    "total_pnl": 618.56,
-    "optimal_pnl": 7455.45,
-    "pct_of_optimal": 8.3,
-    "naive_gen_pnl": 3249.3,
-    "naive_gen_pct": 43.6,
+    "total_pnl": 623.03,
+    "optimal_pnl": 7459.91,
+    "pct_of_optimal": 8.4,
+    "naive_gen_pnl": 3244.83,
+    "naive_gen_pct": 43.5,
     "naive_gen_win_rate": 67.5,
-    "naive_load_pnl": -3249.3,
-    "naive_load_pct": -43.6,
+    "naive_load_pnl": -3244.83,
+    "naive_load_pct": -43.5,
     "naive_load_win_rate": 32.5
   },
   "used_dam_forecast_feature": true
