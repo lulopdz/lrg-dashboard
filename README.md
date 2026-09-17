@@ -6,7 +6,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 
 - **Datos de Mercado**: Descarga automatizada de precios DAM y RTM directamente de IESO a través de la librería `gridstatusio`.
 - **Datos Climáticos y de Red**: Recopilación de pronósticos de demanda, generación eólica y clima mediante `openmeteo_requests`.
-- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y un clasificador de **señal de spread** por hora: P(RT > DA), P(spike) y P(dip) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h) en vez de un pronóstico puntual del spread.
+- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h).
 - **Trading Simulator**: Backtest interactivo -- elige una fecha pasada, ve solo la información disponible en ese momento, y evalúa tus apuestas Long/Flat/Short contra el spread real.
 - **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de los reportes XML en `data/reports/`), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
 - **Visualización Interactiva**: Gráficos y tablas dinámicas generados con `plotly`, compilados en un formato HTML estático sin necesidad de un backend activo.
