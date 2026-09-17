@@ -33,12 +33,16 @@ jobs:
   refrescar-rtm:
     runs-on: ubuntu-latest
     # Un push de código dispara el dashboard, y no hace falta arrastrar la cadena entera
-    # detrás de cada push. Los cron y los botones del dashboard sí la arrastran.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event != 'push'
+    # detrás de cada push. Los cron y los botones del dashboard sí la arrastran. Solo sigue
+    # si el eslabón anterior terminó bien: workflow_run también dispara con cancelled/failure,
+    # y el 15/09/2026 eso duplicó la cadena y el segundo predict chocó en el rebase.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event != 'push' && github.event.workflow_run.conclusion == 'success')
 
     steps:
     - name: Traer el código
       uses: actions/checkout@v4
+      with:
+        ref: main # la punta de main al arrancar el job (ya pasada la cola de concurrency), no el SHA que disparó el run
 
     - name: Instalar Python
       uses: actions/setup-python@v5

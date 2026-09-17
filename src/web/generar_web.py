@@ -127,6 +127,14 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     naive_mae = f"${backtest['naive_mae']:.1f}" if backtest else 'n/a'
     backtest_days_label = round(backtest['n_test_hours'] / 24) if backtest else 'n/a'
 
+    # Freshness line: a run that arrives late looks identical to a fresh one otherwise.
+    generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
+    missing = meta.get('missing_input_hours') or 0
+    freshness_html = f'<p class="caveat">Generated {generated}'
+    if missing:
+        freshness_html += f' · {missing} of 24 target hours had incomplete inputs (load/wind/weather not yet published)'
+    freshness_html += '</p>'
+
     recommended = meta.get('recommended_hour') or {}
     confident_hour_label = (
         f"Hour {recommended['hour']} (±${recommended['expected_error']:.1f})" if recommended.get('hour') else 'n/a'
@@ -184,6 +192,7 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     tab_content_html = f"""
 <div id="tab-{tab_id}" class="tab-content">
 <h2>{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
+{freshness_html}
 <div class="stat-row">
   <div class="stat-tile"><div class="stat-label">Model MAE ({backtest_days_label}d backtest)</div><div class="stat-value">{model_mae}</div></div>
   <div class="stat-tile"><div class="stat-label">Naive baseline MAE</div><div class="stat-value">{naive_mae}</div></div>

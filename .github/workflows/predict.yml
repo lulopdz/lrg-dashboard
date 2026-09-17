@@ -24,12 +24,15 @@ permissions:
 jobs:
   predecir:
     runs-on: ubuntu-latest
-    # Si el eslabón anterior se saltó (cadena que venía de un push), este también.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'skipped'
+    # Solo si el eslabón anterior terminó bien (skipped = cadena que venía de un push;
+    # cancelled/failure = no hay RTM fresco y una segunda corrida chocaría en el rebase).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
 
     steps:
     - name: Traer el código
       uses: actions/checkout@v4
+      with:
+        ref: main # la punta de main al arrancar el job (ya pasada la cola de concurrency), no el SHA que disparó el run
 
     - name: Instalar Python
       uses: actions/setup-python@v5

@@ -7,6 +7,8 @@ on:
     # Dos veces al día, y en minuto 23 a propósito: GitHub retrasa o directamente descarta
     # el evento schedule cuando hay carga alta, y el filo de la hora es el peor momento.
     # Dos disparos también dan margen si uno se cae, como pasó el 27/08/2026.
+    - cron: '23 6 * * *'  # 02:23 EDT: respaldo. Entre el 11 y el 17/09/2026 GitHub disparó el de las 10:23
+                          # con 3 a 6 h de retraso, o sea después de las 10:00 EDT en que cierra el DAM
     - cron: '23 10 * * *' # 06:23 EDT: clima, carga, viento y adecuación del día
     - cron: '23 19 * * *' # 15:23 EDT / 14:23 EST: el IESO publica el DAM de mañana ~13:30 local,
                           # así que la corrida de la mañana nunca alcanzaba a traerlo
@@ -32,6 +34,8 @@ jobs:
     steps:
     - name: Traer el código
       uses: actions/checkout@v4
+      with:
+        ref: main # la punta de main al arrancar el job (ya pasada la cola de concurrency), no el SHA que disparó el run
       
     - name: Instalar Python
       uses: actions/setup-python@v5
@@ -87,12 +91,11 @@ jobs:
         python src/ingest/parse_reports.py
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        # Un solo workflow es dueño de cada archivo. actions/checkout clona el commit que
-        # disparó el run, no la punta de main, así que dos workflows que comiteen el mismo
-        # archivo chocan en el rebase por mucho que el grupo de concurrency los encole: el
-        # segundo ya clonó antes de entrar en la cola. Este es dueño de todo menos del RTM
+        # Un solo workflow es dueño de cada archivo. Este es dueño de todo menos del RTM
         # (refresh_rtm.yml) y de los forecasts (predict.yml). historical_pnl.csv se queda
-        # aquí porque depende de los reportes XML, no del RTM.
+        # aquí porque depende de los reportes XML, no del RTM. El checkout con ref: main
+        # clona ya con el push del run anterior adentro, así que el rebase de abajo es solo
+        # red de seguridad por si alguien pushea a mano mientras corre.
         git add data/ieso_dam_prices.csv data/OTTAWA_weather.csv data/weather_confidence.csv data/ieso_load_forecast.csv data/ieso_wind_forecast.csv data/ieso_adequacy.csv data/historical_pnl.csv
         git commit -m "Reporte automático generado" || echo "Sin cambios nuevos"
         git pull --rebase origin main
