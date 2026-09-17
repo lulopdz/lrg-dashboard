@@ -9,7 +9,12 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 
+from refresh import REFRESH_JS, RT_WORKFLOW, refresh_target
 from theme import COLORS, TABLE_ROW_HEIGHT
+
+# Same one-click Real-Time refresh as the dashboard: P&L for today's hours only moves once
+# fresh RT prices are in, and this is the page where that gets watched.
+REFRESH_RT = refresh_target(RT_WORKFLOW, 'Refresh Real-Time')
 
 os.makedirs('docs', exist_ok=True)
 
@@ -423,11 +428,20 @@ def build_portfolio():
   .badge-lost {{ background:rgba(231,76,60,0.15); color:{COLORS['negative']}; }}
   .badge-flat {{ background:rgba(232,163,61,0.15); color:{COLORS['prev_day']}; }}
   .badge-pending {{ background:rgba(255,255,255,0.08); color:#888; }}
+  .top-bar {{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }}
+  .refresh-btn {{
+    display:inline-block; background:{COLORS['dam']}; color:#fff; border-radius:4px;
+    padding:8px 16px; cursor:pointer; font-size:13px; text-decoration:none;
+  }}
+  .refresh-btn:hover {{ background:#2980b9; }}
 </style>
 </head>
 <body>
 
-<a class="back-link" href="index.html">&larr; Back to dashboard</a>
+<div class="top-bar">
+  <a class="back-link" href="index.html">&larr; Back to dashboard</a>
+  <a id="refresh-rt-btn" class="refresh-btn" href="{REFRESH_RT['href']}" target="_blank" rel="noopener">{REFRESH_RT['label']}</a>
+</div>
 <h1>Portfolio</h1>
 <p class="subtitle">Monthly results for every LRG bid/offer submitted to the IESO market, built from the
 participation reports in data/reports. Virtual Gen profits when DAM clears above RTM; Virtual Load profits
@@ -441,6 +455,8 @@ ones we did.</p>
 {sections_html}
 
 <script>
+{REFRESH_JS}
+wireRefresh(document.getElementById('refresh-rt-btn'), {json.dumps(REFRESH_RT)});
 function showMonth(month, btn) {{
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.getElementById('month-' + month).classList.add('active');

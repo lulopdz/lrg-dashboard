@@ -1,0 +1,128 @@
+name: Actualización diaria
+
+# Modalidad 1: pipeline completo una vez al día a las 9:00 hora de Ottawa. Un solo job hace
+# todo en orden (DAM, clima, carga, viento, adecuación, RT, P&L, forecasts, sitio), así que no
+# hay cadena de workflows ni carrera de rebase entre ellos.
+#
+# El disparo de las 9:00 en punto viene de afuera (ops/refresh_trigger.gs, Apps Script con
+# zona horaria America/Toronto) vía workflow_dispatch. El cron de GitHub queda solo como
+# respaldo: entre el 11 y el 17/09/2026 llegó 3 a 6 h tarde todos los días, y es UTC fijo,
+# así que no puede seguir el cambio de horario de Ottawa.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 7 * * *' # 03:23 EDT; con el retraso habitual de GitHub aterriza antes de las 9:00
+  push:
+    branches: [ main ]
+
+# Los dos workflows comitean y publican a Pages; el grupo compartido los encola en vez de
+# dejarlos correr en paralelo. Ojo: GitHub solo mantiene UN pendiente por grupo, uno nuevo
+# cancela al pendiente anterior.
+concurrency:
+  group: lrg-dashboard-git-writes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Traer el código
+      uses: actions/checkout@v4
+      with:
+        ref: main # la punta de main al arrancar el job (ya pasada la cola), no el SHA que disparó el run
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Instalar librerías
+      run: pip install -r requirements.txt
+
+    # Descargas best-effort: una fuente caída no debe bloquear el resto del pipeline.
+    - name: Mercado Day-Ahead (DAM)
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_data.py
+
+    - name: Mercado Real-Time (RT)
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_rtm.py
+
+    - name: Clima
+      continue-on-error: true
+      run: python src/ingest/update_weather.py
+
+    - name: Confianza del pronóstico (Open-Meteo ensemble)
+      continue-on-error: true
+      run: python src/ingest/update_weather_confidence.py
+
+    - name: Pronóstico de demanda
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_load_forecast.py
+
+    - name: Pronóstico de viento
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_wind_forecast.py
+
+    - name: Adecuación (mix de generación)
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_adequacy.py
+
+    - name: Portafolio y P&L
+      run: python src/ingest/parse_reports.py
+
+    - name: Forecasts DAM, RT y spread
+      run: |
+        python src/forecast/predict_dam.py
+        python src/forecast/predict_rtm.py
+        python src/forecast/predict_spread.py
+
+    - name: Guardar datos, regenerar y publicar
+      env:
+        REFRESH_RT_URL: ${{ vars.REFRESH_RT_URL }}
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Bot de LRG"
+        git add data/
+        git commit -m "Actualización diaria" || echo "Sin cambios nuevos"
+        git pull --rebase origin main # red de seguridad por si alguien pusheó a mano mientras corría
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py
+        git push
+
+    - name: Preparar artefacto de Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
+
+  publicar:
+    needs: actualizar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Publicar en GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

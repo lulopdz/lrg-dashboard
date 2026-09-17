@@ -17,7 +17,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 ```text
 lrg-dashboard/
 ├── .github/
-│   └── workflows/          <-- Tareas programadas (dashboard.yml, predict.yml, refresh_rtm.yml)
+│   └── workflows/          <-- daily.yml (9:00 Ottawa, pipeline completo) y refresh_rtm.yml (botón Refresh Real-Time)
 ├── data/                   <-- CSVs guardados con datos históricos, predicciones y metadatos
 │   └── reports/            <-- Reportes XML de participación (IESO DAScheduledEnergy2), fuente del Portfolio
 ├── docs/                   <-- Carpeta raíz para GitHub Pages
@@ -43,13 +43,12 @@ lrg-dashboard/
 
 ## Pipelines de Automatización (GitHub Actions)
 
-El proyecto se ejecuta de forma autónoma gracias a los siguientes flujos de trabajo configurados para comitear los datos nuevos y publicar en *GitHub Pages*. Los tres forman **una cadena**: solo el primero tiene horario propio, y cada uno arranca al terminar el anterior (`workflow_run`). Así un único disparo refresca todo, y cada eslabón clona la punta de `main` con el commit del anterior ya adentro, de modo que dos flujos nunca reescriben el mismo archivo a la vez.
+El dashboard se actualiza bajo dos modalidades, ambas comitean los datos nuevos y publican en *GitHub Pages*:
 
-1. **Actualizar Dashboard DAM Diariamente (`dashboard.yml`)**: Dos veces al día, 10:23 y 19:23 UTC (06:23 y 15:23 EDT). Descarga los datos DAM, clima, confianza del pronóstico, carga, viento y adecuación; procesa los reportes de participación (`parse_reports.py`) y regenera el HTML interactivo, el simulador y el portfolio. La corrida de la tarde existe porque el IESO publica el DAM de mañana alrededor de la 1:30 PM local, después de la corrida matutina. El minuto 23 es a propósito: GitHub retrasa o descarta el evento `schedule` en horas de carga alta, y el filo de la hora es el peor momento.
-2. **Refrescar RTM (`refresh_rtm.yml`)**: Arranca al terminar el flujo anterior. Actualiza los valores reales del mercado RTM y reconstruye la web. Puede lanzarse manualmente, desde el botón *Refresh RTM* del dashboard o desde Actions, para forzar una actualización puntual.
-3. **Predicciones DAM/RTM/Spread (`predict.yml`)**: Último eslabón, arranca al terminar el RTM. Aprovecha que los flujos anteriores ya han renovado las variables para lanzar los modelos sobre datos frescos y proyectar el día de mañana.
+1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los tres forecasts (DAM, RT, spread) y la regeneración del sitio. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`23 7 * * *` UTC) es solo respaldo, porque GitHub lo entrega con horas de retraso y no sigue el horario de Ottawa.
+2. **Refresh Real-Time (`refresh_rtm.yml`)**: bajo demanda, desde el botón *Refresh Real-Time* del dashboard (pestañas RT y Spread) y de la página Portfolio. Trae los últimos intervalos RT publicados (y el DAM, por si ya salió el de mañana), recalcula spreads y el P&L del portafolio y republica. Con la variable `REFRESH_RT_URL` configurada el botón dispara el workflow con un clic; sin ella abre la página de Actions.
 
-Un `push` de código dispara solo el primer flujo: la cadena completa queda para los horarios y los botones. Cada archivo de `data/` tiene un único flujo dueño que lo comitea, y esa es la regla que hay que respetar al añadir uno nuevo.
+Un `push` de código también corre `daily.yml`. Los dos flujos comparten un grupo de concurrency y clonan la punta de `main` al arrancar (`ref: main`), así que se encolan en vez de pisarse. GitHub solo mantiene un run pendiente por grupo: uno nuevo cancela al que ya esperaba.
 
 ## Configuración y Uso Local
 

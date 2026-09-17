@@ -12,10 +12,7 @@ from theme import COLORS  # noqa: F401 -- re-exported: existing importers read C
 TABLE_DAYS = 30
 DEFAULT_ZONE = 'OTTAWA'
 
-# GitHub repo that hosts this dashboard, used to build the links the "Refresh"
-# buttons open (the GitHub Actions pages for each workflow).
-GITHUB_OWNER = 'lulopdz'
-GITHUB_REPO = 'lrg-dashboard'
+from refresh import GITHUB_OWNER, GITHUB_REPO  # noqa: F401  re-exported for generar_web.py
 
 # 1. Load DAM and RTM (both stored hourly; update_rtm.py aggregates the raw 5-min feed)
 dam = pd.read_csv('data/ieso_dam_prices.csv', parse_dates=['interval_start_local'])

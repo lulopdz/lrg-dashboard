@@ -1,25 +1,17 @@
-name: Refrescar RTM
+name: Refresh Real-Time
 
+# Modalidad 2: bajo demanda, para seguir el mercado intradía. Trae los últimos intervalos RT
+# publicados, recalcula spreads y el P&L del portafolio, y republica. Lo dispara el botón
+# "Refresh Real-Time" del sitio (directo vía ops/refresh_trigger.gs si REFRESH_RT_URL está
+# definida, si no desde la página de Actions).
 on:
-  # Encadenado detrás del dashboard en vez de tener su propio cron. Así un solo disparo
-  # refresca todo: al quitarle el paso de RTM a dashboard.yml, una corrida manual del
-  # dashboard traía el DAM pero dejaba el RTM viejo, y sin RTM fresco no hay spread nuevo.
-  # De paso elimina la carrera de rebase: workflow_run clona la punta de main, ya con el
-  # push del dashboard adentro, no el commit que disparó la corrida.
-  workflow_run:
-    workflows: ["Actualizar Dashboard DAM Diariamente"]
-    types: [completed]
-  workflow_dispatch: # Disparado por el botón "Refresh RTM" del dashboard, o manualmente desde Actions
+  workflow_dispatch:
     inputs:
       hours:
-        description: 'Horas hacia atrás (vacío = detectar automáticamente desde el último dato guardado)'
+        description: 'Horas hacia atrás (vacío = desde el último dato guardado)'
         required: false
         default: ''
 
-# Los tres workflows (dashboard.yml, refresh_rtm.yml, predict.yml) comitean y publican a
-# Pages -- si corren al mismo tiempo se pisan el push o la publicación. Este grupo
-# compartido los encola en vez de dejarlos correr en paralelo (cancel-in-progress: false =
-# esperan su turno, no se cancelan entre sí).
 concurrency:
   group: lrg-dashboard-git-writes
   cancel-in-progress: false
@@ -30,19 +22,14 @@ permissions:
   id-token: write
 
 jobs:
-  refrescar-rtm:
+  refrescar:
     runs-on: ubuntu-latest
-    # Un push de código dispara el dashboard, y no hace falta arrastrar la cadena entera
-    # detrás de cada push. Los cron y los botones del dashboard sí la arrastran. Solo sigue
-    # si el eslabón anterior terminó bien: workflow_run también dispara con cancelled/failure,
-    # y el 15/09/2026 eso duplicó la cadena y el segundo predict chocó en el rebase.
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event != 'push' && github.event.workflow_run.conclusion == 'success')
 
     steps:
     - name: Traer el código
       uses: actions/checkout@v4
       with:
-        ref: main # la punta de main al arrancar el job (ya pasada la cola de concurrency), no el SHA que disparó el run
+        ref: main
 
     - name: Instalar Python
       uses: actions/setup-python@v5
@@ -53,8 +40,7 @@ jobs:
     - name: Instalar librerías
       run: pip install -r requirements.txt
 
-    - name: Actualizar datos del RTM
-      continue-on-error: true
+    - name: Mercado Real-Time (RT)
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
         HOURS_INPUT: ${{ github.event.inputs.hours }}
@@ -65,18 +51,25 @@ jobs:
           python src/ingest/update_rtm.py
         fi
 
-    - name: Guardar datos y regenerar dashboard
+    # También el DAM: es barato y así un clic por la tarde ya trae el DAM de mañana (IESO lo
+    # publica ~13:30), que la corrida de las 9:00 todavía no podía ver.
+    - name: Mercado Day-Ahead (DAM)
+      env:
+        GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
+      continue-on-error: true
+      run: python src/ingest/update_data.py
+
+    - name: Portafolio y P&L
+      run: python src/ingest/parse_reports.py
+
+    - name: Guardar datos, regenerar y publicar
+      env:
+        REFRESH_RT_URL: ${{ vars.REFRESH_RT_URL }}
       run: |
-        # Este workflow es dueño de ieso_rtm_prices.csv y de nada mas. historical_pnl.csv lo
-        # comitea dashboard.yml, que es quien corre parse_reports.py: depende de los reportes
-        # XML, no del RTM. Cuando los dos lo comiteaban, un reporte nuevo hacia que ambos
-        # generaran una version distinta a la vez y el rebase del segundo fallaba -- ver la
-        # nota en dashboard.yml sobre por que el grupo de concurrency no lo evita.
-        # El sitio se regenera igual mas abajo, leyendo el historical_pnl.csv ya comiteado.
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
-        git add data/ieso_rtm_prices.csv
-        git commit -m "RTM actualizado" || echo "Sin cambios nuevos"
+        git add data/ieso_rtm_prices.csv data/ieso_dam_prices.csv data/historical_pnl.csv
+        git commit -m "Refresh Real-Time" || echo "Sin cambios nuevos"
         git pull --rebase origin main
         python src/web/generar_web.py
         python src/web/generar_simulator.py
@@ -89,7 +82,7 @@ jobs:
         path: docs
 
   publicar:
-    needs: refrescar-rtm
+    needs: refrescar
     runs-on: ubuntu-latest
     permissions:
       pages: write
