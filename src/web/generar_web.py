@@ -219,11 +219,13 @@ means the point forecast is slightly positive while calls like this one have pai
 {curve_html}
 <h3 id="{tab_id}-table-title">Hour by hour</h3>
 <table class="naive-table signal-table">
-  <thead><tr><th>Hour</th><th class="c">Call</th><th class="c">Tier</th><th class="num">Hit rate</th><th class="num">Edge</th><th class="num">P(&gt;+${T})</th><th class="num">P(&lt;−${T})</th><th class="num">DART fc</th><th class="c">Fc agrees</th><th class="c">Watch</th>
+  <thead><tr><th>Hour</th><th class="c stars-col">★</th><th class="c">Call</th><th class="c">Tier</th><th class="num">Hit rate</th><th class="num">Edge</th><th class="num">P(&gt;+${T})</th><th class="num">P(&lt;−${T})</th><th class="num">DART fc</th><th class="c">Fc agrees</th><th class="c">Watch</th>
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
   <tbody id="{tab_id}-rows"></tbody>
 </table>
-<p class="caveat"><strong>Call</strong>: the side that has paid, over the last {bt.get('days', '?')} days, in hours whose
+<p class="caveat"><strong>★</strong>: where to look first, up to 3: high conviction 2, medium 1, +1 when the point
+forecast agrees with the call, +1 on a big-hour watch (so a no-call hour with a watch still gets one).
+<strong>Call</strong>: the side that has paid, over the last {bt.get('days', '?')} days, in hours whose
 probability fell in the same range as this one; <strong>—</strong> when that edge is noise. <strong>Hit rate</strong>: how
 often that call was right in those hours. <strong>Edge</strong>: their average 1 MW P&amp;L per hour. <strong>P(&gt;+${T})</strong> /
 <strong>P(&lt;−${T})</strong>: probability of a big hour each way (base rates {pct(bp.get('base_rate'))} / {pct(bn.get('base_rate'))}).
@@ -833,10 +835,15 @@ html = f"""<html>
   .caveat {{ color:#888; font-size:12px; max-width:760px; margin:0 0 8px; }}
   /* Spread Signal's hour-by-hour table: full width, numbers right-aligned in a monospace
      column, badges centered, a hover band to follow one hour across 12 columns. */
-  .signal-table {{ width:100%; font-size:14px; margin-bottom:12px; table-layout:fixed; }}
-  .signal-table th, .signal-table td {{ padding:8px 10px; text-align:center; border-bottom:1px solid #222; }}
-  .signal-table th:first-child, .signal-table td:first-child {{ text-align:left; width:64px; font-weight:600; }}
-  .signal-table th.num, .signal-table td.num {{ text-align:right; font-family:ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', monospace; font-size:13px; }}
+  .signal-table {{ width:100%; font-size:13px; margin-bottom:12px; table-layout:fixed; }}
+  .signal-table th, .signal-table td {{ padding:4px 8px; text-align:center; border-bottom:1px solid #222; line-height:20px; }}
+  .signal-table th:first-child, .signal-table td:first-child {{ text-align:left; width:52px; font-weight:600; }}
+  .signal-table .stars-col {{ width:58px; }}
+  .signal-table td.stars {{ color:#f1c40f; letter-spacing:1px; font-size:13px; }}
+  .signal-table td.stars.s1 {{ color:#a58a2a; }}
+  .signal-table td.stars.s2 {{ color:#d4b13a; }}
+  .signal-table tr.no-call td.stars {{ color:#a58a2a; }}
+  .signal-table th.num, .signal-table td.num {{ text-align:right; font-family:ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', monospace; font-size:12px; }}
   .signal-table th.c, .signal-table td.c {{ text-align:center; }}
   .signal-table tbody tr:nth-child(even) td {{ background:rgba(255,255,255,0.015); }}
   .signal-table tbody tr:hover td {{ background:rgba(255,255,255,0.06); }}
@@ -845,7 +852,7 @@ html = f"""<html>
   .signal-table td.pos, .signal-table td.neg {{ font-weight:600; }}
   .signal-table .hit {{ color:#eee; font-weight:600; }}
   .signal-table .miss {{ color:#999; }}
-  .tag {{ display:inline-block; padding:2px 11px; border-radius:999px; font-size:12px; font-weight:600; line-height:18px; white-space:nowrap; }}
+  .tag {{ display:inline-block; padding:1px 9px; border-radius:999px; font-size:11.5px; font-weight:600; line-height:17px; white-space:nowrap; }}
   .tag-pos-high {{ background:rgba(46,204,113,0.18); color:{TIER_COLORS[('DART > 0', 'high')]}; }}
   .tag-pos-medium {{ background:rgba(30,158,85,0.16); color:#4fc27e; }}
   .tag-neg-high {{ background:rgba(231,76,60,0.18); color:{TIER_COLORS[('DART < 0', 'high')]}; }}
@@ -1172,9 +1179,14 @@ function renderSignalTable(date) {{
       past = '<td class="num ' + (a == null ? '' : sign(a)) + '">' + (a == null ? '—' : money(a)) + '</td><td class="c">' + result + '</td>';
     }}
     const tagCls = rated ? 'tag-' + (call === 'DART > 0' ? 'pos' : 'neg') + '-' + day.tier[i] : 'tag-none';
+    // Attention stars, max 3: high 2, medium 1, +1 if the point forecast agrees, +1 on a big-hour watch.
+    const agrees = rated && f != null && (f > 0) === (call === 'DART > 0');
+    const watchOn = day.big_pos_watch[i] || day.big_neg_watch[i];
+    const stars = Math.min(3, (day.tier[i] === 'high' ? 2 : day.tier[i] === 'medium' ? 1 : 0) + (agrees ? 1 : 0) + (watchOn ? 1 : 0));
     const tag = (txt, c) => '<span class="tag ' + c + '">' + txt + '</span>';
     return '<tr class="' + cls + (day.tier[i] === 'high' ? ' model-row' : '') + '">'
       + '<td>HE' + (i + 1) + '</td>'
+      + '<td class="c stars s' + stars + '">' + '★'.repeat(stars) + '</td>'
       + '<td class="c">' + tag(rated ? call : '—', tagCls) + '</td>'
       + '<td class="c">' + tag(rated ? day.tier[i] : 'no call', tagCls) + '</td>'
       + '<td class="num">' + (rated && day.confidence[i] != null ? day.confidence[i].toFixed(0) + '%' : '—') + '</td>'
