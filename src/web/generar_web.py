@@ -223,8 +223,8 @@ means the point forecast is slightly positive while calls like this one have pai
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
   <tbody id="{tab_id}-rows"></tbody>
 </table>
-<p class="caveat"><strong>★</strong>: where to look first, up to 3: high conviction 2, medium 1, +1 when the point
-forecast agrees with the call, +1 on a big-hour watch (so a no-call hour with a watch still gets one).
+<p class="caveat"><strong>★</strong>: the three hours to look at first: high conviction before medium, then the hours
+where the point forecast backs the call the most, then the most extreme probability.
 <strong>Call</strong>: the side that has paid, over the last {bt.get('days', '?')} days, in hours whose
 probability fell in the same range as this one; <strong>—</strong> when that edge is noise. <strong>Hit rate</strong>: how
 often that call was right in those hours. <strong>Edge</strong>: their average 1 MW P&amp;L per hour. <strong>P(&gt;+${T})</strong> /
@@ -838,11 +838,10 @@ html = f"""<html>
   .signal-table {{ width:100%; font-size:13px; margin-bottom:12px; table-layout:fixed; }}
   .signal-table th, .signal-table td {{ padding:4px 8px; text-align:center; border-bottom:1px solid #222; line-height:20px; }}
   .signal-table th:first-child, .signal-table td:first-child {{ text-align:left; width:52px; font-weight:600; }}
-  .signal-table .stars-col {{ width:58px; }}
-  .signal-table td.stars {{ color:#f1c40f; letter-spacing:1px; font-size:13px; }}
-  .signal-table td.stars.s1 {{ color:#a58a2a; }}
-  .signal-table td.stars.s2 {{ color:#d4b13a; }}
-  .signal-table tr.no-call td.stars {{ color:#a58a2a; }}
+  .signal-table .stars-col {{ width:36px; }}
+  .signal-table td.stars {{ color:#f1c40f; font-size:15px; }}
+  .signal-table tbody tr.top td {{ background:rgba(241,196,15,0.07); }}
+  .signal-table tbody tr.top:hover td {{ background:rgba(241,196,15,0.13); }}
   .signal-table th.num, .signal-table td.num {{ text-align:right; font-family:ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', monospace; font-size:12px; }}
   .signal-table th.c, .signal-table td.c {{ text-align:center; }}
   .signal-table tbody tr:nth-child(even) td {{ background:rgba(255,255,255,0.015); }}
@@ -1163,6 +1162,14 @@ function renderSignalTable(date) {{
   const act = day.actual;
   table.classList.toggle('live', !act);
   const sign = v => v > 0 ? 'pos' : (v < 0 ? 'neg' : '');
+  // Top 3 hours to look at: high before medium, then how much the point forecast backs the
+  // call (fc in the call's direction), then the most extreme probability.
+  const support = i => {{ const f = fc[i]; return f == null ? 0 : (day.call[i] === 'DART > 0' ? f : -f); }};
+  const extremity = i => day.call[i] === 'DART > 0' ? day.p_pos[i] : 100 - day.p_pos[i];
+  const top = day.call.map((c, i) => i).filter(i => day.tier[i] !== 'low')
+    .sort((a, b) => (day.tier[b] === 'high') - (day.tier[a] === 'high') || support(b) - support(a) || extremity(b) - extremity(a))
+    .slice(0, 3);
+  const rankOf = i => top.indexOf(i) + 1;
   const money = (v, d = 1) => v == null ? '—' : '$' + (v < 0 ? '−' : '+') + Math.abs(v).toFixed(d);
   const rows = day.call.map((call, i) => {{
     const rated = day.tier[i] !== 'low';
@@ -1179,14 +1186,11 @@ function renderSignalTable(date) {{
       past = '<td class="num ' + (a == null ? '' : sign(a)) + '">' + (a == null ? '—' : money(a)) + '</td><td class="c">' + result + '</td>';
     }}
     const tagCls = rated ? 'tag-' + (call === 'DART > 0' ? 'pos' : 'neg') + '-' + day.tier[i] : 'tag-none';
-    // Attention stars, max 3: high 2, medium 1, +1 if the point forecast agrees, +1 on a big-hour watch.
-    const agrees = rated && f != null && (f > 0) === (call === 'DART > 0');
-    const watchOn = day.big_pos_watch[i] || day.big_neg_watch[i];
-    const stars = Math.min(3, (day.tier[i] === 'high' ? 2 : day.tier[i] === 'medium' ? 1 : 0) + (agrees ? 1 : 0) + (watchOn ? 1 : 0));
+    const rank = rankOf(i);
     const tag = (txt, c) => '<span class="tag ' + c + '">' + txt + '</span>';
-    return '<tr class="' + cls + (day.tier[i] === 'high' ? ' model-row' : '') + '">'
+    return '<tr class="' + cls + (day.tier[i] === 'high' ? ' model-row' : '') + (rank ? ' top' : '') + '">'
       + '<td>HE' + (i + 1) + '</td>'
-      + '<td class="c stars s' + stars + '">' + '★'.repeat(stars) + '</td>'
+      + '<td class="c stars" title="' + (rank ? '#' + rank + ' hour to look at' : '') + '">' + (rank ? '★' : '') + '</td>'
       + '<td class="c">' + tag(rated ? call : '—', tagCls) + '</td>'
       + '<td class="c">' + tag(rated ? day.tier[i] : 'no call', tagCls) + '</td>'
       + '<td class="num">' + (rated && day.confidence[i] != null ? day.confidence[i].toFixed(0) + '%' : '—') + '</td>'
