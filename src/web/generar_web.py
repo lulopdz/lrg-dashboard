@@ -4,7 +4,7 @@ import os
 import pandas as pd
 
 from dashboard_data import (
-    COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, GITHUB_OWNER, GITHUB_REPO, LOAD_VARS,
+    COLORS, DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, LOAD_VARS,
     SUPPLY_MIX, TABLE_DAYS, WEATHER_GROUPS, WEATHER_VARS, adequacy, dam, default_date_idx,
     default_forecast_date_idx, default_load_idx, default_weather_idx, default_wind_idx,
     latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
@@ -12,6 +12,7 @@ from dashboard_data import (
     weather_latest_ts,
     weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
+from refresh import DAILY_WORKFLOW, RT_WORKFLOW, REFRESH_JS, refresh_target
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
     build_adequacy_grid_figs, build_spread_detail_fig, build_supply_mix_fig, build_table_fig,
@@ -223,28 +224,24 @@ for _i, _btn in enumerate(_predict_buttons):
         break
 dam_forecast_tab_button, rtm_forecast_tab_button, spread_forecast_tab_button = _predict_buttons
 
-# One workflow link per tab, swapped into the day-bar's single refresh button by tab name
-# (see showTab in the page JS) instead of every tab carrying its own standalone button.
+# One refresh target per tab, swapped into the day-bar's single button by tab name (see
+# showTab in the page JS). Two modes only: RT and Spread refresh on demand (refresh_rtm.yml),
+# everything else comes from the 9:00 daily run (daily.yml).
 TAB_REFRESH = {
-    'dam': ('dashboard.yml', 'Refresh DAM'),
-    'rtm': ('refresh_rtm.yml', 'Refresh RTM'),
-    'spread': ('dashboard.yml', 'Refresh Spread'),
-    'weather': ('dashboard.yml', 'Refresh Weather Forecast'),
-    'load': ('dashboard.yml', 'Refresh Load Forecast'),
-    'wind': ('dashboard.yml', 'Refresh Wind Forecast'),
-    'supply': ('dashboard.yml', 'Refresh Supply Mix'),
+    'dam': (DAILY_WORKFLOW, 'Run daily update'),
+    'rtm': (RT_WORKFLOW, 'Refresh Real-Time'),
+    'spread': (RT_WORKFLOW, 'Refresh Real-Time'),
+    'weather': (DAILY_WORKFLOW, 'Run daily update'),
+    'load': (DAILY_WORKFLOW, 'Run daily update'),
+    'wind': (DAILY_WORKFLOW, 'Run daily update'),
+    'supply': (DAILY_WORKFLOW, 'Run daily update'),
 }
-if dam_forecast_tab_button:
-    TAB_REFRESH['forecast'] = ('predict.yml', 'Refresh Forecasts')
-if rtm_forecast_tab_button:
-    TAB_REFRESH['rtm-forecast'] = ('predict.yml', 'Refresh Forecasts')
-if spread_forecast_tab_button:
-    TAB_REFRESH['spread-forecast'] = ('predict.yml', 'Refresh Forecasts')
+for _tab, _btn in [('forecast', dam_forecast_tab_button), ('rtm-forecast', rtm_forecast_tab_button),
+                   ('spread-forecast', spread_forecast_tab_button)]:
+    if _btn:
+        TAB_REFRESH[_tab] = (DAILY_WORKFLOW, 'Run daily update')
 
-TAB_REFRESH_JSON = json.dumps({
-    tab: {'href': f'https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/{workflow}', 'label': label}
-    for tab, (workflow, label) in TAB_REFRESH.items()
-})
+TAB_REFRESH_JSON = json.dumps({tab: refresh_target(workflow, label) for tab, (workflow, label) in TAB_REFRESH.items()})
 
 # Which tabs have a single dropdown filter unified into the shared day-bar selector (drives
 # the hourly chart and/or the table's trace visibility -- see applyZoneChange in the page
@@ -705,6 +702,7 @@ const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
 const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
 const WEATHER_TILE_DATA = {WEATHER_TILE_DATA_JSON};
 let currentTab = 'dam';
+{REFRESH_JS}
 
 function showTab(name, btn) {{
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -719,9 +717,7 @@ function showTab(name, btn) {{
   const refreshBtn = document.getElementById('tab-refresh-btn');
   const r = TAB_REFRESH[name];
   if (r) {{
-    refreshBtn.href = r.href;
-    refreshBtn.textContent = r.label;
-    refreshBtn.title = 'Opens GitHub Actions';
+    wireRefresh(refreshBtn, r);
     refreshBtn.style.display = 'inline-block';
   }} else {{
     refreshBtn.style.display = 'none';
@@ -976,8 +972,8 @@ document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); upda
       </select>
     </div>
   </div>
-  <a id="tab-refresh-btn" class="refresh-btn" href="https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/dashboard.yml"
-     target="_blank" rel="noopener" title="Opens GitHub Actions">Refresh DAM</a>
+  <a id="tab-refresh-btn" class="refresh-btn" href="{refresh_target(*TAB_REFRESH['dam'])['href']}"
+     target="_blank" rel="noopener" title="Opens GitHub Actions">{TAB_REFRESH['dam'][1]}</a>
 </div>
 
 <div id="tab-dam" class="tab-content active">
