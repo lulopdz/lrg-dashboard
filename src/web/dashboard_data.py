@@ -187,7 +187,36 @@ def _forecast_history(prefix, actual_df):
     return days
 
 
-forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm), ('spread', spread))}
+forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm))}
+
+
+# 2c. Archived spread signals (predict_spread.py), same shape of dict, with the realized
+# RT - DA per hour so a past day can be scored on the page.
+def _signal_history():
+    path = 'data/spread_signal_history.csv'
+    if not os.path.exists(path):
+        return {}
+    hist = pd.read_csv(path)
+    act = spread[spread['location'] == DEFAULT_ZONE].copy()
+    act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
+    act['delta'] = -act['lmp']  # spread is DAM - RTM; the signal reads RT - DA
+    actual = {d: dict(zip(g['hour'], g['delta'])) for d, g in act.groupby('date')}
+    days = {}
+    for d, g in hist.groupby('target_date'):
+        g = g.sort_values('hour')
+        a = actual.get(d)
+        days[d] = {
+            'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
+            'backfilled': bool(g['backfilled'].iloc[0]) if 'backfilled' in g else False,
+            'p_up': _clean(g['p_up'] * 100), 'p_spike': _clean(g['p_spike'] * 100), 'p_dip': _clean(g['p_dip'] * 100),
+            'call': list(g['call']), 'tier': list(g['tier']),
+            'spike_watch': [bool(v) for v in g['spike_watch']], 'dip_watch': [bool(v) for v in g['dip_watch']],
+            'actual': _clean(a.get(h) for h in range(1, 25)) if a else None,
+        }
+    return days
+
+
+signal_history = _signal_history()
 
 # 3. Shared reference date: the actual calendar day, in market time. DAM always publishes
 # a day ahead (so its max date is "tomorrow", not "today"), and RTM is only ever as

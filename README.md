@@ -6,7 +6,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 
 - **Datos de Mercado**: Descarga automatizada de precios DAM y RTM directamente de IESO a través de la librería `gridstatusio`.
 - **Datos Climáticos y de Red**: Recopilación de pronósticos de demanda, generación eólica y clima mediante `openmeteo_requests`.
-- **Modelos Predictivos (Machine Learning)**: Uso de algoritmos con `scikit-learn` para predecir precios DAM, RTM y spreads del día siguiente.
+- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y un clasificador de **señal de spread** por hora: P(RT > DA), P(spike) y P(dip) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h) en vez de un pronóstico puntual del spread.
 - **Trading Simulator**: Backtest interactivo -- elige una fecha pasada, ve solo la información disponible en ese momento, y evalúa tus apuestas Long/Flat/Short contra el spread real.
 - **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de los reportes XML en `data/reports/`), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
 - **Visualización Interactiva**: Gráficos y tablas dinámicas generados con `plotly`, compilados en un formato HTML estático sin necesidad de un backend activo.
@@ -32,7 +32,7 @@ lrg-dashboard/
 │   │   └── parse_reports.py <-- Convierte los reportes XML en data/reports/ a data/historical_pnl.csv
 │   ├── forecast/           <-- Modelos que proyectan el día siguiente
 │   │   ├── forecast_common.py <-- Features, entrenamiento y *backtest* que comparten los predict_*
-│   │   └── predict_*.py    <-- Un script por serie (DAM, RTM, spread)
+│   │   └── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py es el clasificador de señal (--backfill reconstruye el histórico walk-forward)
 │   └── web/                <-- Construye el HTML que se publica en docs/
 │       ├── theme.py        <-- Colores y estilo compartidos
 │       ├── dashboard_data.py <-- Carga los CSVs de data/ y los deja listos para graficar
@@ -46,7 +46,7 @@ lrg-dashboard/
 
 El dashboard se actualiza bajo dos modalidades, ambas comitean los datos nuevos y publican en *GitHub Pages*:
 
-1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los tres forecasts (DAM, RT, spread) y la regeneración del sitio. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`23 7 * * *` UTC) es solo respaldo, porque GitHub lo entrega con horas de retraso y no sigue el horario de Ottawa.
+1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los forecasts DAM y RT y la señal de spread y la regeneración del sitio. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`23 7 * * *` UTC) es solo respaldo, porque GitHub lo entrega con horas de retraso y no sigue el horario de Ottawa.
 2. **Refresh Real-Time (`refresh_rtm.yml`)**: bajo demanda, desde el botón *Refresh Real-Time* del dashboard (pestañas RT y Spread) y de la página Portfolio. Trae los últimos intervalos RT publicados (y el DAM, por si ya salió el de mañana), recalcula spreads y el P&L del portafolio y republica. Con la variable `REFRESH_RT_URL` configurada el botón dispara el workflow con un clic; sin ella abre la página de Actions.
 
 Un `push` de código también corre `daily.yml`. Los dos flujos comparten un grupo de concurrency y clonan la punta de `main` al arrancar (`ref: main`), así que se encolan en vez de pisarse. GitHub solo mantiene un run pendiente por grupo: uno nuevo cancela al que ya esperaba.
