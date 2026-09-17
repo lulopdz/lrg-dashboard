@@ -187,11 +187,11 @@ def _forecast_history(prefix, actual_df):
     return days
 
 
-forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm))}
+forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm), ('spread', spread))}
 
 
 # 2c. Archived spread signals (predict_spread.py), same shape of dict, with the realized
-# RT - DA per hour so a past day can be scored on the page.
+# DART (= DA - RT, the spread frame's sign) per hour so a past day can be scored on the page.
 def _signal_history():
     path = 'data/spread_signal_history.csv'
     if not os.path.exists(path):
@@ -199,8 +199,7 @@ def _signal_history():
     hist = pd.read_csv(path)
     act = spread[spread['location'] == DEFAULT_ZONE].copy()
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
-    act['delta'] = -act['lmp']  # spread is DAM - RTM; the signal reads RT - DA
-    actual = {d: dict(zip(g['hour'], g['delta'])) for d, g in act.groupby('date')}
+    actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
     days = {}
     for d, g in hist.groupby('target_date'):
         g = g.sort_values('hour')
@@ -208,9 +207,9 @@ def _signal_history():
         days[d] = {
             'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
             'backfilled': bool(g['backfilled'].iloc[0]) if 'backfilled' in g else False,
-            'p_up': _clean(g['p_up'] * 100), 'p_spike': _clean(g['p_spike'] * 100), 'p_dip': _clean(g['p_dip'] * 100),
+            'p_pos': _clean(g['p_pos'] * 100), 'p_big_pos': _clean(g['p_big_pos'] * 100), 'p_big_neg': _clean(g['p_big_neg'] * 100),
             'call': list(g['call']), 'tier': list(g['tier']),
-            'spike_watch': [bool(v) for v in g['spike_watch']], 'dip_watch': [bool(v) for v in g['dip_watch']],
+            'big_pos_watch': [bool(v) for v in g['big_pos_watch']], 'big_neg_watch': [bool(v) for v in g['big_neg_watch']],
             'actual': _clean(a.get(h) for h in range(1, 25)) if a else None,
         }
     return days
