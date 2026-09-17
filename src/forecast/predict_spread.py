@@ -7,13 +7,14 @@ tab's convention: positive when day-ahead clears above real-time).
      P(DART > 0)          direction
      P(DART > +BIG_T)     DA well above RT (a virtual gen pays)
      P(DART < -BIG_T)     RT well above DA (a virtual load pays)
-   DART > 0 ~66% of hours in OTTAWA, so every probability is read against its base rate,
-   and confidence is not the raw probability: each hour's P(DART > 0) falls in a bin, and
-   the bin's hit rate and 1 MW P&L per hour over the trailing BACKTEST_DAYS are what we
-   report. Tiers rank by $/h edge first, because the tails are one-sided (RT spikes, i.e.
-   big negative DART, dwarf the positive side): a bin can be right 59% of the time and
-   lose money, or right 47% and make it. "high" = paid >= $5/h AND right >= 60% of the
-   time; "medium" = paid >= $1/h; anything else is "low", including bins too small to judge.
+   DART > 0 ~66% of hours in OTTAWA (every hour of the day), so "the likelier side" is
+   nearly always DART > 0 and is not the question. The call is the side that has PAID in
+   hours like this one: each hour's P(DART > 0) falls in a bin, and over the trailing
+   BACKTEST_DAYS the bin's mean DART decides the call (its sign) and the edge (its size,
+   $/h for 1 MW). The tails are one-sided (RT spikes, i.e. big negative DART, dwarf the
+   positive side), so a bin where DART > 0 happens 61% of the time can still pay to trade
+   DART < 0. Tiers: "high" = edge >= $5/h AND the call right >= 60% of the time; "medium" =
+   edge >= $1/h; anything else is "low" (no call), including bins too small to judge.
 
 Writes data/spread_signal.csv, data/spread_signal_meta.json, and one vintage per target
 day to data/spread_signal_history.csv. `--backfill` reconstructs that archive walk-forward.
@@ -36,6 +37,7 @@ CONF_EDGES = [0.0, 0.35, 0.5, 0.65, 0.8, 1.01]  # P(DART > 0) bins scored for hi
 TIER_MIN_EDGE = {"high": 5.0, "medium": 1.0}  # bin $/h edge needed for each tier
 TIER_MIN_HIT_HIGH = 60.0  # and "high" also needs this hit rate (%)
 MIN_BIN_HOURS = 24  # fewer backtest hours than this and the bin is unrated (low)
+MIN_T_STAT = 2.0  # and the edge must be >= this many standard errors from zero, or it's noise
 WATCH_LIFT = 2.0  # a big hour is flagged when its P >= WATCH_LIFT x base rate
 MODEL_PARAMS = dict(max_depth=4, learning_rate=0.05, max_iter=300)
 
@@ -78,8 +80,8 @@ def bin_of(p):
     return int(np.searchsorted(CONF_EDGES, p, side="right") - 1)
 
 
-def tier_of(hit_rate, edge, n):
-    if hit_rate is None or n < MIN_BIN_HOURS:
+def tier_of(hit_rate, edge, n, se=0.0):
+    if hit_rate is None or n < MIN_BIN_HOURS or edge < MIN_T_STAT * se:
         return "low"
     if edge >= TIER_MIN_EDGE["high"] and hit_rate >= TIER_MIN_HIT_HIGH:
         return "high"
@@ -100,21 +102,28 @@ def backtest(df_hist, cols):
     dart = test["lmp"].values
     base = {k: float(rule(train["lmp"]).mean()) for k, rule in TARGETS.items()}
 
-    call_pos = p["pos"] >= 0.5
-    hit = call_pos == (dart > 0)
-    pnl = np.where(call_pos, dart, -dart)  # 1 MW in the called direction: gen when DART > 0, load when < 0
     bins = []
     for i in range(len(CONF_EDGES) - 1):
         m = np.array([bin_of(v) == i for v in p["pos"]])
         n = int(m.sum())
-        hr = float(hit[m].mean() * 100) if n else None
-        edge = float(pnl[m].mean()) if n else 0.0
+        # The call is whichever side paid in this bin; too few hours -> the likelier side.
+        e_dart = float(dart[m].mean()) if n else 0.0
+        se = float(dart[m].std(ddof=1) / np.sqrt(n)) if n > 1 else 0.0
+        call_pos = e_dart > 0 if n >= MIN_BIN_HOURS else CONF_EDGES[i] >= 0.5
+        hits = (dart[m] > 0) == call_pos
+        hr = float(hits.mean() * 100) if n else None
+        edge = abs(e_dart)
         bins.append({"lo": CONF_EDGES[i], "hi": min(CONF_EDGES[i + 1], 1.0), "n": n,
+                     "call": CALL_POS if call_pos else CALL_NEG, "e_dart": round(e_dart, 2), "se": round(se, 2),
                      "hit_rate": None if hr is None else round(hr, 1),
-                     "pnl": round(float(pnl[m].sum()), 2) if n else 0.0, "edge": round(edge, 2),
-                     "tier": tier_of(hr, edge, n)})
-    tier_by_bin = [b["tier"] for b in bins]
-    high = np.array([tier_by_bin[bin_of(v)] == "high" for v in p["pos"]])
+                     "pnl": round(float(edge * n), 2), "edge": round(edge, 2),
+                     "tier": tier_of(hr, edge, n, se)})
+    bin_idx = np.array([bin_of(v) for v in p["pos"]])
+    call_pos = np.array([bins[i]["call"] == CALL_POS for i in bin_idx])
+    hit = call_pos == (dart > 0)
+    pnl = np.where(call_pos, dart, -dart)  # 1 MW in the called direction: gen when DART > 0, load when < 0
+    high = np.array([bins[i]["tier"] == "high" for i in bin_idx])
+    rated = np.array([bins[i]["tier"] != "low" for i in bin_idx])
 
     def brier_skill(name):
         y = TARGETS[name](test["lmp"]).astype(int)
@@ -131,6 +140,9 @@ def backtest(df_hist, cols):
         "days": BACKTEST_DAYS, "n_hours": int(len(test)),
         "base_rate_pos": round(base["pos"] * 100, 1),
         "hit_rate_all": round(float(hit.mean() * 100), 1), "pnl_all": round(float(pnl.sum()), 2),
+        "n_rated": int(rated.sum()),
+        "hit_rate_rated": round(float(hit[rated].mean() * 100), 1) if rated.any() else None,
+        "pnl_rated": round(float(pnl[rated].sum()), 2),
         "n_high": int(high.sum()),
         "hit_rate_high": round(float(hit[high].mean() * 100), 1) if high.any() else None,
         "pnl_high": round(float(pnl[high].sum()), 2),
@@ -145,7 +157,8 @@ def backtest(df_hist, cols):
 
 def archive(out, meta):
     path = DATA_DIR / "spread_signal_history.csv"
-    rows = out[["hour", "p_pos", "p_big_pos", "p_big_neg", "call", "tier", "big_pos_watch", "big_neg_watch"]].copy()
+    rows = out[["hour", "p_pos", "p_big_pos", "p_big_neg", "call", "tier", "confidence", "edge",
+                "big_pos_watch", "big_neg_watch"]].copy()
     rows.insert(0, "backfilled", meta.get("backfilled", False))
     rows.insert(0, "generated_at", meta["generated_at"])
     rows.insert(0, "target_date", meta["target_date"])
@@ -203,7 +216,7 @@ def run_signal(target_date=None, write_latest=True):
               f"always gen ${metrics['always_gen_pnl']:.0f}, always load ${metrics['always_load_pnl']:.0f}")
         print(f"Brier skill: {metrics['brier_skill']} | watch: {metrics['watch']}")
         for b in metrics["bins"]:
-            print(f"  P(DART > 0) {b['lo']:.2f}-{b['hi']:.2f}: n={b['n']:3d} hit={b['hit_rate']} edge=${b['edge']}/h -> {b['tier']}")
+            print(f"  P(DART > 0) {b['lo']:.2f}-{b['hi']:.2f}: n={b['n']:3d} E[DART]=${b['e_dart']}/h (±{b['se']}) -> {b['call']} hit={b['hit_rate']} -> {b['tier']}")
 
     usable = usable_feature_cols(df_hist, FEATURE_COLS)
     p = fit_probas(df_hist, df_target, usable)
@@ -216,7 +229,7 @@ def run_signal(target_date=None, write_latest=True):
     out["p_pos"] = np.round(p["pos"], 3)
     out["p_big_pos"] = np.round(p["big_pos"], 3)
     out["p_big_neg"] = np.round(p["big_neg"], 3)
-    out["call"] = np.where(out["p_pos"] >= 0.5, CALL_POS, CALL_NEG)
+    out["call"] = [bins[bin_of(v)]["call"] if bins else (CALL_POS if v >= 0.5 else CALL_NEG) for v in out["p_pos"]]
     out["confidence"] = [bins[bin_of(v)]["hit_rate"] if bins else None for v in out["p_pos"]]
     out["edge"] = [bins[bin_of(v)]["edge"] if bins else None for v in out["p_pos"]]
     out["tier"] = [bins[bin_of(v)]["tier"] if bins else "low" for v in out["p_pos"]]

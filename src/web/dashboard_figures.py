@@ -12,7 +12,7 @@ from dashboard_data import (
     DAY_OPTION_STRS, DAY_OPTIONS, DEFAULT_ZONE, SELECTABLE_DATE_STRS, TABLE_DAYS,
     dam, default_date_idx, default_idx, rtm, table_start_date, today_date, zones,
 )
-from theme import COLORS, PROFILE_HEIGHT, SPREAD_HEIGHT, TABLE_BUCKET_SIZE, TABLE_ROW_HEIGHT
+from theme import COLORS, PROFILE_HEIGHT, SPREAD_HEIGHT, TABLE_BUCKET_SIZE, TABLE_ROW_HEIGHT, TIER_COLORS
 
 
 def hour_xaxis(**extra):
@@ -302,7 +302,7 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=[None] * len(forecast_df),
         name='Actual', mode='lines+markers', showlegend=False,
-        line=dict(color=COLORS['positive'] if is_spread else COLORS['dam'], width=2.5), marker=ring_marker
+        line=dict(color='#eee' if is_spread else COLORS['dam'], width=2, dash='dash' if is_spread else None), marker=ring_marker
     ))
     if is_spread:
         fig.add_hline(y=0, line_color=COLORS['muted'], line_width=1)
@@ -319,7 +319,7 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         template='plotly_dark',
         title=None,
         legend=dict(orientation='v', yanchor='middle', y=0.5, xanchor='left', x=1.02),
-        xaxis_title='Hour', yaxis_title=f"{'Spread' if is_spread else 'Price'} ($/MWh)",
+        xaxis_title='Hour', yaxis_title=f"{'DART' if is_spread else 'Price'} ($/MWh)",
         xaxis=hour_xaxis(showspikes=True, spikemode='across', spikesnap='cursor',
                           spikedash='dot', spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid']),
         yaxis=dict(gridcolor=COLORS['grid'], hoverformat='.1f'),
@@ -331,130 +331,34 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
 
 
 
-# Conviction tier shading (the sign colors green/red are reserved for DART's sign everywhere).
-TIER_FILL = {'high': 'rgba(155,89,182,0.26)', 'medium': 'rgba(155,89,182,0.11)'}
-CALL_COLOR = {'DART > 0': COLORS['positive'], 'DART < 0': COLORS['negative']}
-
-
-def signal_shapes(tiers, base_rates):
-    """Tier shading (one column per hour, across all three rows) plus the reference lines:
-    50% and the base rate of DART > 0 on the direction row, the big-hour base rates on the
-    middle row, zero on the DART forecast row. Mirrored by signalShapes() in the page JS."""
-    shapes = []
-    for h, tier in enumerate(tiers, start=1):
-        if tier in TIER_FILL:
-            shapes.append(dict(type='rect', xref='x', yref='paper', x0=h - 0.5, x1=h + 0.5, y0=0, y1=1,
-                               fillcolor=TIER_FILL[tier], line_width=0, layer='below'))
-    line = dict(color=COLORS['muted'], width=1)
-    shapes.append(dict(type='line', xref='x domain', yref='y', x0=0, x1=1, y0=50, y1=50, line=line))
-    shapes.append(dict(type='line', xref='x domain', yref='y3', x0=0, x1=1, y0=0, y1=0, line=line))
-    for yref, key in (('y', 'pos'), ('y2', 'big_pos'), ('y2', 'big_neg')):
-        v = (base_rates or {}).get(key)
-        if v is not None:
-            shapes.append(dict(type='line', xref='x domain', yref=yref, x0=0, x1=1, y0=v, y1=v,
-                               line=dict(color=COLORS['muted'], width=1, dash='dash')))
-    return shapes
-
-
-def extreme_top(*values, base=None):
-    """y2 ceiling: the base-rate lines must sit inside the panel, not on its edge."""
-    vals = [v for v in values if v is not None] + [(base or {}).get('big_pos') or 0, (base or {}).get('big_neg') or 0]
-    return max(vals) * 1.25 + 1
-
-
-def build_signal_fig(sig, meta, forecast, fmeta):
-    """Tomorrow's spread signal as three panels on one hour axis, all in DART = DA - RT:
-    P(DART > 0) with the conviction tier shaded behind it and markers colored by the call's
-    sign, P(big positive)/P(big negative) against their base rates with watch stars, and the
-    DART point forecast with its two similar days and error band (the old Spread Forecast).
-
-    Trace order is fixed and applySignalDate in the page JS restyles by index:
-    0 P(DART>0)  1 outcome markers (past days)  2 P(big+)  3 P(big-)  4 big+ watch  5 big- watch
-    6 realized big+  7 realized big-  8 Similar #1  9 Similar #2  10 band low  11 band high
-    12 DART forecast  13 actual DART."""
+def build_signal_bars(sig, forecast):
+    """The Spread Signal as one bar per hour: height = the DART point forecast ($/MWh, from
+    predict_spread.py's regression), labelled with its value; color = the call (green DART > 0,
+    red DART < 0, full tone high / faded medium, grey = no call). A red bar pointing up means
+    the point forecast is slightly positive but calls like this one have paid on the negative
+    side. Trace order is fixed for applySignalDate: 0 bars, 1 outcome marks."""
     hours = list(sig['hour'])
-    pct = lambda col: (sig[col] * 100).round(1)
-    base = meta.get('base_rates') or {}
-    T = meta.get('big_threshold')
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.38, 0.27, 0.35])
-    ring = dict(width=1.5, color=COLORS['ring'])
-    empty = dict(x=[], y=[])
-
-    fig.add_trace(go.Scatter(
-        x=hours, y=pct('p_pos'), name='P(DART > 0)', mode='lines+markers',
-        line=dict(color=COLORS['predicted'], width=3),
-        marker=dict(size=10, line=dict(width=2, color=COLORS['ring']), color=[CALL_COLOR[c] for c in sig['call']]),
-        customdata=list(zip(sig['call'], sig['tier'], sig['confidence'].fillna(0), sig['edge'].fillna(0))),
-        hovertemplate='HE%{x}: %{y:.0f}% · %{customdata[0]} · %{customdata[1]} tier · hit %{customdata[2]:.0f}% · edge $%{customdata[3]:.1f}/h<extra></extra>',
-    ), row=1, col=1)
-    fig.add_trace(go.Scatter(
-        name='Outcome', mode='markers', marker=dict(size=17, symbol='circle-open', line=dict(width=2.5, color='#eee')),
-        hovertemplate='HE%{x}: %{text}<extra></extra>', text=[], **empty), row=1, col=1)
-
-    fig.add_trace(go.Scatter(
-        x=hours, y=pct('p_big_pos'), name=f"P(DART > +${T})", mode='lines+markers',
-        line=dict(color=COLORS['positive'], width=2.5), marker=dict(size=7, line=ring),
-        hovertemplate='HE%{x}: P(DART > +$' + str(T) + ') %{y:.1f}%<extra></extra>'), row=2, col=1)
-    fig.add_trace(go.Scatter(
-        x=hours, y=pct('p_big_neg'), name=f"P(DART < −${T})", mode='lines+markers',
-        line=dict(color=COLORS['negative'], width=2.5), marker=dict(size=7, line=ring),
-        hovertemplate='HE%{x}: P(DART < −$' + str(T) + ') %{y:.1f}%<extra></extra>'), row=2, col=1)
-    pw = sig[sig['big_pos_watch']]
-    nw = sig[sig['big_neg_watch']]
-    fig.add_trace(go.Scatter(
-        x=list(pw['hour']), y=list((pw['p_big_pos'] * 100).round(1)), name='Big + watch', mode='markers',
-        marker=dict(symbol='star', size=15, color=COLORS['positive'], line=ring),
-        hovertemplate='HE%{x}: big positive DART likely<extra></extra>'), row=2, col=1)
-    fig.add_trace(go.Scatter(
-        x=list(nw['hour']), y=list((nw['p_big_neg'] * 100).round(1)), name='Big − watch', mode='markers',
-        marker=dict(symbol='star', size=15, color=COLORS['negative'], line=ring),
-        hovertemplate='HE%{x}: big negative DART likely<extra></extra>'), row=2, col=1)
-    fig.add_trace(go.Scatter(name='Big + happened', mode='markers', showlegend=False,
-                             marker=dict(symbol='x', size=12, color=COLORS['positive']),
-                             hovertemplate='HE%{x}: DART = $%{text}<extra></extra>', text=[], **empty), row=2, col=1)
-    fig.add_trace(go.Scatter(name='Big − happened', mode='markers', showlegend=False,
-                             marker=dict(symbol='x', size=12, color=COLORS['negative']),
-                             hovertemplate='HE%{x}: DART = $%{text}<extra></extra>', text=[], **empty), row=2, col=1)
-
-    # Row 3: the DART point forecast, same traces as build_forecast_fig.
-    fh = list(forecast['hour']) if forecast is not None else hours
-    col = lambda c: list(forecast[c]) if forecast is not None and c in forecast.columns else [None] * len(fh)
-    hourly_mae = ((fmeta or {}).get('backtest') or {}).get('hourly_mae') or {}
-    band = pd.Series([hourly_mae.get(str(h)) for h in fh], dtype=float)
-    pred = pd.Series(col('predicted_lmp'), dtype=float)
-    ring7 = dict(size=7, line=dict(width=1.5, color=COLORS['ring']))
-    fig.add_trace(go.Scatter(x=fh, y=col('analog_lmp'), name=f"Similar #1 ({(fmeta or {}).get('analog_date')})",
-                             mode='lines+markers', line=dict(color=COLORS['avg_legacy'], dash='dash', width=2.5),
-                             marker=ring7), row=3, col=1)
-    fig.add_trace(go.Scatter(x=fh, y=col('analog_lmp_2'), name=f"Similar #2 ({(fmeta or {}).get('analog_date_2')})",
-                             mode='lines+markers', line=dict(color=COLORS['muted'], dash='dot', width=2.5),
-                             marker=ring7), row=3, col=1)
-    fig.add_trace(go.Scatter(x=fh, y=pred - band, mode='lines', line=dict(width=0), hoverinfo='skip',
-                             showlegend=False), row=3, col=1)
-    fig.add_trace(go.Scatter(x=fh, y=pred + band, mode='lines', line=dict(width=0), fill='tonexty',
-                             fillcolor='rgba(155,89,182,0.18)', hoverinfo='skip', name='Error range (±MAE)'), row=3, col=1)
-    fig.add_trace(go.Scatter(x=fh, y=pred, name='DART forecast', mode='lines+markers',
-                             line=dict(color=COLORS['predicted'], width=3),
-                             marker=dict(size=8, line=dict(width=2, color=COLORS['ring'])),
-                             hovertemplate='HE%{x}: DART forecast $%{y:.1f}<extra></extra>'), row=3, col=1)
-    fig.add_trace(go.Scatter(name='Actual DART', mode='lines+markers', showlegend=False,
-                             line=dict(color='#eee', width=2, dash='dash'), marker=dict(size=6, color='#eee'),
-                             hovertemplate='HE%{x}: actual DART $%{y:.1f}<extra></extra>', **empty), row=3, col=1)
-
-    axis = dict(gridcolor=COLORS['grid'], hoverformat='.1f')
+    fc = dict(zip(forecast['hour'], forecast['predicted_lmp'])) if forecast is not None else {}
+    y = [fc.get(h) for h in hours]
+    rated = sig['tier'] != 'low'
+    colors = [TIER_COLORS.get((c, t), TIER_COLORS['none']) for c, t in zip(sig['call'], sig['tier'])]
+    labels = [f"{v:+.1f}" if v is not None and pd.notna(v) else '' for v in y]
+    hover = [f"HE{h}: DART fc ${v:+.1f} · " + (f"{c} · {t} · hit {conf:.0f}% · edge ${e:.1f}/h" if r else 'no call')
+             for h, v, c, t, conf, e, r in zip(hours, [v if v is not None and pd.notna(v) else 0 for v in y], sig['call'], sig['tier'],
+                                                sig['confidence'].fillna(0), sig['edge'].fillna(0), rated)]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=hours, y=y, marker=dict(color=colors, line=dict(width=0)), text=labels,
+                         textposition='outside', textfont=dict(size=11, color='#ccc'), cliponaxis=False,
+                         hovertext=hover, hoverinfo='text', name='DART forecast'))
+    fig.add_trace(go.Scatter(x=[], y=[], mode='text', textfont=dict(size=14), hoverinfo='skip', showlegend=False, name='Outcome'))
+    top = max(5.0, max((abs(v) for v in y if v is not None and pd.notna(v)), default=5.0) * 1.35)
     fig.update_layout(
-        template='plotly_dark', title=None, hovermode='x unified', height=820,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-        margin=dict(t=40, b=50, r=20), shapes=signal_shapes(list(sig['tier']), base),
-        yaxis=dict(title='P(DART > 0) %', range=[0, 100], **axis),
-        yaxis2=dict(title='P(big hour) %', range=[0, extreme_top(pct('p_big_pos').max(), pct('p_big_neg').max(), base=base)], **axis),
-        yaxis3=dict(title='DART $/MWh', **axis),
+        template='plotly_dark', title=None, height=340, showlegend=False, bargap=0.25,
+        margin=dict(t=20, b=50, r=20, l=60),
+        xaxis=hour_xaxis(title='Hour ending', gridcolor=COLORS['grid']),
+        yaxis=dict(title='DART forecast $/MWh', range=[-top, top], gridcolor=COLORS['grid'],
+                   zeroline=True, zerolinecolor='#888', zerolinewidth=1),
     )
-    fig.update_xaxes(hour_xaxis(showspikes=True, spikemode='across', spikesnap='cursor', spikedash='dot',
-                                spikethickness=1, spikecolor=COLORS['muted'], gridcolor=COLORS['grid']), row=3, col=1)
-    for r in (1, 2):
-        fig.update_xaxes(showticklabels=False, gridcolor=COLORS['grid'], range=[0.5, 24.5], row=r, col=1)
-    fig.update_xaxes(title_text='Hour ending', row=3, col=1)
     return fig
 
 
