@@ -19,6 +19,7 @@ lrg-dashboard/
 ├── .github/
 │   └── workflows/          <-- daily.yml (9:00 Ottawa, pipeline completo) y refresh_rtm.yml (botón Refresh Real-Time)
 ├── data/                   <-- CSVs guardados con datos históricos, predicciones y metadatos
+│   ├── *_forecast_history.csv <-- Archivo de forecasts, una versión por día objetivo (backfill: src/forecast/backfill_history.py)
 │   └── reports/            <-- Reportes XML de participación (IESO DAScheduledEnergy2), fuente del Portfolio
 ├── docs/                   <-- Carpeta raíz para GitHub Pages
 │   ├── index.html          <-- Dashboard principal generado por Plotly/Python

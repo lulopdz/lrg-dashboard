@@ -10,6 +10,7 @@ from dashboard_data import (
     latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
     today_date, weather, weather_confidence, weather_label, weather_label_html,
     weather_latest_ts,
+    forecast_history,
     weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from refresh import DAILY_WORKFLOW, RT_WORKFLOW, REFRESH_JS, refresh_target
@@ -131,10 +132,10 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     # Freshness line: a run that arrives late looks identical to a fresh one otherwise.
     generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
     missing = meta.get('missing_input_hours') or 0
-    freshness_html = f'<p class="caveat">Generated {generated}'
+    freshness_html = f'<p class="caveat" id="{tab_id}-note">Generated {generated}'
     if missing:
         freshness_html += f' · {missing} of 24 target hours had incomplete inputs (load/wind/weather not yet published)'
-    freshness_html += '</p>'
+    freshness_html += ' · pick a past day in the Day bar to see that forecast against what actually cleared</p>'
 
     recommended = meta.get('recommended_hour') or {}
     confident_hour_label = (
@@ -192,7 +193,7 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
 
     tab_content_html = f"""
 <div id="tab-{tab_id}" class="tab-content">
-<h2>{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
+<h2 id="{tab_id}-title">{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
 {freshness_html}
 <div class="stat-row">
   <div class="stat-tile"><div class="stat-label">Model MAE ({backtest_days_label}d backtest)</div><div class="stat-value">{model_mae}</div></div>
@@ -287,7 +288,21 @@ TAB_DATES = {
 }
 if supply_mix_fig is not None:
     TAB_DATES['supply'] = DAY_OPTION_STRS[default_forecast_date_idx]
+
+# Forecast tabs open on the live forecast's own target day, and let the Day bar reach back
+# to the oldest archived forecast (older than the TABLE_DAYS window the other tabs use).
+FORECAST_TABS = {'forecast': 'dam', 'rtm-forecast': 'rtm', 'spread-forecast': 'spread'}
+FORECAST_LATEST = {}
+for _tab, _prefix in FORECAST_TABS.items():
+    _meta_path = f'data/{_prefix}_forecast_meta.json'
+    if os.path.exists(_meta_path):
+        with open(_meta_path, encoding='utf-8') as _f:
+            FORECAST_LATEST[_prefix] = json.load(_f)['target_date']
+        TAB_DATES[_tab] = FORECAST_LATEST[_prefix]
 TAB_DATES_JSON = json.dumps(TAB_DATES)
+FORECAST_HISTORY_JSON = json.dumps(forecast_history)
+FORECAST_TABS_JSON = json.dumps(FORECAST_TABS)
+FORECAST_LATEST_JSON = json.dumps(FORECAST_LATEST)
 
 
 def zone_options_html(options, default):
@@ -701,6 +716,12 @@ const COMPACT_ZONE_DATA = {COMPACT_ZONE_DATA_JSON};
 const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
 const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
 const WEATHER_TILE_DATA = {WEATHER_TILE_DATA_JSON};
+// Archived forecasts per series and target day, with what actually cleared where known.
+const FORECAST_HISTORY = {FORECAST_HISTORY_JSON};
+const FORECAST_TABS = {FORECAST_TABS_JSON};
+const FORECAST_LATEST = {FORECAST_LATEST_JSON};
+const DAY_RANGE = ['{DAY_OPTION_STRS[0]}', '{DAY_OPTION_STRS[-1]}'];
+const forecastMarks = {{}};  // each forecast chart's original vline/annotation, restored on the live day
 let currentTab = 'dam';
 {REFRESH_JS}
 
@@ -713,6 +734,13 @@ function showTab(name, btn) {{
 
   const dateInput = document.getElementById('global-date');
   if (TAB_DATES[name] && dateInput) dateInput.value = TAB_DATES[name];
+  if (dateInput) {{
+    const hist = FORECAST_HISTORY[FORECAST_TABS[name]];
+    const days = hist ? Object.keys(hist).sort() : [];
+    dateInput.min = days.length ? days[0] : DAY_RANGE[0];
+    dateInput.max = days.length && days[days.length - 1] > DAY_RANGE[1] ? days[days.length - 1] : DAY_RANGE[1];
+  }}
+  if (FORECAST_TABS[name]) applyForecastDate(name);
 
   const refreshBtn = document.getElementById('tab-refresh-btn');
   const r = TAB_REFRESH[name];
@@ -906,6 +934,51 @@ function applyAllFigs() {{
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
   updateSupplyTiles();
   updateWeatherTiles();
+  if (FORECAST_TABS[currentTab]) applyForecastDate(currentTab);
+}}
+
+// Swap a forecast tab's chart to the archived forecast for the Day bar's date. Trace order
+// is fixed by build_forecast_fig: Similar #1, Similar #2, band low, band high, Predicted,
+// Actual. The stat tiles and "Why this day?" always describe the live forecast.
+function applyForecastDate(tab) {{
+  const prefix = FORECAST_TABS[tab];
+  const hist = FORECAST_HISTORY[prefix];
+  const divId = tab + '-forecast';
+  const gd = document.getElementById(divId);
+  const note = document.getElementById(tab + '-note');
+  const title = document.getElementById(tab + '-title');
+  if (!hist || !gd || !gd.layout) return;
+  if (!forecastMarks[divId]) forecastMarks[divId] = {{shapes: gd.layout.shapes || [], annotations: gd.layout.annotations || []}};
+  const date = document.getElementById('global-date').value;
+  const day = hist[date];
+  const label = title.textContent.split(' Forecast')[0];
+  if (!day) {{
+    const days = Object.keys(hist).sort();
+    note.textContent = 'No forecast archived for ' + date + ' (archive spans ' + days[0] + ' to ' + days[days.length - 1] + ')';
+    return;
+  }}
+  const actual = day.actual || new Array(24).fill(null);
+  const lo = day.predicted.map((p, i) => (p == null || day.band[i] == null) ? null : p - day.band[i]);
+  const hi = day.predicted.map((p, i) => (p == null || day.band[i] == null) ? null : p + day.band[i]);
+  Plotly.restyle(divId, {{
+    y: [day.analog, day.analog_2, lo, hi, day.predicted, actual],
+    name: ['Similar #1 (' + day.analog_date + ')', 'Similar #2 (' + day.analog_date_2 + ')', '', 'Error range (±MAE)', 'Predicted', 'Actual'],
+    showlegend: [true, day.analog_2.some(v => v != null), false, true, true, !!day.actual],
+  }});
+  const isLive = date === FORECAST_LATEST[prefix];
+  const marks = forecastMarks[divId];
+  // Past days keep the spread's zero line (add_hline: xref 'x domain') but drop the "most
+  // confident hour" vline (add_vline: yref 'y domain') and its label: that stat belongs to
+  // the live model, not that day.
+  Plotly.relayout(divId, isLive ? marks : {{shapes: marks.shapes.filter(s => s.yref !== 'y domain'), annotations: []}});
+  title.textContent = label + ' Forecast - OTTAWA (' + date + ')';
+  const pairs = day.predicted.map((p, i) => [p, actual[i]]).filter(([p, a]) => p != null && a != null);
+  let text = 'Generated ' + day.generated;
+  if (pairs.length) {{
+    const mae = pairs.reduce((s, [p, a]) => s + Math.abs(p - a), 0) / pairs.length;
+    text += ' · realized MAE $' + mae.toFixed(1) + ' over ' + pairs.length + ' cleared hours';
+  }}
+  note.textContent = text + (isLive ? ' · pick a past day in the Day bar to see that forecast against what actually cleared' : '');
 }}
 
 function applyZoneChange() {{
@@ -963,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); upda
 
 <div class="global-day-bar">
   <div class="day-bar-left">
-    <label><strong>Day</strong> (applies to DAM, RTM, Spread, Weather Forecast, Load Forecast and Wind Forecast):</label>
+    <label><strong>Day</strong> (applies to DAM, RTM, Spread, the Weather/Load/Wind Forecasts and the DAM/RTM/Spread Forecast tabs):</label>
     {date_input_html('global-date', 'applyAllFigs()', DAY_OPTION_STRS[default_date_idx])}
     <div id="tab-zone-group" class="controls">
       <label id="tab-zone-label">Zone:</label>

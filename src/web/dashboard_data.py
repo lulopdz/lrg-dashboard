@@ -159,6 +159,36 @@ spread = dam[['location', 'interval_start_local', 'hour', 'lmp']].merge(
 spread['lmp'] = spread['lmp_dam'] - spread['lmp_rtm']
 spread = spread[['location', 'interval_start_local', 'hour', 'lmp']]
 
+# 2b. Archived forecasts (one vintage per target day, see forecast_common.archive_forecast)
+# plus what actually cleared, for the forecast tabs' Day picker: {prefix: {YYYY-MM-DD: {...}}}.
+def _clean(vals):
+    return [None if pd.isna(v) else round(float(v), 2) for v in vals]
+
+
+def _forecast_history(prefix, actual_df):
+    path = f'data/{prefix}_forecast_history.csv'
+    if not os.path.exists(path):
+        return {}
+    hist = pd.read_csv(path)
+    act = actual_df[actual_df['location'] == DEFAULT_ZONE].copy()
+    act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
+    actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
+    days = {}
+    for d, g in hist.groupby('target_date'):
+        g = g.sort_values('hour')
+        a = actual.get(d)
+        days[d] = {
+            'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
+            'analog_date': g['analog_date'].iloc[0], 'analog_date_2': g['analog_date_2'].iloc[0],
+            'predicted': _clean(g['predicted_lmp']), 'analog': _clean(g['analog_lmp']),
+            'analog_2': _clean(g['analog_lmp_2']), 'band': _clean(g['band_err']),
+            'actual': _clean(a.get(h) for h in range(1, 25)) if a else None,
+        }
+    return days
+
+
+forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm), ('spread', spread))}
+
 # 3. Shared reference date: the actual calendar day, in market time. DAM always publishes
 # a day ahead (so its max date is "tomorrow", not "today"), and RTM is only ever as
 # complete as "right now" -- neither dataset's max date is the right anchor. Using the

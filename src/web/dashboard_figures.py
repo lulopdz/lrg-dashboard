@@ -257,7 +257,10 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     hour we're most confident in (lowest historical backtest error) marked on the axis.
     Same ringed-marker/crosshair/unified-hover/no-title treatment as the rest of the site
     (see build_hourly_fig's polished=True) -- the outer <h2> in the forecast tab already
-    carries the title."""
+    carries the title.
+
+    Trace order is fixed (Similar #1, Similar #2, band low, band high, Predicted, Actual):
+    applyForecastDate in the page JS restyles by index to show an archived day."""
     is_spread = series_label == 'Spread'
     ring_marker = dict(size=7, line=dict(width=1.5, color=COLORS['ring']))
     fig = go.Figure()
@@ -266,12 +269,12 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         name=f"Similar #1 ({meta.get('analog_date')})", mode='lines+markers',
         line=dict(color=COLORS['avg_legacy'], dash='dash', width=2.5), marker=ring_marker
     ))
-    if 'analog_lmp_2' in forecast_df.columns and forecast_df['analog_lmp_2'].notna().any():
-        fig.add_trace(go.Scatter(
-            x=forecast_df['hour'], y=forecast_df['analog_lmp_2'],
-            name=f"Similar #2 ({meta.get('analog_date_2')})", mode='lines+markers',
-            line=dict(color=COLORS['muted'], dash='dot', width=2.5), marker=ring_marker
-        ))
+    analog_2 = forecast_df['analog_lmp_2'] if 'analog_lmp_2' in forecast_df.columns else [None] * len(forecast_df)
+    fig.add_trace(go.Scatter(
+        x=forecast_df['hour'], y=analog_2,
+        name=f"Similar #2 ({meta.get('analog_date_2')})", mode='lines+markers',
+        line=dict(color=COLORS['muted'], dash='dot', width=2.5), marker=ring_marker
+    ))
 
     # Confidence band: predicted +/- the model's historical per-hour MAE from the backtest
     # (see forecast_common.backtest's hourly_mae) -- a "typical error range" for that hour,
@@ -280,21 +283,26 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     # using data already computed for the "most confident hour" stat.
     hourly_mae = (meta.get('backtest') or {}).get('hourly_mae') or {}
     band_err = forecast_df['hour'].map(lambda h: hourly_mae.get(str(h))).astype(float)
-    if band_err.notna().any():
-        fig.add_trace(go.Scatter(
-            x=forecast_df['hour'], y=forecast_df['predicted_lmp'] - band_err, mode='lines',
-            line=dict(width=0), hoverinfo='skip', showlegend=False
-        ))
-        fig.add_trace(go.Scatter(
-            x=forecast_df['hour'], y=forecast_df['predicted_lmp'] + band_err, mode='lines',
-            line=dict(width=0), fill='tonexty', fillcolor='rgba(155,89,182,0.18)',
-            hoverinfo='skip', name='Error range (±MAE)'
-        ))
+    fig.add_trace(go.Scatter(
+        x=forecast_df['hour'], y=forecast_df['predicted_lmp'] - band_err, mode='lines',
+        line=dict(width=0), hoverinfo='skip', showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=forecast_df['hour'], y=forecast_df['predicted_lmp'] + band_err, mode='lines',
+        line=dict(width=0), fill='tonexty', fillcolor='rgba(155,89,182,0.18)',
+        hoverinfo='skip', name='Error range (±MAE)'
+    ))
 
     fig.add_trace(go.Scatter(
         x=forecast_df['hour'], y=forecast_df['predicted_lmp'],
         name='Predicted', mode='lines+markers',
         line=dict(color=COLORS['predicted'], width=3), marker=dict(size=8, line=dict(width=2, color=COLORS['ring']))
+    ))
+    # Empty for the live (tomorrow) forecast; filled in by the page JS for archived days.
+    fig.add_trace(go.Scatter(
+        x=forecast_df['hour'], y=[None] * len(forecast_df),
+        name='Actual', mode='lines+markers', showlegend=False,
+        line=dict(color=COLORS['positive'] if is_spread else COLORS['dam'], width=2.5), marker=ring_marker
     ))
     if is_spread:
         fig.add_hline(y=0, line_color=COLORS['muted'], line_width=1)
