@@ -1,7 +1,7 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-18",
-  "generated_at": "2026-09-17T16:32:04.179705+00:00",
+  "generated_at": "2026-09-17T16:37:30.376316+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
@@ -15,17 +15,17 @@
     "n_hours": 1441,
     "base_rate_pos": 66.1,
     "hit_rate_all": 60.4,
-    "pnl_all": 670.81,
+    "pnl_all": 669.98,
     "n_high": 145,
     "hit_rate_high": 78.6,
     "pnl_high": 2008.1,
-    "optimal_pnl": 30501.87,
-    "always_gen_pnl": -672.86,
-    "always_load_pnl": 672.86,
+    "optimal_pnl": 30502.7,
+    "always_gen_pnl": -673.69,
+    "always_load_pnl": 673.69,
     "brier_skill": {
       "pos": -0.001,
       "big_pos": 0.225,
-      "big_neg": 0.042
+      "big_neg": 0.046
     },
     "bins": [
       {
@@ -60,7 +60,7 @@
         "hi": 0.8,
         "n": 731,
         "hit_rate": 59.8,
-        "pnl": -60.75,
+        "pnl": -61.58,
         "edge": -0.08,
         "tier": "low"
       },
@@ -77,12 +77,12 @@
     "watch": {
       "big_pos": {
         "n_flagged": 312,
-        "precision": 27.9,
+        "precision": 28.8,
         "base_rate": 6.5
       },
       "big_neg": {
-        "n_flagged": 10,
-        "precision": 20.0,
+        "n_flagged": 14,
+        "precision": 21.4,
         "base_rate": 6.4
       }
     }
