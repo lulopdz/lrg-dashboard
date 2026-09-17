@@ -10,13 +10,13 @@ from dashboard_data import (
     latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
     today_date, weather, weather_confidence, weather_label, weather_label_html,
     weather_latest_ts,
-    forecast_history,
+    forecast_history, signal_history,
     weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from refresh import DAILY_WORKFLOW, RT_WORKFLOW, REFRESH_JS, refresh_target
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
-    build_adequacy_grid_figs, build_spread_detail_fig, build_supply_mix_fig, build_table_fig,
+    build_adequacy_grid_figs, build_signal_fig, build_spread_detail_fig, build_supply_mix_fig, build_table_fig,
     build_weather_grid_figs,
     build_wide_hourly_fig, build_wide_table_fig,
 )
@@ -109,6 +109,139 @@ wind_table_fig = build_table_fig(wind_forecast, 'Wind Forecast', palette='Greens
                                   value_col='generation_forecast', zones_list=wind_zones, default_zone_idx=default_wind_idx,
                                   colorbar_title='MW', hover_label='Generation', hover_prefix='', hover_suffix=' MW',
                                   polished=True)
+
+def hour_ranges(hours):
+    """[12,13,14,20,21] -> 'HE12-14, HE20-21'."""
+    hours = sorted(hours)
+    out, start, prev = [], None, None
+    for h in hours + [None]:
+        if start is None:
+            start = prev = h
+        elif h is not None and h == prev + 1:
+            prev = h
+        else:
+            out.append(f'HE{start}' if start == prev else f'HE{start}-{prev}')
+            start = prev = h
+    return ', '.join(out)
+
+
+def build_signal_tab(tab_id='spread-signal'):
+    """The Spread Signal tab: direction + opportunity probabilities per hour (predict_spread.py)
+    instead of a point forecast of the spread. Returns (tab_button_html, tab_content_html)."""
+    csv_path, meta_path = 'data/spread_signal.csv', 'data/spread_signal_meta.json'
+    if not (os.path.exists(csv_path) and os.path.exists(meta_path)):
+        return '', ''
+    sig = pd.read_csv(csv_path)
+    with open(meta_path, encoding='utf-8') as f:
+        meta = json.load(f)
+    fig = build_signal_fig(sig, meta)
+    bt = meta.get('backtest') or {}
+    base = meta.get('base_rates') or {}
+    watch = bt.get('watch') or {}
+
+    generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
+    missing = meta.get('missing_input_hours') or 0
+    note = f'Generated {generated}'
+    if missing:
+        note += f' · {missing} of 24 target hours had incomplete inputs'
+    note += ' · pick a past day in the Day bar to see that signal scored against what cleared'
+
+    high = sig[sig['tier'] == 'high']
+    medium = sig[sig['tier'] == 'medium']
+    by_call = ' · '.join(f"{hour_ranges(g['hour'])} {call}" for call, g in high.groupby('call')) or 'none'
+    medium_txt = ' · '.join(f"{hour_ranges(g['hour'])} {call}" for call, g in medium.groupby('call')) or 'none'
+    money = lambda v: f"${v:,.0f}" if v is not None else 'n/a'
+    pct = lambda v: f"{v:.0f}%" if v is not None else 'n/a'
+    high_pnl_cls = 'pos' if (bt.get('pnl_high') or 0) > 0 else 'neg'
+
+    def tier_row(r):
+        cls = {'high': 'pos', 'medium': '', 'low': 'rel'}[r['tier']]
+        flags = ' '.join(f for f, on in (('spike ★', r['spike_watch']), ('dip ★', r['dip_watch'])) if on)
+        dam = f"${r['expected_dam']:.0f}" if pd.notna(r['expected_dam']) else '—'
+        return (f"<tr class=\"{'model-row' if r['tier'] == 'high' else ''}\"><td>HE{r['hour']}</td><td>{r['call']}</td>"
+                f"<td>{r['p_up'] * 100:.0f}%</td><td class=\"{cls}\">{r['tier']}</td>"
+                f"<td>{pct(r['confidence'])}</td><td>{'$' + format(r['edge'], '.1f') + '/h' if pd.notna(r['edge']) else 'n/a'}</td>"
+                f"<td>{r['p_spike'] * 100:.0f}%</td><td>{r['p_dip'] * 100:.0f}%</td><td>{dam}</td><td>{flags}</td></tr>")
+
+    hour_rows = ''.join(tier_row(r) for _, r in sig.iterrows())
+    bin_rows = ''.join(
+        f"<tr class=\"{'model-row' if b['tier'] == 'high' else ''}\"><td>{b['lo']:.0%} – {b['hi']:.0%}</td><td>{b['n']}</td>"
+        f"<td>{pct(b['hit_rate'])}</td><td>${b['edge']:.1f}/h</td><td>{money(b['pnl'])}</td><td>{b['tier']}</td></tr>"
+        for b in bt.get('bins', []))
+    sw, dw = watch.get('spike') or {}, watch.get('dip') or {}
+
+    # Walk-forward record: every archived day scored on what cleared (each day's signal was
+    # produced with only earlier data, so this is out-of-sample end to end).
+    wf = {}
+    for d, day in signal_history.items():
+        if not day['actual']:
+            continue
+        for i, delta in enumerate(day['actual']):
+            if delta is None:
+                continue
+            up = day['call'][i] == 'RT > DA'
+            wf.setdefault(day['tier'][i], []).append(delta if up else -delta)
+    wf_rows = ''.join(
+        f"<tr class=\"{'model-row' if t == 'high' else ''}\"><td>{t}</td><td>{len(v)}</td>"
+        f"<td>{sum(1 for x in v if x > 0) / len(v) * 100:.0f}%</td><td>${sum(v) / len(v):.1f}/h</td><td>${sum(v):,.0f}</td></tr>"
+        for t, v in sorted(wf.items(), key=lambda kv: ['high', 'medium', 'low'].index(kv[0])) if v)
+    wf_days = sum(1 for day in signal_history.values() if day['actual'])
+
+    tab_content_html = f"""
+<div id="tab-{tab_id}" class="tab-content">
+<h2 id="{tab_id}-title">Spread Signal - {meta.get('zone')} ({meta.get('target_date')})</h2>
+<p class="caveat" id="{tab_id}-note">{note}</p>
+<div class="stat-row">
+  <div class="stat-tile highlight"><div class="stat-label">High-conviction hours</div><div class="stat-value">{len(high)}</div>
+    <div class="stat-sub">{by_call}</div></div>
+  <div class="stat-tile"><div class="stat-label">Medium</div><div class="stat-value">{len(medium)}</div>
+    <div class="stat-sub">{medium_txt}</div></div>
+  <div class="stat-tile"><div class="stat-label">Direction hit rate ({bt.get('days', '?')}d backtest)</div>
+    <div class="stat-value">{pct(bt.get('hit_rate_high'))} <span class="rel">high</span> · {pct(bt.get('hit_rate_all'))} <span class="rel">all</span></div>
+    <div class="stat-sub">always RT &lt; DA would hit {pct(100 - bt['base_rate_up']) if bt else 'n/a'}</div></div>
+  <div class="stat-tile"><div class="stat-label">1 MW P&amp;L if followed ({bt.get('days', '?')}d)</div>
+    <div class="stat-value"><span class="{high_pnl_cls}">{money(bt.get('pnl_high'))}</span> <span class="rel">high, {bt.get('n_high', 0)}h</span> · {money(bt.get('pnl_all'))} <span class="rel">all</span></div>
+    <div class="stat-sub">always gen {money(bt.get('always_gen_pnl'))} · always load {money(bt.get('always_load_pnl'))} · perfect {money(bt.get('optimal_pnl'))}</div></div>
+  <div class="stat-tile"><div class="stat-label">Extreme-event watch precision ({bt.get('days', '?')}d)</div>
+    <div class="stat-value">{pct(sw.get('precision'))} <span class="rel">spike</span> · {pct(dw.get('precision'))} <span class="rel">dip</span></div>
+    <div class="stat-sub">base rates {pct(sw.get('base_rate'))} · {pct(dw.get('base_rate'))}, flagged {sw.get('n_flagged', 0)} / {dw.get('n_flagged', 0)} h</div></div>
+</div>
+{fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-fig')}
+<p class="caveat">Top: P(RT &gt; DA) per hour, dashed line = its base rate ({base.get('up', '?')}% of hours), solid = 50%. Shaded
+columns are the conviction tier (green high, amber medium), set by how calls in that probability range have actually
+done over the last {bt.get('days', '?')} days, not by the probability itself. Middle: probability of an extreme hour
+(RT − DA beyond ±${meta.get('spike_threshold')}) against its base rate; a star flags P ≥ {meta.get('watch_lift')}× base. Bottom: expected DA price
+(predict_dam.py) with its ±MAE band, for context on price level.</p>
+<div class="summary-split">
+  <div class="summary-half">
+    <h3>Hour by hour</h3>
+    <table class="naive-table">
+      <thead><tr><th>Hour</th><th>Call</th><th>P(RT&gt;DA)</th><th>Tier</th><th>Hit rate</th><th>Edge</th><th>P(spike)</th><th>P(dip)</th><th>Exp. DA</th><th>Watch</th></tr></thead>
+      <tbody>{hour_rows}</tbody>
+    </table>
+  </div>
+  <div class="summary-half">
+    <h3>How the tiers are earned (last {bt.get('days', '?')}d, {bt.get('n_hours', '?')}h)</h3>
+    <table class="naive-table">
+      <thead><tr><th>P(RT&gt;DA) range</th><th>Hours</th><th>Hit rate</th><th>Edge</th><th>P&amp;L</th><th>Tier</th></tr></thead>
+      <tbody>{bin_rows}</tbody>
+    </table>
+    <h3>Walk-forward record ({wf_days} archived days, scored on what cleared)</h3>
+    <table class="naive-table">
+      <thead><tr><th>Tier</th><th>Hours</th><th>Hit rate</th><th>Edge</th><th>1 MW P&amp;L</th></tr></thead>
+      <tbody>{wf_rows}</tbody>
+    </table>
+    <p class="caveat">Each hour's call is RT &gt; DA when P ≥ 50%, else RT &lt; DA. Hit rate is how often calls in that
+    range were right; edge is the average 1 MW P&amp;L per hour of taking them. High = edge ≥ $5/h and hit ≥ 60%;
+    medium = edge ≥ $1/h; fewer than 24 hours is unrated. The spread's tails are one-sided (RT spikes dwarf dips),
+    so a range can be right most of the time and still lose money, or the reverse: that is why edge ranks first.</p>
+  </div>
+</div>
+</div>
+"""
+    tab_button_html = f'<button class="tab-btn group-predict" onclick="showTab(\'{tab_id}\', this)">Spread Signal</button>'
+    return tab_button_html, tab_content_html
+
 
 def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     """A forecast tab (predicted curve + backtest stats + similar-day comparison table),
@@ -213,8 +346,7 @@ dam_forecast_tab_button, dam_forecast_tab_html = build_forecast_tab(
     'data/dam_forecast.csv', 'data/dam_forecast_meta.json', 'forecast', 'DAM')
 rtm_forecast_tab_button, rtm_forecast_tab_html = build_forecast_tab(
     'data/rtm_forecast.csv', 'data/rtm_forecast_meta.json', 'rtm-forecast', 'RTM')
-spread_forecast_tab_button, spread_forecast_tab_html = build_forecast_tab(
-    'data/spread_forecast.csv', 'data/spread_forecast_meta.json', 'spread-forecast', 'Spread')
+spread_forecast_tab_button, spread_forecast_tab_html = build_signal_tab()
 
 # Mark whichever predict tab appears first as the group's visual start (extra left margin,
 # see .tab-group-start) -- any of the three may be absent if its predict_*.py hasn't run yet.
@@ -238,7 +370,7 @@ TAB_REFRESH = {
     'supply': (DAILY_WORKFLOW, 'Run daily update'),
 }
 for _tab, _btn in [('forecast', dam_forecast_tab_button), ('rtm-forecast', rtm_forecast_tab_button),
-                   ('spread-forecast', spread_forecast_tab_button)]:
+                   ('spread-signal', spread_forecast_tab_button)]:
     if _btn:
         TAB_REFRESH[_tab] = (DAILY_WORKFLOW, 'Run daily update')
 
@@ -291,7 +423,7 @@ if supply_mix_fig is not None:
 
 # Forecast tabs open on the live forecast's own target day, and let the Day bar reach back
 # to the oldest archived forecast (older than the TABLE_DAYS window the other tabs use).
-FORECAST_TABS = {'forecast': 'dam', 'rtm-forecast': 'rtm', 'spread-forecast': 'spread'}
+FORECAST_TABS = {'forecast': 'dam', 'rtm-forecast': 'rtm'}
 FORECAST_LATEST = {}
 for _tab, _prefix in FORECAST_TABS.items():
     _meta_path = f'data/{_prefix}_forecast_meta.json'
@@ -299,8 +431,16 @@ for _tab, _prefix in FORECAST_TABS.items():
         with open(_meta_path, encoding='utf-8') as _f:
             FORECAST_LATEST[_prefix] = json.load(_f)['target_date']
         TAB_DATES[_tab] = FORECAST_LATEST[_prefix]
+SIGNAL_BASE = {}
+if os.path.exists('data/spread_signal_meta.json'):
+    with open('data/spread_signal_meta.json', encoding='utf-8') as _f:
+        _m = json.load(_f)
+    SIGNAL_BASE = dict(_m.get('base_rates') or {}, spike_t=_m['spike_threshold'], dip_t=_m['dip_threshold'], latest=_m['target_date'])
+    TAB_DATES['spread-signal'] = _m['target_date']
 TAB_DATES_JSON = json.dumps(TAB_DATES)
 FORECAST_HISTORY_JSON = json.dumps(forecast_history)
+SIGNAL_HISTORY_JSON = json.dumps(signal_history)
+SIGNAL_BASE_JSON = json.dumps(SIGNAL_BASE)
 FORECAST_TABS_JSON = json.dumps(FORECAST_TABS)
 FORECAST_LATEST_JSON = json.dumps(FORECAST_LATEST)
 
@@ -720,6 +860,8 @@ const WEATHER_TILE_DATA = {WEATHER_TILE_DATA_JSON};
 const FORECAST_HISTORY = {FORECAST_HISTORY_JSON};
 const FORECAST_TABS = {FORECAST_TABS_JSON};
 const FORECAST_LATEST = {FORECAST_LATEST_JSON};
+const SIGNAL_HISTORY = {SIGNAL_HISTORY_JSON};
+const SIGNAL_BASE = {SIGNAL_BASE_JSON};
 const DAY_RANGE = ['{DAY_OPTION_STRS[0]}', '{DAY_OPTION_STRS[-1]}'];
 const forecastMarks = {{}};  // each forecast chart's original vline/annotation, restored on the live day
 let currentTab = 'dam';
@@ -735,12 +877,13 @@ function showTab(name, btn) {{
   const dateInput = document.getElementById('global-date');
   if (TAB_DATES[name] && dateInput) dateInput.value = TAB_DATES[name];
   if (dateInput) {{
-    const hist = FORECAST_HISTORY[FORECAST_TABS[name]];
+    const hist = name === 'spread-signal' ? SIGNAL_HISTORY : FORECAST_HISTORY[FORECAST_TABS[name]];
     const days = hist ? Object.keys(hist).sort() : [];
     dateInput.min = days.length ? days[0] : DAY_RANGE[0];
     dateInput.max = days.length && days[days.length - 1] > DAY_RANGE[1] ? days[days.length - 1] : DAY_RANGE[1];
   }}
   if (FORECAST_TABS[name]) applyForecastDate(name);
+  if (name === 'spread-signal') applySignalDate();
 
   const refreshBtn = document.getElementById('tab-refresh-btn');
   const r = TAB_REFRESH[name];
@@ -935,6 +1078,70 @@ function applyAllFigs() {{
   updateSupplyTiles();
   updateWeatherTiles();
   if (FORECAST_TABS[currentTab]) applyForecastDate(currentTab);
+  if (currentTab === 'spread-signal') applySignalDate();
+}}
+
+// Spread Signal tab: same idea as applyForecastDate, over predict_spread.py's archive.
+// Trace order fixed by build_signal_fig (see its docstring). Row 3 (expected DA) reuses the
+// DAM forecast archive for the same target day.
+const TIER_FILL = {{high: 'rgba(46,204,113,0.14)', medium: 'rgba(232,163,61,0.12)'}};
+const TIER_MARKER = {{high: '#2ecc71', medium: '#e8a33d', low: '#666'}};
+function signalShapes(tiers) {{
+  const shapes = tiers.map((t, i) => TIER_FILL[t] ? {{type: 'rect', xref: 'x', yref: 'paper', x0: i + 0.5, x1: i + 1.5, y0: 0, y1: 1, fillcolor: TIER_FILL[t], line: {{width: 0}}, layer: 'below'}} : null).filter(Boolean);
+  shapes.push({{type: 'line', xref: 'x domain', yref: 'y', x0: 0, x1: 1, y0: 50, y1: 50, line: {{color: '#666', width: 1}}}});
+  [['y', 'up'], ['y2', 'spike'], ['y2', 'dip']].forEach(([yref, k]) => {{
+    const v = SIGNAL_BASE[k];
+    if (v != null) shapes.push({{type: 'line', xref: 'x domain', yref: yref, x0: 0, x1: 1, y0: v, y1: v, line: {{color: '#666', width: 1, dash: 'dash'}}}});
+  }});
+  return shapes;
+}}
+function applySignalDate() {{
+  const divId = 'spread-signal-fig';
+  const gd = document.getElementById(divId);
+  const note = document.getElementById('spread-signal-note');
+  const title = document.getElementById('spread-signal-title');
+  if (!gd || !gd.layout || !Object.keys(SIGNAL_HISTORY).length) return;
+  const date = document.getElementById('global-date').value;
+  const day = SIGNAL_HISTORY[date];
+  if (!day) {{
+    const days = Object.keys(SIGNAL_HISTORY).sort();
+    note.textContent = 'No signal archived for ' + date + ' (archive spans ' + days[0] + ' to ' + days[days.length - 1] + ')';
+    return;
+  }}
+  const H = Array.from({{length: 24}}, (_, i) => i + 1);
+  const pick = (flags, ys) => H.filter((h, i) => flags[i]).map(h => [h, ys[h - 1]]);
+  const sw = pick(day.spike_watch, day.p_spike), dw = pick(day.dip_watch, day.p_dip);
+  const dam = (FORECAST_HISTORY.dam || {{}})[date] || {{predicted: H.map(() => null), band: H.map(() => null), actual: null}};
+  const lo = dam.predicted.map((p, i) => (p == null || dam.band[i] == null) ? null : p - dam.band[i]);
+  const hi = dam.predicted.map((p, i) => (p == null || dam.band[i] == null) ? null : p + dam.band[i]);
+  // Scoring against what cleared: a call is right when sign(RT - DA) matches it; 1 MW P&L is
+  // +delta on an RT > DA call, -delta on RT < DA.
+  const act = day.actual || H.map(() => null);
+  const scored = H.map((h, i) => act[i] == null ? null : {{h, delta: act[i], up: day.call[i] === 'RT > DA', hit: (act[i] > 0) === (day.call[i] === 'RT > DA'), tier: day.tier[i]}}).filter(Boolean);
+  const spikes = scored.filter(s => s.delta > SIGNAL_BASE.spike_t), dips = scored.filter(s => s.delta < -SIGNAL_BASE.dip_t);
+  Plotly.restyle(divId, {{
+    x: [H, scored.map(s => s.h), H, H, sw.map(p => p[0]), dw.map(p => p[0]), spikes.map(s => s.h), dips.map(s => s.h), H, H, H, dam.actual ? H : []],
+    y: [day.p_up, scored.map(s => day.p_up[s.h - 1]), day.p_spike, day.p_dip, sw.map(p => p[1]), dw.map(p => p[1]),
+        spikes.map(s => day.p_spike[s.h - 1]), dips.map(s => day.p_dip[s.h - 1]), lo, hi, dam.predicted, dam.actual || []],
+    text: [null, scored.map(s => (s.hit ? '✓ ' : '✗ ') + s.tier + ' call, RT − DA $' + s.delta.toFixed(1)), null, null, null, null, spikes.map(s => s.delta.toFixed(0)), dips.map(s => s.delta.toFixed(0)), null, null, null, null],
+    'marker.color': [day.tier.map(t => TIER_MARKER[t]), scored.map(s => s.hit ? '#2ecc71' : '#e74c3c'), null, null, null, null, null, null, null, null, null, null],
+    showlegend: [true, scored.length > 0, true, true, true, true, spikes.length > 0, dips.length > 0, false, true, true, !!dam.actual],
+  }});
+  const top = Math.max(...day.p_spike, ...day.p_dip, SIGNAL_BASE.spike || 0, SIGNAL_BASE.dip || 0) * 1.25 + 1;
+  Plotly.relayout(divId, {{shapes: signalShapes(day.tier), 'yaxis2.range': [0, top]}});
+  title.textContent = 'Spread Signal - OTTAWA (' + date + ')';
+  let text = (day.backfilled ? 'Walk-forward reconstruction as of ' : 'Generated ') + day.generated;
+  if (scored.length) {{
+    const pnl = s => s.reduce((a, x) => a + (x.up ? x.delta : -x.delta), 0);
+    const high = scored.filter(s => s.tier === 'high');
+    const hits = scored.filter(s => s.hit).length;
+    text += ' · scored on ' + scored.length + ' cleared hours: ' + hits + '/' + scored.length + ' calls right, 1 MW P&L $' + pnl(scored).toFixed(0) + ' all';
+    if (high.length) text += ', $' + pnl(high).toFixed(0) + ' on ' + high.length + ' high-conviction hours (' + high.filter(s => s.hit).length + ' right)';
+    if (spikes.length || dips.length) text += ' · ' + spikes.length + ' spike / ' + dips.length + ' dip hours happened';
+  }} else if (date === SIGNAL_BASE.latest) {{
+    text += ' · pick a past day in the Day bar to see that signal scored against what cleared';
+  }}
+  note.textContent = text;
 }}
 
 // Swap a forecast tab's chart to the archived forecast for the Day bar's date. Trace order
@@ -1036,7 +1243,7 @@ document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); upda
 
 <div class="global-day-bar">
   <div class="day-bar-left">
-    <label><strong>Day</strong> (applies to DAM, RTM, Spread, the Weather/Load/Wind Forecasts and the DAM/RTM/Spread Forecast tabs):</label>
+    <label><strong>Day</strong> (applies to DAM, RTM, Spread, the Weather/Load/Wind Forecasts, the DAM/RTM Forecast tabs and the Spread Signal):</label>
     {date_input_html('global-date', 'applyAllFigs()', DAY_OPTION_STRS[default_date_idx])}
     <div id="tab-zone-group" class="controls">
       <label id="tab-zone-label">Zone:</label>
