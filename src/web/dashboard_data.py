@@ -209,6 +209,8 @@ def _signal_history():
             'backfilled': bool(g['backfilled'].iloc[0]) if 'backfilled' in g else False,
             'p_pos': _clean(g['p_pos'] * 100), 'p_big_pos': _clean(g['p_big_pos'] * 100), 'p_big_neg': _clean(g['p_big_neg'] * 100),
             'call': list(g['call']), 'tier': list(g['tier']),
+            'confidence': _clean(g['confidence']) if 'confidence' in g else [None] * len(g),
+            'edge': _clean(g['edge']) if 'edge' in g else [None] * len(g),
             'big_pos_watch': [bool(v) for v in g['big_pos_watch']], 'big_neg_watch': [bool(v) for v in g['big_neg_watch']],
             'actual': _clean(a.get(h) for h in range(1, 25)) if a else None,
         }

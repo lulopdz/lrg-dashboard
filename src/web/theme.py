@@ -27,6 +27,15 @@ COLORS = {
     'ring': '#111',                # marker ring / chart surface color
 }
 
+# Spread Signal: the call's sign picks the hue (green DART > 0, red DART < 0), the tier picks
+# the shade (high = the full COLORS value, medium = a darker cut of the same hue), no call = grey.
+# Read by dashboard_figures.build_signal_bars and by the page CSS/JS in generar_web.py.
+TIER_COLORS = {
+    ('DART > 0', 'high'): COLORS['positive'], ('DART > 0', 'medium'): '#1e9e55',
+    ('DART < 0', 'high'): COLORS['negative'], ('DART < 0', 'medium'): '#b03a2e',
+    'none': '#5a5a5a',
+}
+
 TABLE_BUCKET_SIZE = 100  # $/MWh step size for the discrete table color scales
 TABLE_ROW_HEIGHT = 26    # px per date row in the hourly heatmap tables -- height scales with the row count instead of being fixed
 PROFILE_HEIGHT = 380     # px for every single-panel line chart (hourly profile + forecast tabs) -- one shared value so they read as one page
