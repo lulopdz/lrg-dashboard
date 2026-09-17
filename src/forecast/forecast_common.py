@@ -85,6 +85,29 @@ def load_forecast_inputs():
     return load_fc, wind_fc, weather
 
 
+HISTORY_COLS = ["target_date", "generated_at", "analog_date", "analog_date_2", "hour",
+                "predicted_lmp", "analog_lmp", "analog_lmp_2", "band_err"]
+
+
+def archive_forecast(prefix, out, meta):
+    """Append this run to data/{prefix}_forecast_history.csv, one vintage per target_date
+    (a later run for the same day replaces the earlier one). {prefix}_forecast.csv only ever
+    holds the latest run; this is what lets the dashboard show past forecasts."""
+    hourly_mae = (meta.get("backtest") or {}).get("hourly_mae") or {}
+    rows = out.copy()
+    rows["band_err"] = rows["hour"].map(lambda h: hourly_mae.get(str(h))).astype(float).round(2)
+    for col in ("target_date", "generated_at", "analog_date", "analog_date_2"):
+        rows[col] = meta.get(col)
+    rows = rows[HISTORY_COLS]
+    path = DATA_DIR / f"{prefix}_forecast_history.csv"
+    if path.exists():
+        old = pd.read_csv(path)
+        rows = pd.concat([old[old["target_date"] != meta["target_date"]], rows])
+    rows = rows.sort_values(["target_date", "hour"])
+    rows.to_csv(path, index=False)
+    print(f"Archived {meta['target_date']} to {path} ({rows['target_date'].nunique()} days)")
+
+
 def determine_target_date(dam):
     """Tomorrow, anchored on DAM (published as a full day at once) so the DAM and RTM
     predictors always target the same day -- otherwise a predicted spread wouldn't line up."""
@@ -432,3 +455,4 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
     print(f"Saved metadata to {meta_path}")
+    archive_forecast(prefix, out, meta)
