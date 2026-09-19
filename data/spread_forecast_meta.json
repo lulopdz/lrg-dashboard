@@ -1,10 +1,10 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-20",
-  "generated_at": "2026-09-19T13:01:55.995262+00:00",
+  "generated_at": "2026-09-19T13:52:16.483010+00:00",
   "missing_input_hours": 15,
   "analog_date": "2025-09-21",
-  "analog_distance": 0.7271962495812224,
+  "analog_distance": 0.7271983086107335,
   "analog_comparison": [
     {
       "label": "Ontario load forecast",
@@ -78,7 +78,7 @@
     }
   ],
   "analog_date_2": "2025-09-06",
-  "analog_distance_2": 0.824316624302167,
+  "analog_distance_2": 0.8243205370513331,
   "analog_comparison_2": [
     {
       "label": "Ontario load forecast",
@@ -157,9 +157,9 @@
   },
   "backtest": {
     "n_test_hours": 505,
-    "model_mae": 14.320031521153261,
-    "model_rmse": 21.618818209333373,
-    "naive_mae": 19.84345469546955,
+    "model_mae": 14.309100828083952,
+    "model_rmse": 21.616852744101806,
+    "naive_mae": 19.854058655865586,
     "hourly_mae": {
       "1": 5.348500303580967,
       "2": 4.1342395442620345,
@@ -169,7 +169,7 @@
       "6": 7.988336425918352,
       "7": 12.260370651552075,
       "8": 13.262145403608082,
-      "9": 12.530369884964294,
+      "9": 12.2794607940552,
       "10": 18.284748578870666,
       "11": 15.090854223313439,
       "12": 17.88310843493029,
@@ -191,14 +191,14 @@
     "n_hours": 505,
     "correct": 304,
     "win_rate": 60.2,
-    "total_pnl": 3147.3,
-    "optimal_pnl": 7631.7,
+    "total_pnl": 3141.78,
+    "optimal_pnl": 7626.18,
     "pct_of_optimal": 41.2,
-    "naive_gen_pnl": 1289.17,
-    "naive_gen_pct": 16.9,
+    "naive_gen_pnl": 1283.65,
+    "naive_gen_pct": 16.8,
     "naive_gen_win_rate": 57.4,
-    "naive_load_pnl": -1289.17,
-    "naive_load_pct": -16.9,
+    "naive_load_pnl": -1283.65,
+    "naive_load_pct": -16.8,
     "naive_load_win_rate": 42.6
   },
   "used_dam_forecast_feature": true
