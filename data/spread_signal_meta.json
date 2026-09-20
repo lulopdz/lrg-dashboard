@@ -1,7 +1,7 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-21",
-  "generated_at": "2026-09-20T13:01:24.509251+00:00",
+  "generated_at": "2026-09-20T13:31:44.012255+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
@@ -15,18 +15,18 @@
     "n_hours": 1441,
     "base_rate_pos": 66.0,
     "hit_rate_all": 55.5,
-    "pnl_all": 3646.06,
+    "pnl_all": 3645.9,
     "n_rated": 209,
     "hit_rate_rated": 72.7,
     "pnl_rated": 1792.18,
     "n_high": 209,
     "hit_rate_high": 72.7,
     "pnl_high": 1792.18,
-    "optimal_pnl": 29494.56,
-    "always_gen_pnl": 82.97,
-    "always_load_pnl": -82.97,
+    "optimal_pnl": 29494.64,
+    "always_gen_pnl": 80.85,
+    "always_load_pnl": -80.85,
     "brier_skill": {
-      "pos": -0.03,
+      "pos": -0.031,
       "big_pos": 0.235,
       "big_neg": 0.053
     },
@@ -58,24 +58,24 @@
       {
         "lo": 0.5,
         "hi": 0.65,
-        "n": 364,
+        "n": 365,
         "call": "DART < 0",
-        "e_dart": -3.07,
-        "se": 1.63,
-        "hit_rate": 41.2,
-        "pnl": 1116.52,
-        "edge": 3.07,
+        "e_dart": -3.06,
+        "se": 1.62,
+        "hit_rate": 41.4,
+        "pnl": 1117.5,
+        "edge": 3.06,
         "tier": "low"
       },
       {
         "lo": 0.65,
         "hi": 0.8,
-        "n": 788,
+        "n": 787,
         "call": "DART > 0",
         "e_dart": 0.09,
         "se": 1.32,
-        "hit_rate": 58.9,
-        "pnl": 72.33,
+        "hit_rate": 58.8,
+        "pnl": 71.19,
         "edge": 0.09,
         "tier": "low"
       },
@@ -113,6 +113,11 @@
     },
     {
       "hour": 2,
+      "call": "DART > 0",
+      "confidence": 72.7
+    },
+    {
+      "hour": 3,
       "call": "DART > 0",
       "confidence": 72.7
     },
