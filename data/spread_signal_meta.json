@@ -1,7 +1,7 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-22",
-  "generated_at": "2026-09-21T02:03:19.001081+00:00",
+  "generated_at": "2026-09-21T12:44:51.131776+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
@@ -157,6 +157,16 @@
       "confidence": 73.7
     },
     {
+      "hour": 12,
+      "call": "DART > 0",
+      "confidence": 73.7
+    },
+    {
+      "hour": 13,
+      "call": "DART > 0",
+      "confidence": 73.7
+    },
+    {
       "hour": 14,
       "call": "DART > 0",
       "confidence": 73.7
@@ -188,16 +198,6 @@
     },
     {
       "hour": 20,
-      "call": "DART > 0",
-      "confidence": 73.7
-    },
-    {
-      "hour": 21,
-      "call": "DART > 0",
-      "confidence": 73.7
-    },
-    {
-      "hour": 22,
       "call": "DART > 0",
       "confidence": 73.7
     },

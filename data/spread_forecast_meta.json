@@ -1,10 +1,10 @@
 {
   "zone": "OTTAWA",
   "target_date": "2026-09-22",
-  "generated_at": "2026-09-21T02:03:14.307441+00:00",
+  "generated_at": "2026-09-21T12:44:47.011620+00:00",
   "missing_input_hours": 24,
   "analog_date": "2025-05-20",
-  "analog_distance": 0.48186438865806014,
+  "analog_distance": 0.6145208499136159,
   "analog_comparison": [
     {
       "label": "Ontario load forecast",
@@ -31,21 +31,21 @@
       "label": "Temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 9.194427182277044,
+      "target": 9.370734612147013,
       "analog": 9.663083708333334
     },
     {
       "label": "Max temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 14.761000633239746,
+      "target": 15.211000442504885,
       "analog": 13.911
     },
     {
       "label": "Wind speed",
       "unit": "m/s",
       "weight": 1.0,
-      "target": 2.4567926824092865,
+      "target": 2.280782346924146,
       "analog": 2.5104464375
     },
     {
@@ -66,19 +66,19 @@
       "label": "Humidity",
       "unit": "%",
       "weight": 1.0,
-      "target": 66.58333333333333,
+      "target": 69.88541666666667,
       "analog": 67.125
     },
     {
       "label": "Solar radiation",
       "unit": "W/m\u00b2",
       "weight": 1.0,
-      "target": 218.19791666666666,
+      "target": 213.75,
       "analog": 250.45833333333334
     }
   ],
   "analog_date_2": "2025-10-01",
-  "analog_distance_2": 1.473524694241102,
+  "analog_distance_2": 1.5241130424395546,
   "analog_comparison_2": [
     {
       "label": "Ontario load forecast",
@@ -105,21 +105,21 @@
       "label": "Temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 9.194427182277044,
+      "target": 9.370734612147013,
       "analog": 10.336000375
     },
     {
       "label": "Max temperature",
       "unit": "\u00b0C",
       "weight": 1.5,
-      "target": 14.761000633239746,
+      "target": 15.211000442504885,
       "analog": 16.811
     },
     {
       "label": "Wind speed",
       "unit": "m/s",
       "weight": 1.0,
-      "target": 2.4567926824092865,
+      "target": 2.280782346924146,
       "analog": 2.0678465125
     },
     {
@@ -140,14 +140,14 @@
       "label": "Humidity",
       "unit": "%",
       "weight": 1.0,
-      "target": 66.58333333333333,
+      "target": 69.88541666666667,
       "analog": 62.083333333333336
     },
     {
       "label": "Solar radiation",
       "unit": "W/m\u00b2",
       "weight": 1.0,
-      "target": 218.19791666666666,
+      "target": 213.75,
       "analog": 192.54166666666666
     }
   ],
