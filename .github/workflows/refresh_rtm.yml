@@ -3,7 +3,8 @@ name: Refresh Real-Time
 # Modalidad 2: bajo demanda, para seguir el mercado intradía. Trae los últimos intervalos RT
 # publicados, recalcula spreads y el P&L del portafolio, y republica. Lo dispara el botón
 # "Refresh Real-Time" del sitio (directo vía ops/refresh_trigger.gs si REFRESH_RT_URL está
-# definida, si no desde la página de Actions).
+# definida, si no desde la página de Actions). Cada clic gasta 1 request de GridStatus (2 si
+# además toca bajar el DAM de mañana) de un cupo de 250 al mes.
 on:
   workflow_dispatch:
     inputs:
@@ -51,13 +52,19 @@ jobs:
           python src/ingest/update_rtm.py
         fi
 
-    # También el DAM: es barato y así un clic por la tarde ya trae el DAM de mañana (IESO lo
-    # publica ~13:30), que la corrida de las 9:00 todavía no podía ver.
+    # Si el RT vino vacío o viejo, mejor parar acá que publicar como si nada.
+    - name: RT al día
+      run: python src/ingest/check_freshness.py --max-hours 4
+
+    # También el DAM, pero solo cuando puede haber algo nuevo: después de las ~13:30 EST (IESO
+    # publica el de mañana a esa hora) y mientras ese día no esté todavía en el archivo. Así un
+    # clic por la tarde trae el DAM de mañana que la corrida de las 9:00 no podía ver, sin
+    # gastar un request de los 250 mensuales de GridStatus en cada clic.
     - name: Mercado Day-Ahead (DAM)
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/ingest/update_data.py
+      run: python src/ingest/update_data.py --skip-if-current
 
     - name: Portafolio y P&L
       run: python src/ingest/parse_reports.py

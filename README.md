@@ -46,10 +46,14 @@ lrg-dashboard/
 
 El dashboard se actualiza bajo dos modalidades, ambas comitean los datos nuevos y publican en *GitHub Pages*:
 
-1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los forecasts DAM y RT y la señal de spread y la regeneración del sitio. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`23 7 * * *` UTC) es solo respaldo, porque GitHub lo entrega con horas de retraso y no sigue el horario de Ottawa.
-2. **Refresh Real-Time (`refresh_rtm.yml`)**: bajo demanda, desde el botón *Refresh Real-Time* del dashboard (pestañas RT y Spread) y de la página Portfolio. Trae los últimos intervalos RT publicados (y el DAM, por si ya salió el de mañana), recalcula spreads y el P&L del portafolio y republica. Con la variable `REFRESH_RT_URL` configurada el botón dispara el workflow con un clic; sin ella abre la página de Actions.
+1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los forecasts DAM y RT y la señal de spread y la regeneración del sitio. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`0 15 * * *` UTC, 11:00 EDT / 10:00 EST) es solo respaldo y se salta las descargas si ese día ya hubo un run disparado a mano o por el Apps Script. Al final, un job `verificar` pone el run en rojo si el RT quedó con más de 4 h de atraso, para que un fallo de GridStatus no pase desapercibido detrás de `continue-on-error`.
+2. **Refresh Real-Time (`refresh_rtm.yml`)**: bajo demanda, desde el botón *Refresh Real-Time* del dashboard (pestañas RT y Spread) y de la página Portfolio. Trae los últimos intervalos RT publicados (y el DAM solo si ya pasaron las 13:30 EST y el de mañana todavía no está guardado), recalcula spreads y el P&L del portafolio y republica. Con la variable `REFRESH_RT_URL` configurada el botón dispara el workflow con un clic; sin ella abre la página de Actions.
 
-Un `push` de código también corre `daily.yml`. Los dos flujos comparten un grupo de concurrency y clonan la punta de `main` al arrancar (`ref: main`), así que se encolan en vez de pisarse. GitHub solo mantiene un run pendiente por grupo: uno nuevo cancela al que ya esperaba.
+Un `push` a `main` (un reporte nuevo, un cambio de código) también corre `daily.yml`, pero sin descargas: solo recalcula el P&L y regenera el sitio. Si un cambio de código necesita datos frescos, se lanza a mano con *Run workflow*.
+
+**Cupo de API.** GridStatus da 250 requests por mes por cuenta. Una corrida diaria completa gasta hasta 5 (DAM, RT, carga, viento, adecuación; el DAM se salta si ya está al día) y cada clic de *Refresh Real-Time* 1 o 2. Con una descarga diaria y ~2 clics por día se llega a fin de mes; el 20/09/2026 el cupo se agotó porque `daily.yml` corría 3 o 4 veces al día. Si vuelve a pasar, el paso RT muestra `Error 403: API requests limit reached` y el job `verificar` sale en rojo.
+
+Los dos flujos comparten un grupo de concurrency y clonan la punta de `main` al arrancar (`ref: main`), así que se encolan en vez de pisarse. GitHub solo mantiene un run pendiente por grupo: uno nuevo cancela al que ya esperaba.
 
 ## Configuración y Uso Local
 
