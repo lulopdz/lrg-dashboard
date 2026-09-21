@@ -8,10 +8,17 @@ name: Actualización diaria
 # zona horaria America/Toronto) vía workflow_dispatch. El cron de GitHub queda solo como
 # respaldo: entre el 11 y el 17/09/2026 llegó 3 a 6 h tarde todos los días, y es UTC fijo,
 # así que no puede seguir el cambio de horario de Ottawa.
+#
+# Presupuesto de API: GridStatus da 250 requests por mes y cada descarga completa gasta 5
+# (DAM, RT, carga, viento, adecuación). El 20/09/2026 se agotó el cupo porque este workflow
+# corría 3 o 4 veces al día: cron + Apps Script + cada push de un reporte. Por eso el paso
+# "Decidir qué correr" apaga las descargas en los push (solo regeneran P&L y sitio) y en el
+# cron cuando el Apps Script ya disparó hoy. Un cambio de código que necesite datos nuevos se
+# corre a mano con "Run workflow" desde la página de Actions.
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 7 * * *' # 03:23 EDT; con el retraso habitual de GitHub aterriza antes de las 9:00
+    - cron: '0 15 * * *' # 11:00 EDT / 10:00 EST: siempre después de las 9:00, para que actúe solo si el Apps Script no disparó
   push:
     branches: [ main ]
 
@@ -26,16 +33,37 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: read # para que el cron consulte si hoy ya hubo un run disparado a mano
 
 jobs:
   actualizar:
     runs-on: ubuntu-latest
+    outputs:
+      descargo: ${{ steps.plan.outputs.descargar }}
 
     steps:
     - name: Traer el código
       uses: actions/checkout@v4
       with:
         ref: main # la punta de main al arrancar el job (ya pasada la cola), no el SHA que disparó el run
+
+    - name: Decidir qué correr
+      id: plan
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        case "$GITHUB_EVENT_NAME" in
+          push) descargar=false ;; # un reporte nuevo o un cambio de código solo necesitan P&L y sitio
+          schedule)
+            # Respaldo del Apps Script: descarga solo si hoy no hubo ningún run disparado por
+            # workflow_dispatch (el de las 9:00 o uno a mano). Si la consulta falla, descarga.
+            previos=$(gh run list --workflow daily.yml --event workflow_dispatch \
+                        --created "$(date -u +%F)" --json databaseId --jq length || echo 0)
+            if [ "${previos:-0}" -gt 0 ]; then descargar=false; else descargar=true; fi ;;
+          *) descargar=true ;;
+        esac
+        echo "descargar=$descargar" >> "$GITHUB_OUTPUT"
+        echo "Evento $GITHUB_EVENT_NAME -> descargar=$descargar"
 
     - name: Instalar Python
       uses: actions/setup-python@v5
@@ -46,40 +74,48 @@ jobs:
     - name: Instalar librerías
       run: pip install -r requirements.txt
 
-    # Descargas best-effort: una fuente caída no debe bloquear el resto del pipeline.
+    # Descargas best-effort: una fuente caída no debe bloquear el resto del pipeline. El job
+    # "verificar" de abajo es el que pone el run en rojo si el RT quedó viejo.
     - name: Mercado Day-Ahead (DAM)
+      if: steps.plan.outputs.descargar == 'true'
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
-      run: python src/ingest/update_data.py
+      run: python src/ingest/update_data.py --skip-if-current # el de hoy suele estar desde el clic de ayer a la tarde
 
     - name: Mercado Real-Time (RT)
+      if: steps.plan.outputs.descargar == 'true'
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
       run: python src/ingest/update_rtm.py
 
     - name: Clima
+      if: steps.plan.outputs.descargar == 'true'
       continue-on-error: true
       run: python src/ingest/update_weather.py
 
     - name: Confianza del pronóstico (Open-Meteo ensemble)
+      if: steps.plan.outputs.descargar == 'true'
       continue-on-error: true
       run: python src/ingest/update_weather_confidence.py
 
     - name: Pronóstico de demanda
+      if: steps.plan.outputs.descargar == 'true'
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
       run: python src/ingest/update_load_forecast.py
 
     - name: Pronóstico de viento
+      if: steps.plan.outputs.descargar == 'true'
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
       run: python src/ingest/update_wind_forecast.py
 
     - name: Adecuación (mix de generación)
+      if: steps.plan.outputs.descargar == 'true'
       env:
         GRIDSTATUS_API_KEY: ${{ secrets.GRIDSTATUS_API_KEY }}
       continue-on-error: true
@@ -89,6 +125,7 @@ jobs:
       run: python src/ingest/parse_reports.py
 
     - name: Forecasts DAM, RT y spread
+      if: steps.plan.outputs.descargar == 'true' # sin datos nuevos solo agregarían filas repetidas al historial
       run: |
         python src/forecast/predict_dam.py
         python src/forecast/predict_rtm.py
@@ -97,11 +134,13 @@ jobs:
     - name: Guardar datos, regenerar y publicar
       env:
         REFRESH_RT_URL: ${{ vars.REFRESH_RT_URL }}
+        DESCARGAR: ${{ steps.plan.outputs.descargar }}
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "Bot de LRG"
         git add data/
-        git commit -m "Actualización diaria" || echo "Sin cambios nuevos"
+        if [ "$DESCARGAR" = true ]; then msg="Actualización diaria"; else msg="Regenerar P&L y sitio"; fi
+        git commit -m "$msg" || echo "Sin cambios nuevos"
         git pull --rebase origin main # red de seguridad por si alguien pusheó a mano mientras corría
         python src/web/generar_web.py
         python src/web/generar_simulator.py
@@ -126,3 +165,21 @@ jobs:
     - name: Publicar en GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4
+
+  # Corre en paralelo con "publicar": si el RT quedó viejo pone el run en rojo (y GitHub manda
+  # el mail de fallo) sin frenar el sitio, que igual sale con clima y forecasts nuevos. Sin
+  # esto, el 403 de GridStatus del 20/09/2026 quedó escondido detrás de continue-on-error y
+  # el run salió verde un día entero.
+  verificar:
+    needs: actualizar
+    if: needs.actualizar.outputs.descargo == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Traer los datos recién publicados
+      uses: actions/checkout@v4
+      with:
+        ref: main
+    - name: RT al día
+      run: python3 src/ingest/check_freshness.py --max-hours 4
