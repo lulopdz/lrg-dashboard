@@ -1,82 +1,82 @@
 {
   "zone": "OTTAWA",
-  "target_date": "2026-09-21",
-  "generated_at": "2026-09-20T13:31:44.012255+00:00",
+  "target_date": "2026-09-22",
+  "generated_at": "2026-09-21T02:03:19.001081+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
   "base_rates": {
-    "pos": 66.0,
+    "pos": 66.1,
     "big_pos": 12.4,
     "big_neg": 10.4
   },
   "backtest": {
     "days": 60,
     "n_hours": 1441,
-    "base_rate_pos": 66.0,
+    "base_rate_pos": 66.1,
     "hit_rate_all": 55.5,
-    "pnl_all": 3645.9,
-    "n_rated": 209,
-    "hit_rate_rated": 72.7,
-    "pnl_rated": 1792.18,
+    "pnl_all": 4034.59,
+    "n_rated": 279,
+    "hit_rate_rated": 66.7,
+    "pnl_rated": 2730.04,
     "n_high": 209,
-    "hit_rate_high": 72.7,
-    "pnl_high": 1792.18,
-    "optimal_pnl": 29494.64,
-    "always_gen_pnl": 80.85,
-    "always_load_pnl": -80.85,
+    "hit_rate_high": 73.7,
+    "pnl_high": 1828.64,
+    "optimal_pnl": 29442.46,
+    "always_gen_pnl": -124.16,
+    "always_load_pnl": 124.16,
     "brier_skill": {
-      "pos": -0.031,
-      "big_pos": 0.235,
-      "big_neg": 0.053
+      "pos": -0.018,
+      "big_pos": 0.192,
+      "big_neg": 0.054
     },
     "bins": [
       {
         "lo": 0.0,
         "hi": 0.35,
-        "n": 9,
+        "n": 5,
         "call": "DART < 0",
-        "e_dart": -33.17,
-        "se": 24.23,
-        "hit_rate": 77.8,
-        "pnl": 298.5,
-        "edge": 33.17,
+        "e_dart": -4.67,
+        "se": 7.15,
+        "hit_rate": 80.0,
+        "pnl": 23.36,
+        "edge": 4.67,
         "tier": "low"
       },
       {
         "lo": 0.35,
         "hi": 0.5,
-        "n": 71,
+        "n": 70,
         "call": "DART < 0",
-        "e_dart": -5.16,
-        "se": 4.86,
-        "hit_rate": 38.0,
-        "pnl": 366.53,
-        "edge": 5.16,
-        "tier": "low"
+        "e_dart": -12.88,
+        "se": 6.21,
+        "hit_rate": 45.7,
+        "pnl": 901.4,
+        "edge": 12.88,
+        "tier": "medium"
       },
       {
         "lo": 0.5,
         "hi": 0.65,
-        "n": 365,
+        "n": 401,
         "call": "DART < 0",
-        "e_dart": -3.06,
-        "se": 1.62,
-        "hit_rate": 41.4,
-        "pnl": 1117.5,
-        "edge": 3.06,
+        "e_dart": -2.88,
+        "se": 1.6,
+        "hit_rate": 41.9,
+        "pnl": 1154.62,
+        "edge": 2.88,
         "tier": "low"
       },
       {
         "lo": 0.65,
         "hi": 0.8,
-        "n": 787,
+        "n": 756,
         "call": "DART > 0",
-        "e_dart": 0.09,
+        "e_dart": 0.17,
         "se": 1.32,
-        "hit_rate": 58.8,
-        "pnl": 71.19,
-        "edge": 0.09,
+        "hit_rate": 58.5,
+        "pnl": 126.57,
+        "edge": 0.17,
         "tier": "low"
       },
       {
@@ -84,23 +84,23 @@
         "hi": 1.0,
         "n": 209,
         "call": "DART > 0",
-        "e_dart": 8.58,
+        "e_dart": 8.75,
         "se": 3.43,
-        "hit_rate": 72.7,
-        "pnl": 1792.18,
-        "edge": 8.58,
+        "hit_rate": 73.7,
+        "pnl": 1828.64,
+        "edge": 8.75,
         "tier": "high"
       }
     ],
     "watch": {
       "big_pos": {
-        "n_flagged": 324,
-        "precision": 28.1,
+        "n_flagged": 341,
+        "precision": 27.0,
         "base_rate": 6.5
       },
       "big_neg": {
-        "n_flagged": 25,
-        "precision": 16.0,
+        "n_flagged": 11,
+        "precision": 18.2,
         "base_rate": 6.1
       }
     }
@@ -109,109 +109,104 @@
     {
       "hour": 1,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 2,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 3,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
+    },
+    {
+      "hour": 4,
+      "call": "DART > 0",
+      "confidence": 73.7
+    },
+    {
+      "hour": 5,
+      "call": "DART > 0",
+      "confidence": 73.7
+    },
+    {
+      "hour": 6,
+      "call": "DART > 0",
+      "confidence": 73.7
     },
     {
       "hour": 7,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 8,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 9,
       "call": "DART > 0",
-      "confidence": 72.7
-    },
-    {
-      "hour": 10,
-      "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 11,
       "call": "DART > 0",
-      "confidence": 72.7
-    },
-    {
-      "hour": 12,
-      "call": "DART > 0",
-      "confidence": 72.7
-    },
-    {
-      "hour": 13,
-      "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 14,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 15,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 16,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 17,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 18,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 19,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 20,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 21,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 22,
       "call": "DART > 0",
-      "confidence": 72.7
-    },
-    {
-      "hour": 23,
-      "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     },
     {
       "hour": 24,
       "call": "DART > 0",
-      "confidence": 72.7
+      "confidence": 73.7
     }
   ],
-  "missing_input_hours": 15,
+  "missing_input_hours": 24,
   "used_dam_forecast_feature": true
 }
