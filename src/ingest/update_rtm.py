@@ -10,6 +10,7 @@ DATASET_ID = "ieso_lmp_real_time_5_min_virtual_zonal"
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_rtm_prices.csv"
 DEFAULT_LOOKBACK_HOURS = 24  # used only when there's no existing file to anchor from
 SAFETY_BUFFER_HOURS = 2  # re-fetch a small overlap in case IESO revises recent values
+INTERVALS_PER_HOUR = 12  # 5-min intervals in a settled hour
 
 
 def determine_start(now, lookback_hours):
@@ -52,7 +53,18 @@ def update_rtm_prices(lookback_hours=None):
     # needs the hourly average, and keeping raw 5-min history would blow past
     # GitHub's 100MB file size limit within a few months.
     new_df["interval_start_local"] = new_df["interval_start_local"].dt.floor("h")
-    new_df = new_df.groupby(["location", "interval_start_local"])["lmp"].mean().reset_index()
+    new_df = new_df.groupby(["location", "interval_start_local"])["lmp"].agg(["mean", "count"]).reset_index()
+
+    # The hour still in progress (say 2 of its 12 intervals) would otherwise be stored as if
+    # settled: plotted as a normal hour and scored Won/Lost in the Portfolio instead of
+    # Pending. Only each zone's latest hour can be partial; the next fetch starts
+    # SAFETY_BUFFER_HOURS before the last stored hour, so it comes back once complete.
+    latest = new_df.groupby("location")["interval_start_local"].transform("max")
+    partial = (new_df["interval_start_local"] == latest) & (new_df["count"] < INTERVALS_PER_HOUR)
+    if partial.any():
+        print(f"Dropping the in-progress hour ({new_df.loc[partial, 'interval_start_local'].max()}, "
+              f"{int(new_df.loc[partial, 'count'].max())} of {INTERVALS_PER_HOUR} intervals)")
+    new_df = new_df[~partial].rename(columns={"mean": "lmp"})[["location", "interval_start_local", "lmp"]]
 
     if DATA_PATH.exists():
         existing_df = pd.read_csv(DATA_PATH, parse_dates=["interval_start_local"])

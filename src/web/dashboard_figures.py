@@ -41,6 +41,53 @@ def _reference_series(df, dates, value_col, date):
     return day_z, prev_z, avg_z, prev_date
 
 
+def _plain(values, digits=None):
+    """A trace array as a plain JSON-able list: None for NaN, numpy scalars unwrapped, numbers
+    rounded to `digits` (every hover on these charts shows at most one decimal)."""
+    out = []
+    for v in (values if values is not None else []):
+        if hasattr(v, 'item'):
+            v = v.item()
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            out.append(None)
+        elif digits is not None and isinstance(v, (int, float)) and not isinstance(v, bool):
+            out.append(round(v, digits))
+        else:
+            out.append(v)
+    return out
+
+
+def compact_combos(fig, traces_per_combo, n_extra=0):
+    """Shrink a figure built the 'one hidden trace group per (zone, day)' way -- every builder
+    here that follows the Day picker -- down to the single group that starts visible, and
+    return every group's data as [[x, y, name(, bar colors)] per trace] per combination, in the
+    same order the page's JS indexes them (zone-major, then day). The page swaps a combination
+    in with Plotly.restyle (showCombo) instead of toggling visibility across hundreds of
+    pre-built traces: each trace's styling is written once instead of once per day, which was
+    most of index.html's weight. n_extra trailing traces that aren't part of any group (the
+    compact_zones 'dynamic' placeholders) are kept as they are.
+
+    To keep the payload small: y is rounded to one decimal (what every hover and label shows;
+    rounding to two and then displaying one flips values like 41.649 to 41.7), and an x that is
+    just hours 1..n -- nearly all of them -- is stored as 0 for the JS to rebuild."""
+    data = list(fig.data)
+    body = data[:len(data) - n_extra]
+    groups = [body[i:i + traces_per_combo] for i in range(0, len(body), traces_per_combo)]
+    shown = next((i for i, g in enumerate(groups) if g[0].visible is not False), 0)
+
+    def pack(t):
+        x, y = _plain(t.x), _plain(t.y, 1)
+        entry = [0 if x == list(range(1, len(y) + 1)) and x else x, y, t.name]
+        colors = t.marker.color if 'marker' in t else None
+        if isinstance(colors, (list, tuple)):
+            entry.append(list(colors))
+        return entry
+
+    combos = [[pack(t) for t in g] for g in groups]
+    fig.data = tuple(groups[shown]) + tuple(data[len(body):])
+    return combos
+
+
 def discrete_colorscale(zmin, zmax, palette, bucket_size=TABLE_BUCKET_SIZE):
     """Build a stepped (non-gradient) Plotly colorscale: one flat color per $bucket_size band."""
     n_buckets = max(1, math.ceil((zmax - zmin) / bucket_size))
@@ -251,6 +298,15 @@ def build_spread_detail_fig(polished=False, compact_zones=False):
     return fig
 
 
+def forecast_band(forecast_df, meta):
+    """(low, high, legend name) for the forecast band: P10-P90 when present, else +/-MAE."""
+    if {'p10', 'p90'} <= set(forecast_df.columns) and forecast_df['p10'].notna().any():
+        return forecast_df['p10'], forecast_df['p90'], 'P10-P90'
+    hourly_mae = (meta.get('backtest') or {}).get('hourly_mae') or {}
+    band_err = forecast_df['hour'].map(lambda h: hourly_mae.get(str(h))).astype(float)
+    return forecast_df['predicted_lmp'] - band_err, forecast_df['predicted_lmp'] + band_err, 'Error range (±MAE)'
+
+
 def build_forecast_fig(forecast_df, meta, series_label='DAM'):
     """Tomorrow's predicted DAM/RTM/Spread curve for one zone, with the closest historical
     'similar day' (by forecasted load/wind/weather) plotted as a dashed reference, and the
@@ -276,21 +332,18 @@ def build_forecast_fig(forecast_df, meta, series_label='DAM'):
         line=dict(color=COLORS['muted'], dash='dot', width=2.5), marker=ring_marker
     ))
 
-    # Confidence band: predicted +/- the model's historical per-hour MAE from the backtest
-    # (see forecast_common.backtest's hourly_mae) -- a "typical error range" for that hour,
-    # not a calibrated statistical interval (that would need quantile regression), and
-    # symmetric even though real price errors likely skew toward spikes. Simple first pass
-    # using data already computed for the "most confident hour" stat.
-    hourly_mae = (meta.get('backtest') or {}).get('hourly_mae') or {}
-    band_err = forecast_df['hour'].map(lambda h: hourly_mae.get(str(h))).astype(float)
+    # Band: the model's own P10-P90 (forecast_common.QUANTILES, two boosters on the pinball
+    # loss) -- asymmetric on purpose, RT's risk is one-sided. Forecasts archived before the
+    # quantiles existed fall back to predicted +/- the backtest's per-hour MAE.
+    lo, hi, band_name = forecast_band(forecast_df, meta)
     fig.add_trace(go.Scatter(
-        x=forecast_df['hour'], y=forecast_df['predicted_lmp'] - band_err, mode='lines',
+        x=forecast_df['hour'], y=lo, mode='lines',
         line=dict(width=0), hoverinfo='skip', showlegend=False
     ))
     fig.add_trace(go.Scatter(
-        x=forecast_df['hour'], y=forecast_df['predicted_lmp'] + band_err, mode='lines',
+        x=forecast_df['hour'], y=hi, mode='lines',
         line=dict(width=0), fill='tonexty', fillcolor='rgba(155,89,182,0.18)',
-        hoverinfo='skip', name='Error range (±MAE)'
+        hoverinfo='skip', name=band_name
     ))
 
     fig.add_trace(go.Scatter(
@@ -472,15 +525,16 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
         pivot = (df_table[df_table[location_col] == zone]
                  .pivot_table(index='date', columns='hour', values=value_col, aggfunc='mean')
                  .reindex(index=SELECTABLE_DATE_STRS, columns=range(1, 25)))
-        text = pivot.round(1).astype(str).values
 
         fig.add_trace(go.Heatmap(
             # Plain Python lists, not the numpy/pandas objects themselves: plotly.py encodes
             # numpy-backed numeric arrays as compact base64 ({"dtype":...,"bdata":...}) which
             # copyTableTSV (see generar_web.py) can't read directly off the rendered figure --
             # plain lists always serialize as ordinary JSON arrays.
+            # Cell labels come from z itself: a separate text array repeated every value as a
+            # string (and printed 'nan' in empty cells).
             z=pivot.values.tolist(), x=list(pivot.columns), y=list(pivot.index),
-            text=text, texttemplate='%{text}', textfont=dict(size=11),
+            texttemplate='%{z:.1f}', textfont=dict(size=11),
             colorbar=dict(title=colorbar_title),
             visible=(i == default_zone_idx),
             hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{hover_label}: {hover_prefix}%{{z:.1f}}{hover_suffix}<extra></extra>',
@@ -830,7 +884,6 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
         label, unit = var_map[var]
         pivot = (df_table.pivot_table(index='date', columns='hour', values=var, aggfunc='mean')
                  .reindex(index=SELECTABLE_DATE_STRS, columns=range(1, 25)))
-        text = pivot.round(1).astype(str).values
         zmin, zmax = pivot.min().min(), pivot.max().max()
         if pd.isna(zmin) or pd.isna(zmax) or zmin == zmax:
             zmin, zmax = 0, 1
@@ -840,8 +893,10 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
             # numpy-backed numeric arrays as compact base64 ({"dtype":...,"bdata":...}) which
             # copyTableTSV (see generar_web.py) can't read directly off the rendered figure --
             # plain lists always serialize as ordinary JSON arrays.
+            # Cell labels come from z itself: a separate text array repeated every value as a
+            # string (and printed 'nan' in empty cells).
             z=pivot.values.tolist(), x=list(pivot.columns), y=list(pivot.index),
-            text=text, texttemplate='%{text}', textfont=dict(size=11),
+            texttemplate='%{z:.1f}', textfont=dict(size=11),
             colorscale=colorscale, zmin=zmin, zmax=zmax,
             colorbar=dict(title=unit),
             visible=(i == default_var_idx),

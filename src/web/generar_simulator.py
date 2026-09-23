@@ -1,15 +1,19 @@
-"""Builds the Trading Simulator: pick a past date D, and the page shows a dashboard-like
-view restricted to what would actually have been known at that moment (not a live replica of
-the main dashboard's data -- a separate, self-contained restriction of it):
+"""Builds the Trading Simulator: pick a past delivery date D, and the page shows a dashboard-like
+view restricted to what was known when D's virtual bids had to be in -- the morning of D-1,
+before the 10:00 EST DAM deadline (not a live replica of the main dashboard's data -- a
+separate, self-contained restriction of it):
 
-  - DAM: the previous day (D-1), fully settled.
-  - RTM: the chosen day (D), but only through HE08 (when trades normally get decided).
-  - Spread (DAM - RTM): the previous day (D-1), since it needs both sides settled.
-  - Weather / Load / Wind Forecast: the outlook for the next day (D+1).
+  - DAM: D-1 (published the afternoon of D-2).
+  - RTM: D-1, only through HE08 (when trades normally get decided).
+  - Spread (DAM - RTM): D-2, the last day with both sides settled.
+  - Weather / Load / Wind Forecast: the outlook for D itself.
 
 After reviewing that, a "Ready? Go to simulator" button reveals the same Long/Flat/Short
 per-hour evaluation game as before: place a call on the DAM-RTM spread for each hour of D,
 then reveal the actual outcome and score against the best-possible P&L that day.
+
+Until 2026-09-22 the page showed D's own RT through HE08 (the first 8 hours of the outcome
+being scored) and D+1's forecasts, i.e. a decision made on D rather than D-1.
 
 Fully client-side: no backend, no server-side scoring, no data-vintage enforcement (see the
 known limitation below). The history of past attempts lives in the browser's localStorage.
@@ -19,10 +23,11 @@ file://, which is how this site gets tested before every push), so it depends on
 own discipline not to peek ahead of what a tab is meant to show, the same tradeoff already
 accepted for the rest of the simulator's history.
 
-Known limitation: the weather/load/wind forecast CSVs get overwritten on every daily refresh
-and don't preserve the forecast as it looked at the time, so the D+1 "forecast" shown here is
-actually the realized historical data for that date, not necessarily what was forecast back
-then. Accepted for now; fixing it needs a separate daily-vintage archive (see conversation).
+The weather/load/wind CSVs keep only the freshest version of each hour, so for most dates the
+"forecast" shown is really the realized data. Where data/forecast_inputs_dayahead.csv
+(src/forecast/vintages.py) has the target day, the page shows that instead: the inputs as they
+stood at the 9:00 run on D-1, i.e. the forecast a trader actually had. The 7-day averages stay
+on the realized data -- that's what the past week actually looked like.
 
 A separate page from the main dashboard (see generar_web.py), which stays untouched.
 Outputs docs/simulator.html (data embedded inline, see SIM_DATA_JSON below).
@@ -31,6 +36,11 @@ import json
 import os
 
 import pandas as pd
+from plotly.offline import get_plotlyjs_version
+
+# The same plotly.js the other pages get from plotly.py's include_plotlyjs='cdn', so a visitor
+# downloads one bundle, not two (this was a hard-coded 3.0.1).
+PLOTLYJS_VERSION = get_plotlyjs_version()
 
 DEFAULT_ZONE = 'OTTAWA'
 # 'West' rather than the headline 'Ontario Total': IESO only started publishing Ontario Total
@@ -39,7 +49,7 @@ DEFAULT_ZONE = 'OTTAWA'
 # every simulated date now has wind context. Matches forecast_common.WIND_ZONE.
 WIND_ZONE = 'West'
 CONTEXT_DAYS = 14  # minimum trailing history required before a date becomes playable
-TRADING_CUTOFF_HOUR = 8  # HE08 -- RTM context for the chosen day stops here
+TRADING_CUTOFF_HOUR = 8  # HE08 -- RTM context for the decision day (D-1) stops here
 
 # Mirrors dashboard_data.WEATHER_VARS (kept as its own copy -- this page is deliberately
 # standalone), including the display order its mini-grid renders 3 across.
@@ -67,13 +77,19 @@ LOAD_VARS = {
 os.makedirs('docs', exist_ok=True)
 
 
-def hourly_map(df, date_col, value_col):
-    """date -> [24 hourly values, None where missing]."""
+def drop_empty(by_date):
+    """Days whose 24 values are all missing -- a column the archived vintage didn't have yet."""
+    return {d: v for d, v in by_date.items() if any(x is not None for x in v)}
+
+
+def hourly_map(df, date_col, value_col, digits=1):
+    """date -> [24 hourly values, None where missing], rounded to what the page shows (MW
+    series to whole numbers)."""
     df = df.copy()
     df['hour'] = df[date_col].dt.hour + 1
     df['date'] = df[date_col].dt.date.astype(str)
     return {
-        date: [None if pd.isna(v) else round(float(v), 2)
+        date: [None if pd.isna(v) else (round(float(v), digits) if digits else int(round(float(v))))
                for v in g.set_index('hour')[value_col].reindex(range(1, 25))]
         for date, g in df.groupby('date')
     }
@@ -86,13 +102,23 @@ rtm_csv = pd.read_csv('data/ieso_rtm_prices.csv', parse_dates=['interval_start_l
 rtm_by_date = hourly_map(rtm_csv[rtm_csv['location'] == DEFAULT_ZONE], 'interval_start_local', 'lmp')
 
 wind_csv = pd.read_csv('data/ieso_wind_forecast.csv', parse_dates=['interval_start_local'])
-wind_by_date = hourly_map(wind_csv[wind_csv['zone'] == WIND_ZONE], 'interval_start_local', 'generation_forecast')
+wind_by_date = hourly_map(wind_csv[wind_csv['zone'] == WIND_ZONE], 'interval_start_local', 'generation_forecast', digits=0)
 
 weather_csv = pd.read_csv('data/OTTAWA_weather.csv', parse_dates=['timestamp'])
 weather_by_var = {var: hourly_map(weather_csv, 'timestamp', var) for var in WEATHER_VARS}
 
 load_csv = pd.read_csv('data/ieso_load_forecast.csv', parse_dates=['interval_start_local'])
-load_by_var = {var: hourly_map(load_csv, 'interval_start_local', var) for var in LOAD_VARS}
+load_by_var = {var: hourly_map(load_csv, 'interval_start_local', var, digits=0) for var in LOAD_VARS}
+
+# The forecasts as they stood at the 9:00 run the day before (vintages.py), where archived.
+dayahead_path = 'data/forecast_inputs_dayahead.csv'
+if os.path.exists(dayahead_path):
+    dayahead_csv = pd.read_csv(dayahead_path, parse_dates=['interval_start_local'])
+    weather_da = {var: drop_empty(hourly_map(dayahead_csv, 'interval_start_local', var)) for var in WEATHER_VARS if var in dayahead_csv}
+    load_da = {var: drop_empty(hourly_map(dayahead_csv, 'interval_start_local', var, digits=0)) for var in LOAD_VARS if var in dayahead_csv}
+    wind_da = drop_empty(hourly_map(dayahead_csv, 'interval_start_local', 'wind_forecast', digits=0)) if 'wind_forecast' in dayahead_csv else {}
+else:
+    weather_da, load_da, wind_da = {}, {}, {}
 
 all_dates = sorted(set(dam_by_date) | set(rtm_by_date))
 
@@ -113,6 +139,9 @@ data = {
     'wind': wind_by_date,
     'weather': weather_by_var,
     'load': load_by_var,
+    'weatherDA': weather_da,
+    'loadDA': load_da,
+    'windDA': wind_da,
     'weatherLabels': {var: {'label': label, 'unit': unit} for var, (label, unit) in WEATHER_VARS.items()},
     'loadLabels': {var: {'label': label, 'unit': unit} for var, (label, unit) in LOAD_VARS.items()},
 }
@@ -120,7 +149,7 @@ data = {
 # of a separate fetch()'d JSON file: fetch() against a local file fails under file:// (CORS),
 # which is how this site gets tested before every push -- no fetch calls anywhere else in
 # this codebase for the same reason.
-SIM_DATA_JSON = json.dumps(data)
+SIM_DATA_JSON = json.dumps(data, separators=(',', ':'))
 
 
 html = f"""<html>
@@ -178,6 +207,8 @@ html = f"""<html>
   .tab-btn.group-forecast.active {{ border-bottom:2px solid #14b8a6; }}
   .rtab-content {{ max-height:0; overflow:hidden; }}
   .rtab-content.active {{ max-height:none; }}
+  /* the tabs are .card too: without this their padding/border showed as a strip per hidden tab */
+  .rtab-content:not(.active) {{ padding:0; margin:0; border:0; }}
   .day-label {{ color:#888; font-size:12px; margin-bottom:8px; }}
   .mini-grid {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }}
   @media (max-width: 900px) {{ .mini-grid {{ grid-template-columns:repeat(2, 1fr); }} }}
@@ -192,15 +223,15 @@ html = f"""<html>
   <a class="back-link" href="portfolio.html" style="margin-bottom: 0;">Portfolio &rarr;</a>
 </div>
 <h1>Simulator</h1>
-<p class="subtitle">Pick a past date and this page shows only what would have been known at
-that moment: DAM shows the previous day (D&minus;1, fully settled), RTM shows the chosen day
-(D) through HE{TRADING_CUTOFF_HOUR:02d} (normally when trades get decided), and Weather / Load
-/ Wind Forecast show the outlook for the next day (D+1). Review it, then place your Long / Flat
-/ Short call per hour and reveal how you did against the actual DAM&minus;RTM spread. Zone:
-{DEFAULT_ZONE} (Wind uses {WIND_ZONE}). Known limitation: weather/load/wind forecasts get
-overwritten every day and don't preserve what was actually known at the time, so D+1 here is
-the realized historical data for that date, not necessarily the exact forecast as it looked
-back then.</p>
+<p class="subtitle">Pick a past delivery day D and this page shows only what was known when its
+virtual bids were due: the morning of the day before (D&minus;1), ahead of the 10:00 EST DAM
+deadline. DAM shows D&minus;1 (already published), RTM shows D&minus;1 through
+HE{TRADING_CUTOFF_HOUR:02d}, Spread shows D&minus;2 (the last day fully settled), and Weather /
+Load / Wind Forecast show the outlook for D. Review it, then place your Long / Flat / Short call
+per hour of D and reveal how you did against the actual DAM&minus;RTM spread. Zone:
+{DEFAULT_ZONE} (Wind uses {WIND_ZONE}). Forecasts are the ones issued at the 9:00 run on
+D&minus;1 where that was archived (from July 2026); for older dates they are the realized data,
+which is kinder than what a trader had.</p>
 
 <div class="card">
   <div class="controls-row">
@@ -273,7 +304,7 @@ back then.</p>
   saved only in this browser (localStorage): it does not sync across devices or upload anywhere.</p>
 </div>
 
-<script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-{PLOTLYJS_VERSION}.min.js"></script>
 <script>
 const SIM_ZONE = {json.dumps(DEFAULT_ZONE)};
 const SIM_WIND_ZONE = {json.dumps(WIND_ZONE)};
@@ -300,13 +331,14 @@ function sevenDayAvg(seriesMap, anchorDate) {{
 
 function renderProfileChart(divId, traces, yTitle, compact) {{
   const hours = Array.from({{length: 24}}, (_, i) => i + 1);
-  const plotData = traces.map(t => ({{
+  // No marker key at all for line-only traces: Plotly's cleanData reads 'line' in trace.marker
+  // whenever the key exists, and marker: undefined made every Load throw (fixed 2026-09-22).
+  const plotData = traces.map(t => Object.assign({{
     x: hours, y: t.y, name: t.name, mode: t.marker === false ? 'lines' : 'lines+markers',
     line: {{color: t.color, dash: t.dash || 'solid', width: t.width || 2.5}},
-    marker: t.marker === false ? undefined : {{size: compact ? 5 : 7, line: {{width: 1, color: '#111'}}}}
-  }}));
+  }}, t.marker === false ? {{}} : {{marker: {{size: compact ? 5 : 7, line: {{width: 1, color: '#111'}}}}}}));
   Plotly.newPlot(divId, plotData, {{
-    template: 'plotly_dark', paper_bgcolor: compact ? '#1a1a1a' : '#161616', plot_bgcolor: compact ? '#1a1a1a' : '#161616',
+    font: {{color: '#ddd'}}, paper_bgcolor: compact ? '#1a1a1a' : '#161616', plot_bgcolor: compact ? '#1a1a1a' : '#161616',
     margin: compact ? {{t: 6, b: 26, l: 40, r: 8}} : {{t: 10, b: 40, l: 55, r: 20}},
     xaxis: {{title: compact ? '' : 'Hour', dtick: compact ? 4 : 1, range: [0.5, 24.5], gridcolor: '#242424'}},
     yaxis: {{title: compact ? '' : yTitle, gridcolor: '#242424', hoverformat: '.1f'}},
@@ -339,20 +371,19 @@ function loadDay() {{
   document.getElementById('entry-section').classList.add('hidden');
   document.getElementById('dashboard-section').classList.remove('hidden');
 
-  const prevDate = addDays(date, -1);
-  const nextDate = addDays(date, 1);
-
-  renderDamTab(prevDate);
-  renderRtmTab(date);
-  renderSpreadTab(prevDate);
-  renderWeatherTab(nextDate);
-  renderLoadTab(nextDate);
-  renderWindTab(nextDate);
+  // D's virtual bids close at 10:00 EST on D-1: the view is that morning's.
+  const decisionDate = addDays(date, -1);
+  renderDamTab(decisionDate);
+  renderRtmTab(decisionDate);
+  renderSpreadTab(addDays(date, -2));
+  renderWeatherTab(date);
+  renderLoadTab(date);
+  renderWindTab(date);
   renderHourStrip();
 }}
 
 function renderDamTab(damDate) {{
-  document.getElementById('dam-day-label').textContent = 'Showing: ' + damDate + ' (previous day, D-1)';
+  document.getElementById('dam-day-label').textContent = 'Showing: ' + damDate + ' (D-1, the decision day; published the afternoon before)';
   const avg = sevenDayAvg(SIM_DATA.dam, damDate);
   const main = SIM_DATA.dam[damDate] || new Array(24).fill(null);
   renderProfileChart('dam-chart', [
@@ -363,7 +394,7 @@ function renderDamTab(damDate) {{
 
 function renderRtmTab(rtmDate) {{
   const cutoffLabel = 'HE' + String(TRADING_CUTOFF_HOUR).padStart(2, '0');
-  document.getElementById('rtm-day-label').textContent = 'Showing: ' + rtmDate + ' (chosen day D, through ' + cutoffLabel + ')';
+  document.getElementById('rtm-day-label').textContent = 'Showing: ' + rtmDate + ' (D-1, the decision day, through ' + cutoffLabel + ')';
   const avg = sevenDayAvg(SIM_DATA.rtm, rtmDate);
   const rowFull = SIM_DATA.rtm[rtmDate] || new Array(24).fill(null);
   const masked = rowFull.map((v, i) => i < TRADING_CUTOFF_HOUR ? v : null);
@@ -374,7 +405,7 @@ function renderRtmTab(rtmDate) {{
 }}
 
 function renderSpreadTab(spreadDate) {{
-  document.getElementById('spread-day-label').textContent = 'Showing: ' + spreadDate + ' (previous day, D-1)';
+  document.getElementById('spread-day-label').textContent = 'Showing: ' + spreadDate + ' (D-2, the last day fully settled)';
   const hours = Array.from({{length: 24}}, (_, i) => i + 1);
   const dam = SIM_DATA.dam[spreadDate] || new Array(24).fill(null);
   const rtm = SIM_DATA.rtm[spreadDate] || new Array(24).fill(null);
@@ -384,14 +415,24 @@ function renderSpreadTab(spreadDate) {{
     x: hours, y: spread, type: 'bar', marker: {{color: colors}},
     hovertemplate: 'Hour %{{x}}<br>Spread: $%{{y:.1f}}<extra></extra>'
   }}], {{
-    template: 'plotly_dark', paper_bgcolor: '#161616', plot_bgcolor: '#161616',
+    font: {{color: '#ddd'}}, paper_bgcolor: '#161616', plot_bgcolor: '#161616',
     margin: {{t: 10, b: 40, l: 50, r: 20}},
     xaxis: {{title: 'Hour', dtick: 1, gridcolor: '#242424'}},
     yaxis: {{title: 'Spread (DAM - RTM, $/MWh)', gridcolor: '#242424', hoverformat: '.1f', zerolinecolor: '#666'}}
   }}, {{displayModeBar: false, responsive: true}});
 }}
 
-function renderMiniGrid(gridId, varMap, seriesLookup, anchorDate) {{
+// The forecast line: the 9:00 run's day-ahead view where archived, else the realized data.
+function forecastRow(daMap, seriesMap, date) {{
+  return (daMap && daMap[date]) || seriesMap[date] || new Array(24).fill(null);
+}}
+function vintageNote(daMap, date) {{
+  return daMap && daMap[date] ? ' - as forecast at 9:00 on D-1' : ' - realized data (no day-ahead archive for this date)';
+}}
+// (Day-ahead rows exist only where the archived vintage had that column: the Toronto and Port
+// Alma stations joined the archive later, so older days fall back to the realized data.)
+
+function renderMiniGrid(gridId, varMap, seriesLookup, anchorDate, daLookup) {{
   const grid = document.getElementById(gridId);
   grid.innerHTML = '';
   Object.keys(varMap).forEach((varKey, i) => {{
@@ -410,7 +451,7 @@ function renderMiniGrid(gridId, varMap, seriesLookup, anchorDate) {{
 
     const seriesMap = seriesLookup[varKey];
     const avg = sevenDayAvg(seriesMap, anchorDate);
-    const main = seriesMap[anchorDate] || new Array(24).fill(null);
+    const main = forecastRow(daLookup && daLookup[varKey], seriesMap, anchorDate);
     renderProfileChart(divId, [
       {{y: avg, name: '7d Average', color: '#6b7280', dash: 'dot', width: 1.5, marker: false}},
       {{y: main, name: anchorDate, color: '#14b8a6', width: 2.5}}
@@ -419,19 +460,22 @@ function renderMiniGrid(gridId, varMap, seriesLookup, anchorDate) {{
 }}
 
 function renderWeatherTab(weatherDate) {{
-  document.getElementById('weather-day-label').textContent = 'Showing forecast for: ' + weatherDate + ' (next day, D+1)';
-  renderMiniGrid('weather-grid', SIM_DATA.weatherLabels, SIM_DATA.weather, weatherDate);
+  document.getElementById('weather-day-label').textContent = 'Showing forecast for: ' + weatherDate + ' (D, the day being traded)'
+    + vintageNote(SIM_DATA.weatherDA.temperature_2m, weatherDate);
+  renderMiniGrid('weather-grid', SIM_DATA.weatherLabels, SIM_DATA.weather, weatherDate, SIM_DATA.weatherDA);
 }}
 
 function renderLoadTab(loadDate) {{
-  document.getElementById('load-day-label').textContent = 'Showing forecast for: ' + loadDate + ' (next day, D+1)';
-  renderMiniGrid('load-grid', SIM_DATA.loadLabels, SIM_DATA.load, loadDate);
+  document.getElementById('load-day-label').textContent = 'Showing forecast for: ' + loadDate + ' (D, the day being traded)'
+    + vintageNote(SIM_DATA.loadDA.ontario, loadDate);
+  renderMiniGrid('load-grid', SIM_DATA.loadLabels, SIM_DATA.load, loadDate, SIM_DATA.loadDA);
 }}
 
 function renderWindTab(windDate) {{
-  document.getElementById('wind-day-label').textContent = 'Showing forecast for: ' + windDate + ' (next day, D+1), zone: ' + SIM_WIND_ZONE;
+  document.getElementById('wind-day-label').textContent = 'Showing forecast for: ' + windDate + ' (D, the day being traded), zone: ' + SIM_WIND_ZONE
+    + vintageNote(SIM_DATA.windDA, windDate);
   const avg = sevenDayAvg(SIM_DATA.wind, windDate);
-  const main = SIM_DATA.wind[windDate] || new Array(24).fill(null);
+  const main = forecastRow(SIM_DATA.windDA, SIM_DATA.wind, windDate);
   renderProfileChart('wind-chart', [
     {{y: avg, name: '7d Average', color: '#6b7280', dash: 'dot', width: 1.5, marker: false}},
     {{y: main, name: windDate, color: '#14b8a6', width: 3}}
@@ -513,7 +557,7 @@ function reveal() {{
     x: hours, y: spreads, type: 'bar', marker: {{color: colors}},
     hovertemplate: 'Hour %{{x}}<br>Actual spread: $%{{y:.1f}}<extra></extra>'
   }}], {{
-    template: 'plotly_dark', paper_bgcolor: '#161616', plot_bgcolor: '#161616',
+    font: {{color: '#ddd'}}, paper_bgcolor: '#161616', plot_bgcolor: '#161616',
     margin: {{t: 10, b: 40, l: 50, r: 20}},
     xaxis: {{title: 'Hour', dtick: 1, gridcolor: '#242424'}},
     yaxis: {{title: 'Actual spread (DAM - RTM, $/MWh)', gridcolor: '#242424', hoverformat: '.1f', zerolinecolor: '#666'}}

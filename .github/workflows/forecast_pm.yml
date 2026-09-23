@@ -1,0 +1,127 @@
+name: Forecast post-DAM
+
+# Modalidad 3: la segunda corrida de los modelos, por la tarde, cuando IESO ya publicó el DAM
+# de mañana (~12:35 EST). La corrida de las 9:00 tuvo que pronosticar el DAM para usarlo como
+# feature ("pre_dam", lo que sirve para ofertar virtuales antes de las 10:00); esta lo usa real
+# ("post_dam", para decidir exposición en tiempo real). Trae el DAM de mañana y el RT de hoy de
+# los reportes públicos de IESO -- son idénticos a los de GridStatus y no gastan cupo -- así que
+# esta corrida cuesta 0 requests. scorecard.py evalúa los dos vintages por separado.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 19 * * *' # 15:30 EDT / 14:30 EST; con el retraso habitual de GitHub aterriza entre las 16:00 y las 21:00
+    # Reintento: los tres workflows comparten grupo de concurrency y GitHub guarda un solo run
+    # pendiente, así que un clic de Refresh mientras este espera en cola lo cancela. El paso
+    # "¿Ya está hecho?" hace que este segundo disparo no haga nada si el primero completó.
+    - cron: '30 23 * * *' # 19:30 EDT / 18:30 EST
+
+concurrency:
+  group: lrg-dashboard-git-writes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  # ¿Ya se hizo el post-DAM de mañana? Si sí, el cron de reintento no hace nada. A mano
+  # (workflow_dispatch) siempre corre.
+  decidir:
+    runs-on: ubuntu-latest
+    outputs:
+      correr: ${{ steps.hecho.outputs.correr }}
+    steps:
+    - name: Traer el meta del forecast RT
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        sparse-checkout: data/rtm_forecast_meta.json
+        sparse-checkout-cone-mode: false
+    - name: ¿Ya está hecho?
+      id: hecho
+      env:
+        EVENTO: ${{ github.event_name }}
+      run: |
+        python3 - <<'PY' >> "$GITHUB_OUTPUT"
+        import json, os
+        from datetime import datetime, timedelta, timezone
+        tomorrow = (datetime.now(timezone(timedelta(hours=-5))) + timedelta(days=1)).date().isoformat()
+        try:
+            meta = json.load(open("data/rtm_forecast_meta.json"))
+        except (OSError, ValueError):
+            meta = {}
+        done = meta.get("vintage") == "post_dam" and meta.get("target_date") == tomorrow
+        run = os.environ["EVENTO"] == "workflow_dispatch" or not done
+        print(f"correr={'true' if run else 'false'}")
+        PY
+        cat "$GITHUB_OUTPUT"
+
+  pronosticar:
+    needs: decidir
+    if: needs.decidir.outputs.correr == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Traer el código
+      uses: actions/checkout@v4
+      with:
+        ref: main
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Instalar librerías
+      run: pip install -r requirements.txt
+
+    # Sin el DAM de mañana no hay vintage post_dam que calcular: si IESO todavía no lo publicó
+    # (exit 3) la corrida falla en rojo; el cron de reintento vuelve a probar.
+    - name: DAM de mañana (IESO, gratis)
+      run: python src/ingest/update_prices_ieso.py dam
+
+    - name: RT de hoy (IESO, gratis)
+      continue-on-error: true
+      run: python src/ingest/update_prices_ieso.py rtm
+
+    - name: Portafolio y P&L
+      run: python src/ingest/parse_reports.py
+
+    # OTTAWA estricta (sin ella no hay nada que publicar); TORONTO y NIAGARA best-effort.
+    - name: Forecasts RT y spread con el DAM real
+      run: python src/forecast/run_forecasts.py --vintage post_dam
+
+    - name: Guardar datos, regenerar y publicar
+      env:
+        REFRESH_RT_URL: ${{ vars.REFRESH_RT_URL }}
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "Bot de LRG"
+        git add data/
+        git commit -m "Forecast post-DAM" || echo "Sin cambios nuevos"
+        git pull --rebase origin main
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py
+        git push
+
+    - name: Preparar artefacto de Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
+
+  publicar:
+    needs: pronosticar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Publicar en GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
