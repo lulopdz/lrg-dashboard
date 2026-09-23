@@ -1,8 +1,9 @@
 """Tomorrow's hourly spread for one zone, in two parts, both on DART = DA - RT (the Spread
 tab's convention: positive when day-ahead clears above real-time).
 
-1. The point forecast, as before: run_forecast() on the DART series (data/spread_forecast.*),
-   with the two most similar historical days, for the shape of the day.
+1. The point forecast (data/spread_forecast.*): DAM forecast - RT forecast, from the same run
+   and vintage (post_dam: the real DAM - RT forecast), with the two most similar days' DART
+   for the shape of the day. See derived_forecast().
 2. The SIGNAL: three classifiers on the same features, which is what a trader acts on:
      P(DART > 0)          direction
      P(DART > +BIG_T)     DA well above RT (a virtual gen pays)
@@ -29,9 +30,9 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import brier_score_loss
 
 from forecast_common import (
-    DATA_DIR, SUPPLY_COLS, ZONE, add_lag_features, attach_reference_price, build_grid, dam_target_prediction,
+    archive_forecast, DATA_DIR, SUPPLY_COLS, ZONE, add_lag_features, attach_reference_price, build_grid, dam_target_prediction,
     determine_target_date, forecast_file, information_cutoff, load_forecast_inputs, load_price_series,
-    missing_inputs, parse_run_args, run_forecast, usable_feature_cols,
+    missing_inputs, parse_run_args, usable_feature_cols,
 )
 
 BIG_T = 40  # $/MWh: |DART| beyond this is a big hour (~10% of hours each side)
@@ -336,13 +337,93 @@ def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=D
     return out, meta
 
 
-def main(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, dam_forecast_dir=DATA_DIR, backtest_enabled=True,
-         zone=ZONE):
+def rtm_run(target_date, vintage, zone, dirs):
+    """The RT forecast rows (hour, predicted_lmp, p10, p90, analog dates) archived for
+    target_date and vintage, from the first of dirs that has them."""
+    for d in dirs:
+        path = Path(d) / forecast_file("rtm", "forecast_history", zone)
+        if not path.exists():
+            continue
+        h = pd.read_csv(path)
+        if "vintage" not in h.columns:
+            h["vintage"] = "pre_dam"
+        h = h[(h["target_date"] == str(target_date)) & (h["vintage"] == vintage)].sort_values("hour")
+        if len(h):
+            return h
+    raise RuntimeError(f"No {vintage} RT forecast archived for {target_date} ({zone}) in {dirs}: run predict_rtm.py first")
+
+
+def derived_forecast(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, dam_forecast_dir=DATA_DIR, zone=ZONE):
+    """DART point forecast = DAM forecast - RT forecast, instead of a third booster trained on
+    DART itself. Scored on the archive (2026-07-10..09-23, 68 days, pre_dam) the booster got
+    the sign right 55.8% of hours and following it made $5,693 at 1 MW; the difference of the
+    two price forecasts got 62.1% and $8,369, at the same MAE ($22.84 vs $23.07). Walk-forward
+    said the same (57.8% vs 56.1%, $4,844 vs $3,971). Switched 2026-09-23.
+
+    pre_dam uses predict_dam.py's forecast for the DAM (the archived pre_dam one for
+    reconstructions); post_dam uses the real DAM, so there DART's uncertainty is RT's alone.
+    The band is the RT band carried over: P10 = DAM - RT's P90, P90 = DAM - RT's P10 (exact for
+    post_dam; for pre_dam it leaves out the DAM forecast's own, much smaller, error). The
+    similar days are the RT model's, with the DART that cleared on them. Writes and archives
+    the same files as before (spread_forecast*.csv/json, spread_forecast_history*.csv)."""
     dam = load_price_series("ieso_dam_prices.csv", zone)
     rtm = load_price_series("ieso_rtm_prices.csv", zone)
-    run_forecast("spread", compute_spread_series(dam, rtm), FEATURE_COLS, dam, attach_dam_feature=True,
-                 vintage=vintage, target_date=target_date, out_dir=out_dir, dam_forecast_dir=dam_forecast_dir,
-                 backtest_enabled=backtest_enabled, zone=zone)
+    reconstruction = target_date is not None
+    if not reconstruction:
+        target_date = determine_target_date(dam, vintage)
+    rt = rtm_run(target_date, vintage, zone, [out_dir, DATA_DIR])
+    if vintage == "post_dam":
+        day = dam[dam["interval_start_local"].dt.date == target_date]
+        dam_fc = dict(zip(day["interval_start_local"].dt.hour + 1, day["lmp"]))
+    else:
+        dam_fc = dam_target_prediction(target_date, "pre_dam", dam_forecast_dir, zone) or {}
+    if not dam_fc:
+        raise RuntimeError(f"No DAM {'price' if vintage == 'post_dam' else 'forecast'} for {target_date} ({zone})")
+
+    dart = compute_spread_series(dam, rtm)
+    dart_by_day = {d: dict(zip(g["interval_start_local"].dt.hour + 1, g["lmp"]))
+                   for d, g in dart.groupby(dart["interval_start_local"].dt.date.astype(str))}
+    hours = rt["hour"].astype(int).values
+    dam_h = np.array([dam_fc.get(h, np.nan) for h in hours], dtype=float)
+    out = pd.DataFrame({"hour": hours, "predicted_lmp": np.round(dam_h - rt["predicted_lmp"].values, 2)})
+    if {"p10", "p90"} <= set(rt.columns) and rt["p10"].notna().any():
+        out["p10"] = np.round(dam_h - rt["p90"].values, 2)
+        out["p90"] = np.round(dam_h - rt["p10"].values, 2)
+    analog_dates = [rt[c].iloc[0] if c in rt.columns and pd.notna(rt[c].iloc[0]) else None for c in ("analog_date", "analog_date_2")]
+    for col, d in zip(("analog_lmp", "analog_lmp_2"), analog_dates):
+        out[col] = out["hour"].map(dart_by_day.get(str(d), {}) if d else {}).astype(float).round(2)
+
+    meta = {
+        "zone": zone,
+        "target_date": str(target_date),
+        "vintage": vintage,
+        "reconstruction": reconstruction,
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "method": "DAM forecast - RT forecast" if vintage == "pre_dam" else "real DAM - RT forecast",
+        "rtm_generated_at": rt["generated_at"].iloc[0],
+        "missing_input_hours": int(np.isnan(dam_h).sum() + rt["predicted_lmp"].isna().sum()),
+        "analog_date": analog_dates[0],
+        "analog_date_2": analog_dates[1],
+        "backtest": None,
+    }
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out.to_csv(out_dir / forecast_file("spread", "forecast", zone), index=False)
+    with open(out_dir / forecast_file("spread", "forecast_meta", zone), "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    archive_forecast("spread", out, meta, out_dir=out_dir, zone=zone)
+    print(f"DART forecast {target_date} ({vintage}) = {meta['method']}: "
+          f"{', '.join(f'HE{h} {v:+.1f}' for h, v in zip(out['hour'][:6], out['predicted_lmp'][:6]))}, ...")
+    return out, meta
+
+
+def main(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, dam_forecast_dir=DATA_DIR, backtest_enabled=True,
+         zone=ZONE):
+    """The DART point forecast (derived_forecast), then the signal. Needs this run's RT forecast
+    archived first (predict_rtm.py; run_forecasts.py and walkforward.py keep that order).
+    backtest_enabled is kept for walkforward.py's signature; the point forecast has no
+    backtest of its own and the signal's is part of how its calls are made."""
+    derived_forecast(vintage, target_date, out_dir, dam_forecast_dir, zone)
     return run_signal(target_date, write_latest=target_date is None, vintage=vintage, out_dir=out_dir,
                       dam_forecast_dir=dam_forecast_dir, zone=zone)
 
