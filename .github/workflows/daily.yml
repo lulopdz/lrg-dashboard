@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       descargo: ${{ steps.plan.outputs.descargar }}
+      forecasts: ${{ steps.forecasts.outcome }}
 
     steps:
     - name: Traer el código
@@ -124,12 +125,16 @@ jobs:
     - name: Portafolio y P&L
       run: python src/ingest/parse_reports.py
 
-    - name: Forecasts DAM, RT y spread
+    # Vintage "pre_dam": el DAM de mañana todavía no salió, así que RT y spread usan el DAM
+    # pronosticado. OTTAWA alimenta el dashboard; TORONTO y NIAGARA se archivan con sufijo y son
+    # best-effort (si fallan, OTTAWA sigue). La corrida post-DAM de la tarde (forecast_pm.yml)
+    # repite RT y spread con el DAM real. continue-on-error para que un modelo roto no impida
+    # guardar y publicar los datos recién bajados; el job "verificar" pone el run en rojo.
+    - name: Forecasts DAM, RT y spread (pre-DAM)
+      id: forecasts
       if: steps.plan.outputs.descargar == 'true' # sin datos nuevos solo agregarían filas repetidas al historial
-      run: |
-        python src/forecast/predict_dam.py
-        python src/forecast/predict_rtm.py
-        python src/forecast/predict_spread.py
+      continue-on-error: true
+      run: python src/forecast/run_forecasts.py --vintage pre_dam
 
     - name: Guardar datos, regenerar y publicar
       env:
@@ -166,10 +171,10 @@ jobs:
       id: deployment
       uses: actions/deploy-pages@v4
 
-  # Corre en paralelo con "publicar": si el RT quedó viejo pone el run en rojo (y GitHub manda
-  # el mail de fallo) sin frenar el sitio, que igual sale con clima y forecasts nuevos. Sin
-  # esto, el 403 de GridStatus del 20/09/2026 quedó escondido detrás de continue-on-error y
-  # el run salió verde un día entero.
+  # Corre en paralelo con "publicar": si el RT quedó viejo o fallaron los forecasts pone el run
+  # en rojo (y GitHub manda el mail de fallo) sin frenar el sitio, que igual sale con lo que sí
+  # se actualizó. Sin esto, el 403 de GridStatus del 20/09/2026 quedó escondido detrás de
+  # continue-on-error y el run salió verde un día entero.
   verificar:
     needs: actualizar
     if: needs.actualizar.outputs.descargo == 'true'
@@ -183,3 +188,8 @@ jobs:
         ref: main
     - name: RT al día
       run: python3 src/ingest/check_freshness.py --max-hours 4
+    - name: Forecasts OK
+      if: always() && needs.actualizar.outputs.forecasts == 'failure'
+      run: |
+        echo "::error::Los forecasts pre-DAM fallaron (ver el paso 'Forecasts' del job actualizar); el sitio salió con los de ayer."
+        exit 1

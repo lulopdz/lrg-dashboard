@@ -19,7 +19,7 @@ from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
     build_adequacy_grid_figs, build_signal_bars, build_spread_detail_fig, build_supply_mix_fig, build_table_fig,
     build_weather_grid_figs,
-    build_wide_hourly_fig, build_wide_table_fig,
+    build_wide_hourly_fig, build_wide_table_fig, compact_combos,
 )
 
 
@@ -111,6 +111,25 @@ wind_table_fig = build_table_fig(wind_forecast, 'Wind Forecast', palette='Greens
                                   colorbar_title='MW', hover_label='Generation', hover_prefix='', hover_suffix=' MW',
                                   polished=True)
 
+# Every chart that follows the Day picker is built as one hidden trace group per (zone, day);
+# keep only the visible group and ship the rest as data (see compact_combos / showCombo).
+# Keys are the charts' div ids. The DAM/RTM/Spread charts also carry 3 trailing 'dynamic'
+# traces for non-default zones (compact_zones=True), which stay as they are.
+COMBO_DATA = {
+    'dam-hourly': compact_combos(dam_hourly_fig, 3, n_extra=3),
+    'rtm-hourly': compact_combos(rtm_hourly_fig, 3, n_extra=3),
+    'spread-hourly': compact_combos(spread_hourly_fig, 3, n_extra=3),
+    'load-hourly': compact_combos(load_hourly_fig, 3),
+    'wind-hourly': compact_combos(wind_hourly_fig, 3),
+}
+for _v, _fig in weather_grid_figs.items():
+    COMBO_DATA[f'weather-grid-{weather_var_keys.index(_v)}'] = compact_combos(_fig, 3 + ENSEMBLE_TRACES)
+if supply_mix_fig is not None:
+    COMBO_DATA['supply-mix'] = compact_combos(supply_mix_fig, len(SUPPLY_MIX) + 1)
+for _key, (_title, _fig, _traces) in (adequacy_grid or {}).items():
+    COMBO_DATA[f'adequacy-{_key}'] = compact_combos(_fig, _traces)
+COMBO_DATA_JSON = json.dumps(COMBO_DATA, separators=(',', ':'))
+
 def hour_ranges(hours):
     """[12,13,14,20,21] -> 'HE12-14, HE20-21'."""
     hours = sorted(hours)
@@ -158,9 +177,9 @@ two historical days closest to tomorrow on forecast load, wind and weather. On a
 
     generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
     missing = meta.get('missing_input_hours') or 0
-    note = f'Generated {generated}'
+    note = f'Generated {generated}{vintage_label(meta)}'
     if missing:
-        note += f' · {missing} of 24 target hours had incomplete inputs'
+        note += f' · {missing} of 24 target hours had incomplete inputs{missing_cols_label(meta)}'
     note += ' · pick a past day in the Day bar to see that signal scored against what cleared'
 
     high = sig[sig['tier'] == 'high']
@@ -186,21 +205,26 @@ two historical days closest to tomorrow on forecast load, wind and weather. On a
 
     # Walk-forward record: every archived day scored on what cleared (each day's signal was
     # produced with only earlier data, so this is out-of-sample end to end).
+    # Live days (the signal as it was published) apart from walk-forward reconstructions, which
+    # see the freshest version of every input rather than the 9:00 one and so flatter the signal.
     wf = {}
+    wf_days = {'live': 0, 'reconstructed': 0}
     for d, day in signal_history.items():
         if not day['actual']:
             continue
+        source = 'reconstructed' if day['backfilled'] else 'live'
+        wf_days[source] += 1
         for i, dart in enumerate(day['actual']):
             if dart is None:
                 continue
-            wf.setdefault(day['tier'][i], []).append(dart if day['call'][i] == 'DART > 0' else -dart)
-    wf.pop('low', None)  # no call there; the page scores the same way
+            wf.setdefault((source, day['tier'][i]), []).append(dart if day['call'][i] == 'DART > 0' else -dart)
     wf_rows = ''.join(
-        f"<tr class=\"{'model-row' if t == 'high' else ''}\"><td>{t}</td><td>{len(v)}</td>"
+        f"<tr class=\"{'model-row' if t == 'high' else ''}\"><td>{source}</td><td>{t}</td><td>{len(v)}</td>"
         f"<td>{sum(1 for x in v if x > 0) / len(v) * 100:.0f}%</td><td class=\"{pnl_cls(sum(v))}\">${sum(v) / len(v):.1f}/h</td>"
         f"<td class=\"{pnl_cls(sum(v))}\">${sum(v):,.0f}</td></tr>"
-        for t, v in sorted(wf.items(), key=lambda kv: ['high', 'medium', 'low'].index(kv[0])) if v)
-    wf_days = sum(1 for day in signal_history.values() if day['actual'])
+        for (source, t), v in sorted(wf.items(), key=lambda kv: (kv[0][0] != 'live', ['high', 'medium', 'low'].index(kv[0][1])))
+        if v and t != 'low')  # no call in 'low'; the page scores the same way
+    eval_days = bt.get('eval_days') or bt.get('days', '?')  # metas before the split scored the whole window
 
     tab_content_html = f"""
 <div id="tab-{tab_id}" class="tab-content">
@@ -231,26 +255,27 @@ often that call was right in those hours. <strong>Edge</strong>: their average 1
 <strong>P(&lt;−${T})</strong>: probability of a big hour each way (base rates {pct(bp.get('base_rate'))} / {pct(bn.get('base_rate'))}).
 <strong>Fc agrees</strong>: the point forecast has the call's sign; over the archive, calls the forecast agrees with
 have paid 2 to 3 times more per hour, and a medium DART &gt; 0 call the forecast disagrees with has paid nothing.
-<strong>Watch</strong>: that probability is at least {meta.get('watch_lift')}× its base rate (last {bt.get('days', '?')}d the flag
-was right {pct(bp.get('precision'))} / {pct(bn.get('precision'))} of the time). <strong>DART fc</strong>: the point forecast of
+<strong>Watch</strong>: that probability clears a threshold picked on the last {bt.get('days', '?')} days (the most hours
+flagged while at least 25% of them, and at least {meta.get('watch_lift')}× the base rate, were big hours); picked on the
+older half and scored on the newer {eval_days} days, the flag was right {pct(bp.get('precision'))} / {pct(bn.get('precision'))} of the time. <strong>DART fc</strong>: the point forecast of
 DART. Pick a past day in the Day bar and the table shows that day's signal with what actually cleared.</p>
 <details class="stats-block">
-  <summary>Model record: last {bt.get('days', '?')} days and the walk-forward archive</summary>
+  <summary>Model record: last {eval_days} days out of sample and the archive</summary>
   <div class="stat-row">
     <div class="stat-tile highlight"><div class="stat-label">High-conviction hours</div><div class="stat-value">{len(high)}</div>
       <div class="stat-sub">{calls_html(high)}</div></div>
     <div class="stat-tile"><div class="stat-label">Medium</div><div class="stat-value">{len(medium)}</div>
       <div class="stat-sub">{calls_html(medium)}</div></div>
-    <div class="stat-tile"><div class="stat-label">Calls right ({bt.get('days', '?')}d backtest)</div>
+    <div class="stat-tile"><div class="stat-label">Calls right (last {eval_days}d, out of sample)</div>
       <div class="stat-value">{pct(bt.get('hit_rate_high'))} <span class="rel">high</span> · {pct(bt.get('hit_rate_rated'))} <span class="rel">high+medium</span></div>
       <div class="stat-sub">DART &gt; 0 happens {pct(bt.get('base_rate_pos'))} of hours; a DART &lt; 0 call can be right less often and still pay</div></div>
-    <div class="stat-tile"><div class="stat-label">1 MW P&amp;L if followed ({bt.get('days', '?')}d)</div>
+    <div class="stat-tile"><div class="stat-label">1 MW P&amp;L if followed (last {eval_days}d)</div>
       <div class="stat-value"><span class="{pnl_cls(bt.get('pnl_high'))}">{money(bt.get('pnl_high'))}</span> <span class="rel">high, {bt.get('n_high', 0)}h</span> · <span class="{pnl_cls(bt.get('pnl_rated'))}">{money(bt.get('pnl_rated'))}</span> <span class="rel">high+medium, {bt.get('n_rated', 0)}h</span></div>
       <div class="stat-sub">always gen {money(bt.get('always_gen_pnl'))} · always load {money(bt.get('always_load_pnl'))} · perfect {money(bt.get('optimal_pnl'))}</div></div>
   </div>
   <div class="summary-split">
     <div class="summary-half">
-      <h3>How the tiers are earned (last {bt.get('days', '?')}d, {bt.get('n_hours', '?')}h)</h3>
+      <h3>How the tiers are earned (last {bt.get('days', '?')}d, {bt.get('bins_hours') or bt.get('n_hours', '?')}h)</h3>
       <table class="naive-table">
         <thead><tr><th>P(DART&gt;0) range</th><th>Hours</th><th>E[DART] $/h</th><th>Call</th><th>Call right</th><th>Tier</th></tr></thead>
         <tbody>{bin_rows}</tbody>
@@ -259,16 +284,19 @@ DART. Pick a past day in the Day bar and the table shows that day's signal with 
       likelier side" is almost always DART &gt; 0 and is not the question. The call for each probability range is the side
       that has <em>paid</em> there: the sign of the mean DART over the window (E[DART], ± its standard error); the edge is
       its size. High = edge ≥ $5/h and the call right ≥ 60%; medium = edge ≥ $1/h; an edge under 2 standard errors, or
-      fewer than 24 hours, is noise: no call.</p>
+      fewer than 24 hours, is noise: no call. P(DART &gt; 0) is the classifier's own number and runs overconfident, which
+      is why a range is judged by what it paid rather than by the probability. The call/tier for each range is fit on the
+      whole window; the tiles above fit it on the older half and score it on the newer {eval_days} days.</p>
     </div>
     <div class="summary-half">
-      <h3>Walk-forward record ({wf_days} archived days, scored on what cleared)</h3>
+      <h3>Archive record ({wf_days['live']} live days, {wf_days['reconstructed']} reconstructed, scored on what cleared)</h3>
       <table class="naive-table">
-        <thead><tr><th>Tier</th><th>Hours</th><th>Hit rate</th><th>Edge</th><th>1 MW P&amp;L</th></tr></thead>
+        <thead><tr><th>Days</th><th>Tier</th><th>Hours</th><th>Hit rate</th><th>Edge</th><th>1 MW P&amp;L</th></tr></thead>
         <tbody>{wf_rows}</tbody>
       </table>
-      <p class="caveat">Each archived day's signal was produced with only earlier data, so this is the out-of-sample
-      record of following the calls.</p>
+      <p class="caveat">Each archived day's signal was produced with only earlier data. <em>Live</em> days are the
+      signal as published at 9:00; <em>reconstructed</em> days were rebuilt walk-forward and saw the latest version of
+      the load/wind/weather forecasts rather than the 9:00 one, so they flatter the signal.</p>
     </div>
   </div>
 </details>
@@ -276,6 +304,53 @@ DART. Pick a past day in the Day bar and the table shows that day's signal with 
 """
     tab_button_html = f'<button class="tab-btn group-predict" onclick="showTab(\'{tab_id}\', this)">Spread Signal</button>'
     return tab_button_html, tab_content_html
+
+
+def scorecard_html(prefix):
+    """The out-of-sample record from data/forecast_scorecard.json (src/forecast/scorecard.py):
+    every archived forecast scored against what cleared, per vintage. Unlike the backtest
+    tiles above it, this is what the model actually did on the days it was live for."""
+    path = 'data/forecast_scorecard.json'
+    if not os.path.exists(path):
+        return ''
+    with open(path, encoding='utf-8') as f:
+        card = json.load(f)
+    rows = []
+    for vintage, r in (card.get('prices') or {}).get(prefix, {}).items():
+        label = 'pre-DAM (9:00 run)' if vintage == 'pre_dam' else 'post-DAM (afternoon run)'
+        extra = ''
+        if prefix == 'rtm' and r.get('baseline_rt_eq_dam_real_mae') is not None:
+            extra = f" · RT = real DAM would score ${r['baseline_rt_eq_dam_real_mae']:.1f}"
+        if prefix == 'spread' and r.get('sign_hit_rate') is not None:
+            extra = f" · sign right {r['sign_hit_rate']:.0f}% (always DART&gt;0: {r['base_rate_pos']:.0f}%)"
+        band = f" · P10-P90 covered {r['band_p10_p90_coverage']:.0f}% of hours" if r.get('band_p10_p90_coverage') is not None else ''
+        rows.append(f"<li><b>{label}</b>: {r['n_days']} days archived, MAE ${r['mae']:.1f}, bias ${r['bias']:+.1f}{band}{extra}</li>")
+    if not rows:
+        return ''
+    return ('<div class="caveat"><b>Out-of-sample record</b> (archived forecasts vs. what cleared; '
+            'the honest number, updated daily):<ul>' + ''.join(rows) + '</ul></div>')
+
+
+def missing_cols_label(meta):
+    """' (rtm_today_early_mean x24, ...)': which inputs were missing, from the meta's
+    missing_input_cols (older metas don't have it). The same-day RT summary missing means the
+    9:00 RT download failed, which is worth reading differently from a feed not out yet."""
+    cols = meta.get('missing_input_cols') or {}
+    if not cols:
+        return ''
+    shown = sorted(cols.items(), key=lambda kv: -kv[1])[:4]
+    more = f', +{len(cols) - len(shown)} more' if len(cols) > len(shown) else ''
+    return ' (' + ', '.join(f'{c} ×{n}' for c, n in shown) + more + ')'
+
+
+def vintage_label(meta):
+    """Which run produced the live forecast (see forecast_common.VINTAGES)."""
+    v = meta.get('vintage')
+    if v == 'post_dam':
+        return ' · post-DAM run (real DAM as input)'
+    if v == 'pre_dam':
+        return ' · pre-DAM run (DAM input is itself a forecast)'
+    return ''
 
 
 def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
@@ -300,9 +375,9 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     # Freshness line: a run that arrives late looks identical to a fresh one otherwise.
     generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
     missing = meta.get('missing_input_hours') or 0
-    freshness_html = f'<p class="caveat" id="{tab_id}-note">Generated {generated}'
+    freshness_html = f'<p class="caveat" id="{tab_id}-note">Generated {generated}{vintage_label(meta)}'
     if missing:
-        freshness_html += f' · {missing} of 24 target hours had incomplete inputs (load/wind/weather not yet published)'
+        freshness_html += f' · {missing} of 24 target hours had incomplete inputs{missing_cols_label(meta)}'
     freshness_html += ' · pick a past day in the Day bar to see that forecast against what actually cleared</p>'
 
     recommended = meta.get('recommended_hour') or {}
@@ -368,6 +443,7 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
   <div class="stat-tile"><div class="stat-label">Naive baseline MAE</div><div class="stat-value">{naive_mae}</div></div>
   <div class="stat-tile"><div class="stat-label">Most confident hour</div><div class="stat-value">{confident_hour_label}</div></div>
 </div>
+{scorecard_html(tab_id.replace('-forecast', '') if tab_id != 'forecast' else 'dam')}
 {track_section_html}
 {fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-forecast')}
 {analog_section_html}
@@ -921,6 +997,7 @@ const TAB_DATES = {TAB_DATES_JSON};
 // traces. Read by showCompactZone() to recompute DAM/RTM on the fly when a non-default zone
 // is picked, instead of shipping every zone x day combination pre-baked.
 const COMPACT_ZONE_DATA = {COMPACT_ZONE_DATA_JSON};
+const COMBO_DATA = {COMBO_DATA_JSON};
 // Per-day Supply Mix tile values, so the tiles follow the Day picker like the charts do.
 const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
 const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
@@ -936,12 +1013,34 @@ const forecastMarks = {{}};  // each forecast chart's original vline/annotation,
 let currentTab = 'dam';
 {REFRESH_JS}
 
+// Every chart of a tab that isn't open is drawn the first time the tab is: the figure scripts
+// call lazyPlot instead of Plotly.newPlot (swapped in at the end of generar_web.py). Drawing
+// all ~30 charts at load, hidden tabs included, was most of the page's startup time.
+const PENDING_PLOTS = {{}};
+function lazyPlot(id, data, layout, config) {{
+  const el = document.getElementById(id);
+  const tab = el && el.closest('.tab-content');
+  if (!tab || tab.classList.contains('active')) return Plotly['newPlot'](id, data, layout, config);  // not Plotly.newPlot: see the replace at the end
+  PENDING_PLOTS[id] = [data, layout, config];
+}}
+function drawPendingPlots(tabEl) {{
+  const ids = Object.keys(PENDING_PLOTS).filter(id => tabEl.contains(document.getElementById(id)));
+  ids.forEach(id => {{ const [d, l, c] = PENDING_PLOTS[id]; delete PENDING_PLOTS[id]; Plotly['newPlot'](id, d, l, c); }});
+  return ids;
+}}
+function isDrawn(divId) {{
+  const gd = document.getElementById(divId);
+  return !!(gd && gd.data);
+}}
+
 function showTab(name, btn) {{
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
+  const tabEl = document.getElementById('tab-' + name);
+  tabEl.classList.add('active');
   btn.classList.add('active');
   currentTab = name;
+  const drawn = drawPendingPlots(tabEl);
 
   const dateInput = document.getElementById('global-date');
   if (TAB_DATES[name] && dateInput) dateInput.value = TAB_DATES[name];
@@ -978,6 +1077,9 @@ function showTab(name, btn) {{
 
   updateSupplyTiles();
   updateWeatherTiles();
+  // Charts drawn just now start on their baked default; bring them to the Day bar and zone.
+  drawn.forEach(id => {{ if (FIG_CONFIGS[id]) applyFigSelection(id); }});
+  if (drawn.length) applyZoneChange();
 }}
 
 const FIG_CONFIGS = {{}};
@@ -1021,12 +1123,30 @@ function zoneReferenceSeries(zoneData, date) {{
   return {{hours, dayVals, prevVals, avgVals, prevDate}};
 }}
 
+// Charts compacted by compact_combos keep one trace group; COMBO_DATA[divId][i] holds the
+// [x, y, name(, bar colors)] of each trace for combination i (zone-major, then day). x is 0
+// when it is just hours 1..n.
+function showCombo(divId, comboIdx, offset) {{
+  const c = (COMBO_DATA[divId] || [])[comboIdx];
+  if (!c) return;
+  const idx = c.map((_, i) => offset + i);
+  const xOf = t => t[0] === 0 ? t[1].map((_, i) => i + 1) : t[0];
+  Plotly.restyle(divId, {{x: c.map(xOf), y: c.map(t => t[1]), name: c.map(t => t[2]), visible: c.map(() => true)}}, idx);
+  const colored = c.map((t, i) => t[3] ? i : -1).filter(i => i >= 0);
+  if (colored.length) Plotly.restyle(divId, {{'marker.color': colored.map(i => c[i][3])}}, colored.map(i => offset + i));
+}}
+
+// Traces ahead of the 3 dynamic ones: one group once compacted, else one group per day.
+function bakedCount(divId, cfg) {{
+  return COMBO_DATA[divId] ? cfg.tracesPerCombo : cfg.dates.length * cfg.tracesPerCombo;
+}}
+
 function showCompactZone(divId, cfg, zoneLabel, date) {{
   // Recomputes the 3 'dynamic' placeholder traces build_hourly_fig(compact_zones=True) added
   // after the baked ones, and hides every baked trace so only the freshly-computed zone shows.
   const zoneData = COMPACT_ZONE_DATA[cfg.compactZoneData] && COMPACT_ZONE_DATA[cfg.compactZoneData][zoneLabel];
   if (!zoneData) return;
-  const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
+  const bakedTotal = bakedCount(divId, cfg);
   const dynamicStart = bakedTotal;
   const {{hours, dayVals, prevVals, avgVals, prevDate}} = zoneReferenceSeries(zoneData, date);
   Plotly.restyle(divId, {{visible: new Array(bakedTotal).fill(false)}},
@@ -1048,7 +1168,7 @@ function showCompactSpreadZone(divId, cfg, zoneLabel, date) {{
   const damData = COMPACT_ZONE_DATA['dam'] && COMPACT_ZONE_DATA['dam'][zoneLabel];
   const rtmData = COMPACT_ZONE_DATA['rtm'] && COMPACT_ZONE_DATA['rtm'][zoneLabel];
   if (!damData || !rtmData) return;
-  const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
+  const bakedTotal = bakedCount(divId, cfg);
   const dynamicStart = bakedTotal;
   const hours = Array.from({{length: 24}}, (_, i) => i + 1);
   const damVals = damData[date] || new Array(24).fill(null);
@@ -1066,6 +1186,12 @@ function showCompactSpreadZone(divId, cfg, zoneLabel, date) {{
 function showBakedZone(divId, cfg, dateIdx) {{
   // Restores the default zone's own pre-baked trace for the selected day, and hides the 3
   // dynamic placeholder traces in case a non-default zone had them showing.
+  if (COMBO_DATA[divId]) {{
+    showCombo(divId, dateIdx, 0);
+    const n = cfg.tracesPerCombo;
+    Plotly.restyle(divId, {{visible: [false, false, false]}}, [n, n + 1, n + 2]);
+    return;
+  }}
   const bakedTotal = cfg.dates.length * cfg.tracesPerCombo;
   const visible = new Array(bakedTotal).fill(false);
   const base = dateIdx * cfg.tracesPerCombo;
@@ -1075,6 +1201,7 @@ function showBakedZone(divId, cfg, dateIdx) {{
 }}
 
 function applyFigSelection(divId) {{
+  if (!isDrawn(divId)) return;  // not drawn yet: showTab applies the selection when it is
   const cfg = FIG_CONFIGS[divId];
   const dateSel = document.getElementById(cfg.dateSelId);
   const dateIdx = cfg.dates.indexOf(dateSel.value);
@@ -1102,11 +1229,15 @@ function applyFigSelection(divId) {{
     return; // DAM/RTM/Spread titles are already hidden (show_title=False) and have no per-zone y-axis unit
   }}
 
-  const total = cfg.zones.length * cfg.dates.length * cfg.tracesPerCombo;
-  const visible = new Array(total).fill(false);
-  const base = (zoneIdx * cfg.dates.length + dateIdx) * cfg.tracesPerCombo;
-  for (let k = 0; k < cfg.tracesPerCombo; k++) visible[base + k] = true;
-  Plotly.restyle(divId, {{visible: visible}});
+  if (COMBO_DATA[divId]) {{
+    showCombo(divId, zoneIdx * cfg.dates.length + dateIdx, 0);
+  }} else {{
+    const total = cfg.zones.length * cfg.dates.length * cfg.tracesPerCombo;
+    const visible = new Array(total).fill(false);
+    const base = (zoneIdx * cfg.dates.length + dateIdx) * cfg.tracesPerCombo;
+    for (let k = 0; k < cfg.tracesPerCombo; k++) visible[base + k] = true;
+    Plotly.restyle(divId, {{visible: visible}});
+  }}
   const relayout = {{}};
   if (cfg.showTitle) relayout.title = cfg.titlePrefix + ' - ' + zoneLabel + ' (' + dateSel.value + ')';
   if (cfg.yAxisTitles) relayout['yaxis.title'] = cfg.yAxisTitles[zoneIdx];
@@ -1267,11 +1398,10 @@ function restyleForecastCurve(divId, day, isLive) {{
   if (!gd || !gd.layout) return;
   if (!forecastMarks[divId]) forecastMarks[divId] = {{shapes: gd.layout.shapes || [], annotations: gd.layout.annotations || []}};
   const actual = day.actual || new Array(24).fill(null);
-  const lo = day.predicted.map((p, i) => (p == null || day.band[i] == null) ? null : p - day.band[i]);
-  const hi = day.predicted.map((p, i) => (p == null || day.band[i] == null) ? null : p + day.band[i]);
+  const lo = day.band_lo, hi = day.band_hi;
   Plotly.restyle(divId, {{
     y: [day.analog, day.analog_2, lo, hi, day.predicted, actual],
-    name: ['Similar #1 (' + day.analog_date + ')', 'Similar #2 (' + day.analog_date_2 + ')', '', 'Error range (±MAE)', 'Predicted', 'Actual'],
+    name: ['Similar #1 (' + day.analog_date + ')', 'Similar #2 (' + day.analog_date_2 + ')', '', day.band_name, 'Predicted', 'Actual'],
     showlegend: [true, day.analog_2.some(v => v != null), false, true, true, !!day.actual],
   }});
   // Past days keep the zero line (add_hline: xref 'x domain') but drop the "most confident
@@ -1313,7 +1443,7 @@ function applyZoneChange() {{
   const z = TAB_ZONES[currentTab];
   if (!z) return;
   if (z.hourlyDiv) applyFigSelection(z.hourlyDiv);
-  if (z.tableDiv && TABLE_CONFIGS[z.tableDiv]) {{
+  if (z.tableDiv && TABLE_CONFIGS[z.tableDiv] && isDrawn(z.tableDiv)) {{
     const sel = document.getElementById('tab-zone-select');
     const zones = TABLE_CONFIGS[z.tableDiv];
     const idx = zones.indexOf(sel.value);
@@ -1506,6 +1636,10 @@ document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); upda
 </body>
 </html>
 """
+
+# Defer drawing to the first time each chart's tab is shown (see lazyPlot in the page script).
+# Only Plotly's own figure scripts call newPlot; the page's code above only restyles.
+html = html.replace('Plotly.newPlot(', 'lazyPlot(')
 
 with open('docs/index.html', 'w', encoding='utf-8') as f:
     f.write(html)

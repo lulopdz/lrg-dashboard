@@ -162,7 +162,8 @@ spread = spread[['location', 'interval_start_local', 'hour', 'lmp']]
 # 2b. Archived forecasts (one vintage per target day, see forecast_common.archive_forecast)
 # plus what actually cleared, for the forecast tabs' Day picker: {prefix: {YYYY-MM-DD: {...}}}.
 def _clean(vals):
-    return [None if pd.isna(v) else round(float(v), 2) for v in vals]
+    # One decimal: all the page ever shows, and it's embedded for every archived day.
+    return [None if pd.isna(v) else round(float(v), 1) for v in vals]
 
 
 def _forecast_history(prefix, actual_df):
@@ -170,6 +171,11 @@ def _forecast_history(prefix, actual_df):
     if not os.path.exists(path):
         return {}
     hist = pd.read_csv(path)
+    # The Day picker shows the pre_dam vintage: the 9:00 forecast a virtual bid could act on.
+    # Older archives predate vintages and are all pre_dam.
+    if 'vintage' in hist.columns:
+        hist = hist[hist['vintage'] == 'pre_dam']
+    has_quantiles = {'p10', 'p90'} <= set(hist.columns)
     act = actual_df[actual_df['location'] == DEFAULT_ZONE].copy()
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
     actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
@@ -177,11 +183,18 @@ def _forecast_history(prefix, actual_df):
     for d, g in hist.groupby('target_date'):
         g = g.sort_values('hour')
         a = actual.get(d)
+        if has_quantiles and g['p10'].notna().any():
+            band_lo, band_hi, band_name = _clean(g['p10']), _clean(g['p90']), 'P10-P90'
+        else:
+            band_lo = _clean(g['predicted_lmp'] - g['band_err'])
+            band_hi = _clean(g['predicted_lmp'] + g['band_err'])
+            band_name = 'Error range (±MAE)'
         days[d] = {
             'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
             'analog_date': g['analog_date'].iloc[0], 'analog_date_2': g['analog_date_2'].iloc[0],
             'predicted': _clean(g['predicted_lmp']), 'analog': _clean(g['analog_lmp']),
-            'analog_2': _clean(g['analog_lmp_2']), 'band': _clean(g['band_err']),
+            'analog_2': _clean(g['analog_lmp_2']),
+            'band_lo': band_lo, 'band_hi': band_hi, 'band_name': band_name,
             'actual': _clean(a.get(h) for h in range(1, 25)) if a else None,
         }
     return days
@@ -197,6 +210,8 @@ def _signal_history():
     if not os.path.exists(path):
         return {}
     hist = pd.read_csv(path)
+    if 'vintage' in hist.columns:
+        hist = hist[hist['vintage'] == 'pre_dam']
     act = spread[spread['location'] == DEFAULT_ZONE].copy()
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
     actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}

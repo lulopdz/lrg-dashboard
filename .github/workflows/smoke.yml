@@ -1,0 +1,53 @@
+name: Smoke test
+
+# Prueba rápida de que el código corre, en cada push que toca código: compila todo, puntúa el
+# archivo de forecasts, reconstruye un día pasado con los tres modelos y genera las tres
+# páginas. No escribe nada en data/ ni publica: las reconstrucciones van a una carpeta
+# temporal y docs/ no se commitea. Existe porque un import roto en scorecard.py (22/09/2026)
+# solo habría aparecido en la corrida de las 9:00, tumbando la publicación del día.
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'src/**', 'requirements.txt', '.github/workflows/**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Traer el código
+      uses: actions/checkout@v4
+
+    - name: Instalar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Instalar librerías
+      run: pip install -r requirements.txt
+
+    - name: Compilar
+      run: python -m compileall -q src
+
+    - name: Scorecard
+      run: python src/forecast/scorecard.py --json "$RUNNER_TEMP/scorecard.json"
+
+    # El día anterior al último con RT completo: tiene datos de sobra y no toca el archivo live.
+    - name: Reconstruir un día (DAM, RT, spread y señal)
+      run: |
+        dia=$(python -c "import pandas as pd; d = pd.read_csv('data/ieso_rtm_prices.csv', usecols=['interval_start_local']); print((pd.to_datetime(d['interval_start_local'].str[:10]).max() - pd.Timedelta(days=2)).date())")
+        echo "Día reconstruido: $dia"
+        for modelo in dam rtm spread; do
+          python src/forecast/predict_$modelo.py --target-date "$dia" --out-dir "$RUNNER_TEMP/wf"
+        done
+
+    - name: Generar el sitio
+      run: |
+        python src/web/generar_web.py
+        python src/web/generar_simulator.py
+        python src/web/generar_portfolio.py

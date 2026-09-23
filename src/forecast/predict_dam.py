@@ -13,17 +13,18 @@ reports its actual price curve as an analog reference.
 Run manually: `python src/forecast/predict_dam.py`. Writes data/dam_forecast.csv and
 data/dam_forecast_meta.json, which generar_web.py reads if present.
 """
-from forecast_common import load_price_series, run_forecast
+from forecast_common import DATA_DIR, SUPPLY_COLS, ZONE, load_price_series, parse_run_args, run_forecast
 
 FEATURE_COLS = [
     # raw `hour` sits alongside hour_sin/cos so a tree can split directly on hour of day
     # instead of reconstructing it from the two smooth features
-    "hour", "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos", "is_weekend",
+    "hour", "hour_sin", "hour_cos", "dow_sin", "dow_cos", "month_sin", "month_cos", "is_weekend", "is_holiday",
     "ontario", "ontario_northeast", "ontario_northwest", "ontario_southwest", "ontario_southeast",
     "wind_forecast",
     "temperature_2m", "relative_humidity_2m", "precipitation", "snowfall", "wind_speed_10m", "shortwave_radiation",
     "wind_speed_100m_port_alma",  # wind at turbine hub height, Chatham-Kent (see update_weather.py)
     "dam_lag_1d", "dam_lag_7d", "dam_roll_7d", "dam_roll_28d",
+    *SUPPLY_COLS,  # nuclear/gas/hydro availability, net load, capacity margin (forecast_common)
 ]
 
 # DAM opts out of forecast_common.DEFAULT_MODEL_PARAMS' depth cap: it's the cleanest of the
@@ -33,10 +34,14 @@ FEATURE_COLS = [
 MODEL_PARAMS = {}
 
 
-def main():
-    dam = load_price_series("ieso_dam_prices.csv")
-    run_forecast("dam", dam, FEATURE_COLS, dam, model_params=MODEL_PARAMS)
+def main(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, backtest_enabled=True, zone=ZONE):
+    """The DAM model only has a pre_dam vintage: once tomorrow's DAM is published there is
+    nothing left to predict, so a post_dam request just re-archives the pre_dam forecast."""
+    dam = load_price_series("ieso_dam_prices.csv", zone)
+    return run_forecast("dam", dam, FEATURE_COLS, dam, model_params=MODEL_PARAMS, vintage="pre_dam",
+                        target_date=target_date, out_dir=out_dir, backtest_enabled=backtest_enabled, zone=zone)
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_run_args("Forecast tomorrow's DAM price.")
+    main(args.vintage, args.target_date, args.out_dir, zone=args.zone)
