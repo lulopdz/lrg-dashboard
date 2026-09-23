@@ -1,0 +1,128 @@
+{
+  "zone": "NIAGARA",
+  "target_date": "2026-09-24",
+  "vintage": "pre_dam",
+  "generated_at": "2026-09-23T13:01:55.950825+00:00",
+  "backfilled": false,
+  "big_threshold": 40,
+  "watch_lift": 2.0,
+  "base_rates": {
+    "pos": 64.8,
+    "big_pos": 9.0,
+    "big_neg": 8.7,
+    "low_rt": 3.3
+  },
+  "backtest": {
+    "days": 60,
+    "eval_days": 30,
+    "n_hours": 721,
+    "bins_hours": 1441,
+    "base_rate_pos": 64.8,
+    "hit_rate_all": 49.1,
+    "pnl_all": -930.43,
+    "n_rated": 716,
+    "hit_rate_rated": 49.4,
+    "pnl_rated": -862.5,
+    "n_high": 198,
+    "hit_rate_high": 68.2,
+    "pnl_high": 98.82,
+    "optimal_pnl": 10521.03,
+    "always_gen_pnl": 1128.07,
+    "always_load_pnl": -1128.07,
+    "brier_skill": {
+      "pos": -0.075,
+      "big_pos": 0.26,
+      "big_neg": 0.087,
+      "low_rt": 0.118
+    },
+    "bins": [
+      {
+        "lo": 0.0,
+        "hi": 0.35,
+        "n": 14,
+        "call": "DART < 0",
+        "e_dart": 8.84,
+        "se": 3.19,
+        "hit_rate": 21.4,
+        "pnl": 123.78,
+        "edge": 8.84,
+        "tier": "low"
+      },
+      {
+        "lo": 0.35,
+        "hi": 0.5,
+        "n": 109,
+        "call": "DART < 0",
+        "e_dart": -1.71,
+        "se": 1.51,
+        "hit_rate": 40.4,
+        "pnl": 186.24,
+        "edge": 1.71,
+        "tier": "low"
+      },
+      {
+        "lo": 0.5,
+        "hi": 0.65,
+        "n": 350,
+        "call": "DART < 0",
+        "e_dart": -8.71,
+        "se": 3.09,
+        "hit_rate": 50.0,
+        "pnl": 3049.68,
+        "edge": 8.71,
+        "tier": "medium"
+      },
+      {
+        "lo": 0.65,
+        "hi": 0.8,
+        "n": 583,
+        "call": "DART < 0",
+        "e_dart": -2.39,
+        "se": 1.77,
+        "hit_rate": 43.1,
+        "pnl": 1393.63,
+        "edge": 2.39,
+        "tier": "low"
+      },
+      {
+        "lo": 0.8,
+        "hi": 1.0,
+        "n": 385,
+        "call": "DART > 0",
+        "e_dart": 4.45,
+        "se": 3.12,
+        "hit_rate": 69.9,
+        "pnl": 1712.81,
+        "edge": 4.45,
+        "tier": "low"
+      }
+    ],
+    "watch": {
+      "big_pos": {
+        "threshold": 0.2184,
+        "n_flagged": 60,
+        "precision": 33.3,
+        "recall": 87.0,
+        "base_rate": 3.2
+      },
+      "big_neg": {
+        "threshold": 0.1366,
+        "n_flagged": 107,
+        "precision": 0.9,
+        "recall": 5.3,
+        "base_rate": 2.6
+      },
+      "low_rt": {
+        "threshold": 0.0578,
+        "n_flagged": 7,
+        "precision": 28.6,
+        "recall": 28.6,
+        "base_rate": 1.0
+      }
+    }
+  },
+  "top_hours": [],
+  "missing_input_hours": 0,
+  "missing_input_cols": {},
+  "used_dam_forecast_feature": true
+}

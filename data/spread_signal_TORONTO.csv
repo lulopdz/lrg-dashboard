@@ -1,0 +1,25 @@
+hour,p_pos,p_big_pos,p_big_neg,p_low_rt,call,confidence,edge,tier,big_pos_watch,big_neg_watch,sbg_watch
+1,0.594,0.0,0.002,0.014,DART < 0,44.7,2.18,low,False,False,False
+2,0.533,0.0,0.002,0.016,DART < 0,44.7,2.18,low,False,False,False
+3,0.526,0.0,0.002,0.019,DART < 0,44.7,2.18,low,False,False,False
+4,0.476,0.0,0.002,0.021,DART < 0,39.9,0.96,low,False,False,False
+5,0.655,0.0,0.003,0.007,DART < 0,42.4,0.43,low,False,False,False
+6,0.61,0.0,0.01,0.004,DART < 0,44.7,2.18,low,False,False,False
+7,0.62,0.001,0.022,0.002,DART < 0,44.7,2.18,low,False,False,False
+8,0.592,0.001,0.017,0.002,DART < 0,44.7,2.18,low,False,False,False
+9,0.589,0.0,0.011,0.003,DART < 0,44.7,2.18,low,False,False,False
+10,0.687,0.0,0.008,0.007,DART < 0,42.4,0.43,low,False,False,False
+11,0.709,0.0,0.008,0.011,DART < 0,42.4,0.43,low,False,False,False
+12,0.712,0.0,0.012,0.009,DART < 0,42.4,0.43,low,False,False,False
+13,0.659,0.0,0.009,0.01,DART < 0,42.4,0.43,low,False,False,False
+14,0.676,0.0,0.007,0.006,DART < 0,42.4,0.43,low,False,False,False
+15,0.722,0.0,0.019,0.003,DART < 0,42.4,0.43,low,False,False,False
+16,0.57,0.0,0.03,0.002,DART < 0,44.7,2.18,low,False,False,False
+17,0.595,0.001,0.042,0.001,DART < 0,44.7,2.18,low,False,False,False
+18,0.659,0.003,0.111,0.001,DART < 0,42.4,0.43,low,False,False,False
+19,0.716,0.003,0.116,0.001,DART < 0,42.4,0.43,low,False,False,False
+20,0.726,0.002,0.085,0.001,DART < 0,42.4,0.43,low,False,False,False
+21,0.644,0.001,0.03,0.002,DART < 0,44.7,2.18,low,False,False,False
+22,0.644,0.0,0.031,0.002,DART < 0,44.7,2.18,low,False,False,False
+23,0.653,0.0,0.005,0.006,DART < 0,42.4,0.43,low,False,False,False
+24,0.705,0.0,0.003,0.005,DART < 0,42.4,0.43,low,False,False,False
