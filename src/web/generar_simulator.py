@@ -38,6 +38,8 @@ import os
 import pandas as pd
 from plotly.offline import get_plotlyjs_version
 
+from gate import SITE_LOCK, gate_html
+
 # The same plotly.js the other pages get from plotly.py's include_plotlyjs='cdn', so a visitor
 # downloads one bundle, not two (this was a hard-coded 3.0.1).
 PLOTLYJS_VERSION = get_plotlyjs_version()
@@ -217,6 +219,8 @@ html = f"""<html>
 </style>
 </head>
 <body>
+
+{gate_html([SITE_LOCK])}
 
 <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
   <a class="back-link" href="index.html" style="margin-bottom: 0;">&larr; Back to dashboard</a>
