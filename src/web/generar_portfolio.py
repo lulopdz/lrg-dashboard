@@ -9,6 +9,7 @@ import os
 import pandas as pd
 import plotly.graph_objects as go
 
+from gate import PORTFOLIO_LOCK, SITE_LOCK, gate_html
 from refresh import REFRESH_JS, RT_WORKFLOW, refresh_target
 from theme import COLORS, TABLE_ROW_HEIGHT
 
@@ -25,12 +26,6 @@ BADGE_CLASS = {'Won': 'badge-won', 'Lost': 'badge-lost', 'Flat': 'badge-flat', '
 # fill size from the report itself. 1 MW is the assumption: 91 of this book's 94 real trades
 # (97%) are exactly 1 MW, so it's the representative size, not an arbitrary round number.
 WHATIF_FILL_MW = 1.0
-
-# Password gate for the page. Only the SHA-256 goes in the repo, never the password itself.
-# It's a casual lock, not real security: the page is static, so the data is still in the HTML
-# source for anyone who opens it. To change the password:
-#   python -c "import hashlib;print(hashlib.sha256(b'new-password').hexdigest())"
-PORTFOLIO_PASSWORD_SHA256 = '68b79ba7c1c56c1875d5bef864987aec43cf959fec59912cc13d2d00e64e943d'
 
 # Case-grid heatmap: one flat color per outcome (not a magnitude scale) -- the point is the
 # category, not the size. 'blank' (an hour never listed in the report at all -- not a case)
@@ -440,51 +435,11 @@ def build_portfolio():
     padding:8px 16px; cursor:pointer; font-size:13px; text-decoration:none;
   }}
   .refresh-btn:hover {{ background:#2980b9; }}
-
-  /* Password gate: an opaque overlay on top of the page (not display:none on the content,
-     so the Plotly grids still size against the real width underneath). */
-  body.locked {{ overflow:hidden; }}
-  #lock {{ position:fixed; inset:0; z-index:1000; background:{COLORS['ring']};
-    display:flex; align-items:center; justify-content:center; }}
-  #lock form {{ background:#1a1a1a; border:1px solid #333; border-radius:8px; padding:24px;
-    display:flex; flex-direction:column; gap:12px; width:260px; }}
-  #lock input {{ background:#111; color:#eee; border:1px solid #444; border-radius:4px; padding:8px 10px; font-size:14px; }}
-  #lock button {{ background:{COLORS['dam']}; color:#fff; border:0; border-radius:4px; padding:8px; font-size:13px; cursor:pointer; }}
-  #lock .lock-error {{ color:{COLORS['negative']}; font-size:12px; min-height:14px; }}
 </style>
 </head>
-<body class="locked">
+<body>
 
-<div id="lock">
-  <form onsubmit="unlock(event)">
-    <div style="font-size:16px; font-weight:600;">Portfolio</div>
-    <input id="lock-pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
-    <button type="submit">Enter</button>
-    <div id="lock-error" class="lock-error"></div>
-    <a class="back-link" href="index.html" style="margin:0;">&larr; Back to dashboard</a>
-  </form>
-</div>
-<script>
-const PW_HASH = '{PORTFOLIO_PASSWORD_SHA256}';
-function openLock() {{
-    document.getElementById('lock').remove();
-    document.body.classList.remove('locked');
-}}
-async function unlock(e) {{
-    e.preventDefault();
-    const bytes = new TextEncoder().encode(document.getElementById('lock-pw').value);
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    const hex = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-    if (hex === PW_HASH) {{
-        try {{ localStorage.setItem('portfolio-unlocked', PW_HASH); }} catch (err) {{}}
-        openLock();
-    }} else {{
-        document.getElementById('lock-error').textContent = 'Wrong password';
-    }}
-}}
-// Remembered per browser; changing the password (its hash) locks everyone out again.
-try {{ if (localStorage.getItem('portfolio-unlocked') === PW_HASH) openLock(); }} catch (err) {{}}
-</script>
+{gate_html([SITE_LOCK, PORTFOLIO_LOCK], back_link=True)}
 
 <div class="top-bar">
   <a class="back-link" href="index.html">&larr; Back to dashboard</a>

@@ -14,6 +14,7 @@ from dashboard_data import (
     weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from theme import TIER_COLORS
+from gate import SITE_LOCK, gate_html
 from refresh import DAILY_WORKFLOW, RT_WORKFLOW, REFRESH_JS, refresh_target
 from dashboard_figures import (
     ENSEMBLE_TRACES, build_analog_comparison_fig, build_forecast_fig, build_hourly_fig,
@@ -992,6 +993,8 @@ html = f"""<html>
 </style>
 </head>
 <body>
+
+{gate_html([SITE_LOCK])}
 
 <script>
 const TAB_REFRESH = {TAB_REFRESH_JSON};
