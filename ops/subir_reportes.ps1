@@ -5,6 +5,10 @@
 # se comitea. El push dispara daily.yml, que recalcula el P&L y republica el sitio en ~3 min.
 # El bot nunca toca portfolio_positions.csv (en Actions no hay XML), así que este commit y los
 # del bot no pueden chocar.
+#
+# Los pull son con merge, no con rebase: el repo vive en Google Drive y Drive dejó vacía la
+# carpeta .git/rebase-merge de un rebase del 27/09/2026; git la toma como un rebase a medias y
+# se niega a hacer otro. Con merge no se usa esa carpeta.
 
 $repo = Split-Path $PSScriptRoot -Parent
 Set-Location $repo
@@ -32,10 +36,11 @@ Write-Host '1/3 Trayendo lo último de GitHub...'
 # Drive cambia las fechas de los archivos y git los marca como modificados sin que lo estén, y
 # eso frena el pull. Volver a agregar los que no tienen diff real refresca el índice sin cambiar
 # contenido; un cambio de verdad (código que estés editando) queda intacto y lo cubre --autostash.
+$pull = @('pull', '-q', '--no-rebase', '--no-edit', '--autostash', 'origin', 'main')
 $real = @(git diff --name-only)
 git status --porcelain | Where-Object { $_ -like ' M *' } | ForEach-Object { $_.Substring(3) } |
     Where-Object { $real -notcontains $_ } | ForEach-Object { & git add -- $_ }
-Invoke-Git pull -q --rebase --autostash origin main
+Invoke-Git @pull
 
 Write-Host "2/3 Leyendo $($xmls.Count) reportes de data/reports/..."
 & python src/ingest/parse_reports.py --positions-only
@@ -58,9 +63,9 @@ Write-Host "3/3 Subiendo: $msg"
 Invoke-Git commit -q -m $msg -- $positions
 & git push -q origin HEAD:main
 if ($LASTEXITCODE -ne 0) {
-    # El bot pusheó entre el pull y el push: se rebasa encima (no toca este archivo) y se reintenta.
+    # El bot pusheó entre el pull y el push: se mergea lo suyo (no toca este archivo) y se reintenta.
     Write-Host 'GitHub tenía un commit nuevo del bot; reintentando encima de ese...' -ForegroundColor Yellow
-    Invoke-Git pull -q --rebase --autostash origin main
+    Invoke-Git @pull
     Invoke-Git push -q origin HEAD:main
 }
 
