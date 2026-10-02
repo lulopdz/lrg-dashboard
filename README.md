@@ -50,7 +50,7 @@ lrg-dashboard/
 │       ├── dashboard_data.py <-- Carga los CSVs de data/ y los deja listos para graficar
 │       ├── dashboard_figures.py <-- Construye las figuras de Plotly
 │       └── generar_*.py    <-- Ensamblan y exportan index.html, simulator.html y portfolio.html
-├── ops/                    <-- Apps Script que dispara el run de las 9:00 y el botón de refresh (ver ops/README.md)
+├── ops/                    <-- Apps Script que dispara el run de las 9:00 y el botón de refresh (ver ops/README.md), y subir_reportes.bat
 ├── requirements.txt        <-- Dependencias requeridas
 └── README.md               <-- Este archivo de documentación
 ```
@@ -119,8 +119,8 @@ Para correr el proyecto en tu propia máquina:
    python src/forecast/predict_rtm.py --target-date 2026-09-20 --out-dir /tmp/prueba   # un día pasado, sin tocar data/
    ```
 
-5. **Procesar reportes de participación (Opcional)**:
-   Si bajaste un nuevo reporte XML de IESO, guárdalo en `data/reports/` y procésalo: sus filas se suman a `data/portfolio_positions.csv` y se recalcula el PnL histórico.
+5. **Subir reportes de participación**:
+   Guarda el XML que bajaste de IESO en `data/reports/` y dale doble clic a **`ops/subir_reportes.bat`**. El script trae lo último de GitHub, suma los reportes nuevos a `data/portfolio_positions.csv` (`parse_reports.py --positions-only`), comitea solo ese archivo y hace push; el push dispara `daily.yml`, que recalcula el P&L y republica el portfolio en ~3 min. Si no hay reportes nuevos, no hace nada. Para ver el PnL en local sin subir nada:
    ```bash
    python src/ingest/parse_reports.py
    ```

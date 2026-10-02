@@ -4,3 +4,6 @@
 # that had nothing to do with the actual change being rebased. Existing tracked files keep
 # their current line endings until next touched -- this only changes behavior going forward.
 * text=auto eol=lf
+
+# cmd.exe misparses LF-only batch files; subir_reportes.bat is double-clicked from Explorer.
+*.bat text eol=crlf

@@ -5,7 +5,12 @@ data/portfolio_positions.csv is the source of truth for every participation: one
 (DAScheduledEnergy2, marked confidential) stay out of the public repo: data/reports/ is
 git-ignored and lives only in the local Drive folder. Dropping a new XML there and running this
 script folds its rows into positions; with no XMLs around (GitHub Actions) it just reprices what
-positions already holds against the latest DAM/RT and rewrites data/historical_pnl.csv."""
+positions already holds against the latest DAM/RT and rewrites data/historical_pnl.csv.
+
+--positions-only stops after the positions: what ops/subir_reportes.ps1 runs, since the push it
+makes has GitHub Actions reprice anyway, and leaving historical_pnl.csv untouched locally keeps the
+next git pull from tripping over it."""
+import argparse
 import glob
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -90,7 +95,7 @@ def update_positions():
 
     if xml_files:
         added = len(df) - len(known)
-        df.to_csv(POSITIONS_PATH, index=False)
+        df.to_csv(POSITIONS_PATH, index=False, lineterminator='\n')
         print(f"Positions: {len(df)} rows ({added:+d}) saved to {POSITIONS_PATH}")
     return df
 
@@ -144,4 +149,10 @@ def parse_reports():
     print(f"Priced {len(df_ops)} position rows. Saved historical PnL to {out_path}")
 
 if __name__ == '__main__':
-    parse_reports()
+    ap = argparse.ArgumentParser(description="Fold IESO participation reports into positions and price them.")
+    ap.add_argument('--positions-only', action='store_true',
+                    help="update data/portfolio_positions.csv and stop (no historical_pnl.csv)")
+    if ap.parse_args().positions_only:
+        update_positions()
+    else:
+        parse_reports()
