@@ -16,3 +16,8 @@ data/ieso_adequacy_forecast.csv
 
 # Local roadmap/audit notes; never pushed.
 TRACKING.md
+
+# Raw IESO participation reports (DAScheduledEnergy2, DocConfClass CNF): confidential, so they
+# stay local (backed up by Drive). parse_reports.py folds them into data/portfolio_positions.csv,
+# which is what gets committed and what the Portfolio page reads.
+data/reports/

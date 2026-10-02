@@ -8,7 +8,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 - **Datos Climáticos y de Red**: Recopilación de pronósticos de demanda, generación eólica y clima mediante `openmeteo_requests`.
 - **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h), en dos corridas por día: pre-DAM (9:00) y post-DAM (tarde).
 - **Trading Simulator**: Backtest interactivo -- elige una fecha pasada, ve solo la información disponible en ese momento, y evalúa tus apuestas Long/Flat/Short contra el spread real.
-- **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de los reportes XML en `data/reports/`), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
+- **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de `data/portfolio_positions.csv`, las posiciones extraídas de los reportes XML de IESO), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
 - **Visualización Interactiva**: Gráficos y tablas dinámicas generados con `plotly`, compilados en un formato HTML estático sin necesidad de un backend activo.
 - **Automatización**: Pipelines de GitHub Actions para ejecución programada. Refresca datos diarios, entrena modelos y publica directamente en GitHub Pages.
 
@@ -24,7 +24,8 @@ lrg-dashboard/
 │   ├── *_TORONTO.* / *_NIAGARA.* <-- Lo mismo para las otras zonas (la de OTTAWA, la del dashboard, no lleva sufijo)
 │   ├── forecast_inputs_dayahead.csv <-- Entradas (carga, viento, clima, adecuación) tal como se veían a las 9:00 del día anterior
 │   ├── forecast_scorecard.json <-- Evaluación out-of-sample del archivo de forecasts (scorecard.py)
-│   └── reports/            <-- Reportes XML de participación (IESO DAScheduledEnergy2), fuente del Portfolio
+│   ├── portfolio_positions.csv <-- Posiciones (fecha, hora, recurso, MW) extraídas de los reportes de IESO: fuente del Portfolio
+│   └── reports/            <-- Reportes XML crudos de IESO (DAScheduledEnergy2, confidenciales). Solo local: está en .gitignore
 ├── docs/                   <-- Salida de GitHub Pages (no se commitea: se publica como artefacto)
 │   ├── index.html          <-- Dashboard principal generado por Plotly/Python
 │   ├── simulator.html      <-- Herramienta del simulador
@@ -35,7 +36,7 @@ lrg-dashboard/
 │   │   ├── update_prices_ieso.py <-- DAM y RT desde los reportes públicos de IESO: mismos valores, 0 requests del cupo
 │   │   ├── update_common.py <-- Descarga y fusión incremental que comparten los update_*
 │   │   ├── check_freshness.py <-- Falla si el RT quedó viejo (job "verificar")
-│   │   └── parse_reports.py <-- Convierte los reportes XML en data/reports/ a data/historical_pnl.csv
+│   │   └── parse_reports.py <-- Suma los XML de data/reports/ a portfolio_positions.csv y escribe data/historical_pnl.csv
 │   ├── forecast/           <-- Modelos que proyectan el día siguiente
 │   │   ├── forecast_common.py <-- Features, entrenamiento, *backtest* y archivo que comparten los predict_*
 │   │   ├── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py hace el pronóstico de DART y la señal (clasificadores)
@@ -119,10 +120,11 @@ Para correr el proyecto en tu propia máquina:
    ```
 
 5. **Procesar reportes de participación (Opcional)**:
-   Si agregaste un nuevo reporte XML de IESO a `data/reports/`, procésalo para actualizar el PnL histórico:
+   Si bajaste un nuevo reporte XML de IESO, guárdalo en `data/reports/` y procésalo: sus filas se suman a `data/portfolio_positions.csv` y se recalcula el PnL histórico.
    ```bash
    python src/ingest/parse_reports.py
    ```
+   Los XML son confidenciales y **no se commitean** (`data/reports/` está en `.gitignore`; quedan respaldados en Drive). Lo que se commitea es `data/portfolio_positions.csv`. En GitHub Actions no hay XML: el script solo vuelve a valorizar las posiciones con los precios del día.
 
 6. **Generar el Dashboard**:
    ```bash

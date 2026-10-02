@@ -1,5 +1,6 @@
 """Builds docs/portfolio.html: the trading history from data/historical_pnl.csv (itself
-built by parse_reports.py from the IESO participation XML reports in data/reports),
+built by parse_reports.py from data/portfolio_positions.csv, the positions taken from the IESO
+participation reports),
 grouped by month -- a Won/Lost/No-exposure breakdown, an hour-by-day case grid, and a
 per-trade log. Stats are month-scoped only, on purpose: an all-time accumulated view was
 tried and dropped -- the per-month cut is what's actually useful here."""
@@ -447,7 +448,7 @@ def build_portfolio():
 </div>
 <h1>Portfolio</h1>
 <p class="subtitle">Monthly results for every LRG bid/offer submitted to the IESO market, built from the
-participation reports in data/reports. Virtual Gen profits when DAM clears above RTM; Virtual Load profits
+IESO participation reports. Virtual Gen profits when DAM clears above RTM; Virtual Load profits
 when RTM clears above DAM. The case grid shows every hour we could have traded that month, not just the
 ones we did.</p>
 
