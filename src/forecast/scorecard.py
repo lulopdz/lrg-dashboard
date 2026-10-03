@@ -52,7 +52,9 @@ def _load_history(directory, prefix, zone=ZONE):
 
 def score_prices(directory, actuals, zone=ZONE):
     """Per prefix and vintage: error stats, per-hour/month MAE, band coverage, analog MAE, and
-    the baselines each model has to beat (RTM: 'RT = predicted DAM' and 'RT = real DAM')."""
+    the baselines each model has to beat (RTM: 'RT = predicted DAM' and 'RT = real DAM').
+    Walk-forward reconstructions are graded apart, under '<vintage>_reconstructed': they see the
+    latest inputs rather than the 9:00 ones, so mixing them in would flatter the live record."""
     out = {}
     dam_hist = _load_history(directory, "dam", zone)
     for prefix in PREFIXES:
@@ -64,7 +66,10 @@ def score_prices(directory, actuals, zone=ZONE):
             dam_pred = dam_hist[dam_hist["vintage"] == "pre_dam"][["target_date", "hour", "predicted_lmp"]]
             h = h.merge(dam_pred.rename(columns={"predicted_lmp": "dam_pred"}), on=["target_date", "hour"], how="left")
             h = h.merge(actuals["dam"].rename(columns={"lmp": "dam_real"}), on=["target_date", "hour"], how="left")
-        for vintage, g in h.groupby("vintage"):
+        rebuilt = h["backfilled"].astype(str).str.lower().eq("true") if "backfilled" in h else pd.Series(False, index=h.index)
+        h["record"] = np.where(rebuilt, h["vintage"] + "_reconstructed", h["vintage"])
+        for record, g in h.groupby("record"):
+            vintage = g["vintage"].iloc[0]
             err = g["predicted_lmp"] - g["lmp"]
             rec = {
                 "n_days": int(g["target_date"].nunique()), "n_hours": int(len(g)),
@@ -77,9 +82,13 @@ def score_prices(directory, actuals, zone=ZONE):
                                if "analog_lmp" in g and g["analog_lmp"].notna().any() else None),
             }
             if {"p10", "p90"} <= set(g.columns) and g["p10"].notna().any():
-                inside = (g["lmp"] >= g["p10"]) & (g["lmp"] <= g["p90"])
+                # Only the hours that had a band: the archive predates P10/P90 (2026-09-22), and
+                # counting those hours as "outside" put OTTAWA's coverage at 9% instead of ~68%.
+                b = g[g["p10"].notna() & g["p90"].notna()]
+                inside = (b["lmp"] >= b["p10"]) & (b["lmp"] <= b["p90"])
                 rec["band_p10_p90_coverage"] = round(float(inside.mean() * 100), 1)  # well calibrated ~ 80%
-                rec["band_width_mean"] = round(float((g["p90"] - g["p10"]).mean()), 1)
+                rec["band_width_mean"] = round(float((b["p90"] - b["p10"]).mean()), 1)
+                rec["band_n_days"] = int(b["target_date"].nunique())
             if prefix == "rtm":
                 if "dam_pred" in g and g["dam_pred"].notna().any():
                     rec["baseline_rt_eq_dam_pred_mae"] = round(float((g["dam_pred"] - g["lmp"]).abs().mean()), 2)
@@ -107,7 +116,7 @@ def score_prices(directory, actuals, zone=ZONE):
                         rec["derived_mae"] = round(float((d["derived"] - d["lmp"]).abs().mean()), 2)
                         rec["derived_sign_hit_rate"] = round(float((np.sign(d["derived"]) == np.sign(d["lmp"])).mean() * 100), 1)
                         rec["derived_pnl_follow_sign"] = round(float(np.where(d["derived"] > 0, d["lmp"], -d["lmp"]).sum()), 0)
-            out.setdefault(prefix, {})[vintage] = rec
+            out.setdefault(prefix, {})[record] = rec
     return out
 
 

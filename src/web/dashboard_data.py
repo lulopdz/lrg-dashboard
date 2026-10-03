@@ -3,6 +3,7 @@ day options that both dashboard_figures.py and generar_web.py build on.
 
 Importing this module reads every price/weather CSV (~20MB). Anything that only needs the
 palette or figure sizes should import theme.py instead, which has no data dependency."""
+import glob
 import os
 
 import pandas as pd
@@ -159,15 +160,27 @@ spread = dam[['location', 'interval_start_local', 'hour', 'lmp']].merge(
 spread['lmp'] = spread['lmp_dam'] - spread['lmp_rtm']
 spread = spread[['location', 'interval_start_local', 'hour', 'lmp']]
 
-# 2b. Archived forecasts (one vintage per target day, see forecast_common.archive_forecast)
-# plus what actually cleared, for the forecast tabs' Day picker: {prefix: {YYYY-MM-DD: {...}}}.
+# 2b. Zones with forecasts. run_forecasts.py writes DEFAULT_ZONE's files without a suffix
+# (dam_forecast_meta.json) and every other zone's with one (dam_forecast_meta_TORONTO.json); the
+# DAM meta is the one every zone's run writes first, so it decides which zones exist. Adding a
+# zone to forecast_common.ZONES is all it takes for the forecast tabs to offer it.
+def zone_suffix(zone):
+    return '' if zone == DEFAULT_ZONE else f'_{zone}'
+
+
+FORECAST_ZONES = ([DEFAULT_ZONE] if os.path.exists('data/dam_forecast_meta.json') else []) + sorted(
+    os.path.basename(f)[len('dam_forecast_meta_'):-len('.json')] for f in glob.glob('data/dam_forecast_meta_*.json'))
+
+
+# 2c. Archived forecasts (one vintage per target day, see forecast_common.archive_forecast)
+# plus what actually cleared, for the forecast tabs' Day picker: {prefix: {zone: {YYYY-MM-DD: {...}}}}.
 def _clean(vals):
     # One decimal: all the page ever shows, and it's embedded for every archived day.
     return [None if pd.isna(v) else round(float(v), 1) for v in vals]
 
 
-def _forecast_history(prefix, actual_df):
-    path = f'data/{prefix}_forecast_history.csv'
+def _forecast_history(prefix, actual_df, zone):
+    path = f'data/{prefix}_forecast_history{zone_suffix(zone)}.csv'
     if not os.path.exists(path):
         return {}
     hist = pd.read_csv(path)
@@ -176,7 +189,7 @@ def _forecast_history(prefix, actual_df):
     if 'vintage' in hist.columns:
         hist = hist[hist['vintage'] == 'pre_dam']
     has_quantiles = {'p10', 'p90'} <= set(hist.columns)
-    act = actual_df[actual_df['location'] == DEFAULT_ZONE].copy()
+    act = actual_df[actual_df['location'] == zone].copy()
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
     actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
     days = {}
@@ -191,6 +204,7 @@ def _forecast_history(prefix, actual_df):
             band_name = 'Error range (±MAE)'
         days[d] = {
             'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
+            'backfilled': bool(str(g['backfilled'].iloc[0]).lower() == 'true') if 'backfilled' in g else False,
             'analog_date': g['analog_date'].iloc[0], 'analog_date_2': g['analog_date_2'].iloc[0],
             'predicted': _clean(g['predicted_lmp']), 'analog': _clean(g['analog_lmp']),
             'analog_2': _clean(g['analog_lmp_2']),
@@ -200,19 +214,20 @@ def _forecast_history(prefix, actual_df):
     return days
 
 
-forecast_history = {p: _forecast_history(p, df) for p, df in (('dam', dam), ('rtm', rtm), ('spread', spread))}
+forecast_history = {p: {z: _forecast_history(p, df, z) for z in FORECAST_ZONES}
+                    for p, df in (('dam', dam), ('rtm', rtm), ('spread', spread))}
 
 
-# 2c. Archived spread signals (predict_spread.py), same shape of dict, with the realized
+# 2d. Archived spread signals (predict_spread.py), {zone: {YYYY-MM-DD: {...}}}, with the realized
 # DART (= DA - RT, the spread frame's sign) per hour so a past day can be scored on the page.
-def _signal_history():
-    path = 'data/spread_signal_history.csv'
+def _signal_history(zone):
+    path = f'data/spread_signal_history{zone_suffix(zone)}.csv'
     if not os.path.exists(path):
         return {}
     hist = pd.read_csv(path)
     if 'vintage' in hist.columns:
         hist = hist[hist['vintage'] == 'pre_dam']
-    act = spread[spread['location'] == DEFAULT_ZONE].copy()
+    act = spread[spread['location'] == zone].copy()
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
     actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
     days = {}
@@ -232,7 +247,7 @@ def _signal_history():
     return days
 
 
-signal_history = _signal_history()
+signal_history = {z: _signal_history(z) for z in FORECAST_ZONES}
 
 # 3. Shared reference date: the actual calendar day, in market time. DAM always publishes
 # a day ahead (so its max date is "tomorrow", not "today"), and RTM is only ever as

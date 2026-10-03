@@ -13,7 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 ZONE = "OTTAWA"  # the dashboard's zone; its files carry no suffix (dam_forecast.csv), other zones do (dam_forecast_NIAGARA.csv)
-ZONES = ("OTTAWA", "TORONTO", "NIAGARA")  # what the workflows forecast every day
+ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")  # what the workflows forecast every day (NORTHWEST: D-4, 2026-10-02)
 
 
 def zone_suffix(zone):
@@ -219,7 +219,7 @@ def load_supply_inputs(source=None):
 
 
 HISTORY_COLS = ["target_date", "vintage", "generated_at", "analog_date", "analog_date_2", "hour",
-                "predicted_lmp", "p10", "p90", "analog_lmp", "analog_lmp_2", "band_err"]
+                "predicted_lmp", "p10", "p90", "analog_lmp", "analog_lmp_2", "band_err", "backfilled"]
 
 
 def archive_forecast(prefix, out, meta, out_dir=DATA_DIR, zone=ZONE):
@@ -237,12 +237,17 @@ def archive_forecast(prefix, out, meta, out_dir=DATA_DIR, zone=ZONE):
     for col in ("p10", "p90"):
         if col not in rows.columns:
             rows[col] = np.nan
+    # A walk-forward reconstruction (walkforward.py) is marked so scorecard.py grades it apart
+    # from what was actually published -- it sees the latest inputs, not the 9:00 ones.
+    rows["backfilled"] = bool(meta.get("reconstruction"))
     rows = rows[HISTORY_COLS]
     path = Path(out_dir) / forecast_file(prefix, "forecast_history", zone)
     if path.exists():
         old = pd.read_csv(path)
         if "vintage" not in old.columns:  # archives written before vintages existed
             old["vintage"] = "pre_dam"
+        if "backfilled" not in old.columns:  # archives written before the flag: all live runs
+            old["backfilled"] = False
         keep = ~((old["target_date"] == meta["target_date"]) & (old["vintage"] == meta["vintage"]))
         rows = pd.concat([old[keep], rows])
     rows = rows.sort_values(["target_date", "vintage", "hour"])

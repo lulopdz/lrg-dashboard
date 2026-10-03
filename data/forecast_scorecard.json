@@ -1,6 +1,6 @@
 {
   "zone": "OTTAWA",
-  "directory": "/home/runner/work/lrg-dashboard/lrg-dashboard/data",
+  "directory": "H:\\My Drive\\code\\lrg-dashboard\\data",
   "prices": {
     "dam": {
       "pre_dam": {
@@ -45,8 +45,9 @@
           "2026-10": 7.1
         },
         "analog_mae": 13.4,
-        "band_p10_p90_coverage": 8.6,
-        "band_width_mean": 12.9
+        "band_p10_p90_coverage": 68.3,
+        "band_width_mean": 12.9,
+        "band_n_days": 10
       }
     },
     "rtm": {
@@ -92,6 +93,7 @@
         "analog_mae": 24.76,
         "band_p10_p90_coverage": 82.4,
         "band_width_mean": 42.7,
+        "band_n_days": 9,
         "baseline_rt_eq_dam_pred_mae": 12.87,
         "baseline_rt_eq_dam_real_mae": 12.8,
         "tail_low_actual_pct": 0.0,
@@ -141,8 +143,9 @@
           "2026-10": 31.9
         },
         "analog_mae": 26.31,
-        "band_p10_p90_coverage": 9.1,
+        "band_p10_p90_coverage": 81.0,
         "band_width_mean": 42.4,
+        "band_n_days": 9,
         "baseline_rt_eq_dam_pred_mae": 21.91,
         "baseline_rt_eq_dam_real_mae": 20.09,
         "tail_low_actual_pct": 0.64,
@@ -194,6 +197,7 @@
         "analog_mae": 23.48,
         "band_p10_p90_coverage": 82.4,
         "band_width_mean": 42.7,
+        "band_n_days": 9,
         "sign_hit_rate": 51.0,
         "base_rate_pos": 56.2,
         "pnl_follow_sign": -382.0,
@@ -245,8 +249,9 @@
           "2026-10": 29.7
         },
         "analog_mae": 26.88,
-        "band_p10_p90_coverage": 8.9,
+        "band_p10_p90_coverage": 79.0,
         "band_width_mean": 42.4,
+        "band_n_days": 9,
         "sign_hit_rate": 55.9,
         "base_rate_pos": 63.8,
         "pnl_follow_sign": 6650.0,

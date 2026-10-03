@@ -1,0 +1,160 @@
+{
+  "zone": "NORTHWEST",
+  "target_date": "2026-10-03",
+  "vintage": "pre_dam",
+  "reconstruction": true,
+  "generated_at": "2026-10-03T03:26:36.599906+00:00",
+  "missing_input_hours": 0,
+  "missing_input_cols": {},
+  "analog_date": "2025-10-11",
+  "analog_distance": 0.5996308133342465,
+  "analog_comparison": [
+    {
+      "label": "Ontario load forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 14192.958333333334,
+      "analog": 14277.916666666666
+    },
+    {
+      "label": "SE Ontario load forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 7469.291666666667,
+      "analog": 7509.958333333333
+    },
+    {
+      "label": "Wind generation forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 167.475,
+      "analog": 218.25
+    },
+    {
+      "label": "Temperature",
+      "unit": "\u00b0C",
+      "weight": 1.5,
+      "target": 9.174380441506704,
+      "analog": 11.052666833333333
+    },
+    {
+      "label": "Max temperature",
+      "unit": "\u00b0C",
+      "weight": 1.5,
+      "target": 13.56100082397461,
+      "analog": 16.961
+    },
+    {
+      "label": "Wind speed",
+      "unit": "m/s",
+      "weight": 1.0,
+      "target": 1.7412279521425564,
+      "analog": 1.494869455
+    },
+    {
+      "label": "Precipitation",
+      "unit": "mm",
+      "weight": 1.0,
+      "target": 0.0,
+      "analog": 0.0
+    },
+    {
+      "label": "Snowfall",
+      "unit": "cm",
+      "weight": 1.0,
+      "target": 0.0,
+      "analog": 0.0
+    },
+    {
+      "label": "Humidity",
+      "unit": "%",
+      "weight": 1.0,
+      "target": 72.97916666666667,
+      "analog": 73.375
+    },
+    {
+      "label": "Solar radiation",
+      "unit": "W/m\u00b2",
+      "weight": 1.0,
+      "target": 181.58333333333334,
+      "analog": 150.375
+    }
+  ],
+  "analog_date_2": "2026-09-19",
+  "analog_distance_2": 0.9622393064999504,
+  "analog_comparison_2": [
+    {
+      "label": "Ontario load forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 14192.958333333334,
+      "analog": 14622.041666666666
+    },
+    {
+      "label": "SE Ontario load forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 7469.291666666667,
+      "analog": 7671.541666666667
+    },
+    {
+      "label": "Wind generation forecast",
+      "unit": "MW",
+      "weight": 2.0,
+      "target": 167.475,
+      "analog": 315.2375
+    },
+    {
+      "label": "Temperature",
+      "unit": "\u00b0C",
+      "weight": 1.5,
+      "target": 9.174380441506704,
+      "analog": 8.905630469322205
+    },
+    {
+      "label": "Max temperature",
+      "unit": "\u00b0C",
+      "weight": 1.5,
+      "target": 13.56100082397461,
+      "analog": 13.611000061035156
+    },
+    {
+      "label": "Wind speed",
+      "unit": "m/s",
+      "weight": 1.0,
+      "target": 1.7412279521425564,
+      "analog": 1.3654917106032372
+    },
+    {
+      "label": "Precipitation",
+      "unit": "mm",
+      "weight": 1.0,
+      "target": 0.0,
+      "analog": 0.0
+    },
+    {
+      "label": "Snowfall",
+      "unit": "cm",
+      "weight": 1.0,
+      "target": 0.0,
+      "analog": 0.0
+    },
+    {
+      "label": "Humidity",
+      "unit": "%",
+      "weight": 1.0,
+      "target": 72.97916666666667,
+      "analog": 70.36458333333333
+    },
+    {
+      "label": "Solar radiation",
+      "unit": "W/m\u00b2",
+      "weight": 1.0,
+      "target": 181.58333333333334,
+      "analog": 225.20833333333334
+    }
+  ],
+  "recommended_hour": null,
+  "backtest": null,
+  "directional_backtest": null
+}

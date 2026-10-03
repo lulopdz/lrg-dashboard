@@ -21,7 +21,7 @@ lrg-dashboard/
 │                               refresh_rtm.yml (botón Refresh Real-Time) y smoke.yml (prueba en cada push de código)
 ├── data/                   <-- CSVs guardados con datos históricos, predicciones y metadatos
 │   ├── *_forecast_history.csv <-- Archivo de forecasts: una versión por día objetivo y vintage (pre_dam / post_dam)
-│   ├── *_TORONTO.* / *_NIAGARA.* <-- Lo mismo para las otras zonas (la de OTTAWA, la del dashboard, no lleva sufijo)
+│   ├── *_TORONTO.* / *_NIAGARA.* / *_NORTHWEST.* <-- Lo mismo para las otras zonas (OTTAWA no lleva sufijo); las pestañas de pronóstico las muestran con el selector Zone. `backfilled=True` en un historial = reconstrucción walk-forward, que el scorecard califica aparte
 │   ├── forecast_inputs_dayahead.csv <-- Entradas (carga, viento, clima, adecuación) tal como se veían a las 9:00 del día anterior
 │   ├── forecast_scorecard.json <-- Evaluación out-of-sample del archivo de forecasts (scorecard.py)
 │   ├── portfolio_positions.csv <-- Posiciones (fecha, hora, recurso, MW) extraídas de los reportes de IESO: fuente del Portfolio

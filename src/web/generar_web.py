@@ -11,7 +11,7 @@ from dashboard_data import (
     latest_ts, load_forecast, load_latest_ts, load_var_keys, rtm, rtm_latest_ts, spread,
     today_date, weather, weather_confidence, weather_label, weather_label_html,
     weather_latest_ts,
-    forecast_history, signal_history,
+    forecast_history, signal_history, FORECAST_ZONES, zone_suffix,
     weather_var_keys, wind_forecast, wind_latest_ts, wind_zones, zones,
 )
 from theme import TIER_COLORS
@@ -147,20 +147,48 @@ def hour_ranges(hours):
     return ', '.join(out)
 
 
-def build_signal_tab(tab_id='spread-signal'):
-    """The Spread Signal tab, all in DART = DA - RT: KPI tiles, one bar per hour, and the
-    hour-by-hour table front and center (predict_spread.py's classifiers). Returns
-    (tab_button_html, tab_content_html)."""
-    csv_path, meta_path = 'data/spread_signal.csv', 'data/spread_signal_meta.json'
-    if not (os.path.exists(csv_path) and os.path.exists(meta_path)):
+def zid(base, zone):
+    """Element id of one zone's copy of a forecast-tab element: each predict tab holds one panel
+    per zone (see zone_panels), and the page JS finds the shown one as base + '--' + zone."""
+    return f'{base}--{zone}'
+
+
+def zone_panels(panels, tab_id, button_label):
+    """Wraps {zone: panel_html} into a predict tab: one .zone-panel per zone, the first shown;
+    the day-bar's Zone select swaps them (showZonePanel in the page JS). Returns
+    (tab_button_html, tab_content_html), both '' when no zone has the files yet."""
+    if not any(panels.values()):
         return '', ''
+    # A zone just added to ZONES has no live files until its first daily run: say so rather
+    # than leave the tab blank when the Zone select lands on it.
+    panels = {z: h or f'<h2>{button_label} - {z}</h2><p class="caveat">No {button_label} for {z} yet: it starts '
+                       f'with the next 9:00 daily run.</p>' for z, h in panels.items()}
+    first = next(iter(panels))
+    body = ''.join(f'<div class="zone-panel{" active" if z == first else ""}" data-zone="{z}">{h}</div>'
+                   for z, h in panels.items())
+    return (f'<button class="tab-btn group-predict" onclick="showTab(\'{tab_id}\', this)">{button_label}</button>',
+            f'<div id="tab-{tab_id}" class="tab-content">{body}</div>')
+
+
+def build_signal_tab(tab_id='spread-signal'):
+    """The Spread Signal tab, one panel per forecast zone."""
+    return zone_panels({z: build_signal_panel(z, tab_id) for z in FORECAST_ZONES}, tab_id, 'Spread Signal')
+
+
+def build_signal_panel(zone, tab_id):
+    """One zone's Spread Signal, all in DART = DA - RT: KPI tiles, one bar per hour, and the
+    hour-by-hour table front and center (predict_spread.py's classifiers)."""
+    sfx = zone_suffix(zone)
+    csv_path, meta_path = f'data/spread_signal{sfx}.csv', f'data/spread_signal_meta{sfx}.json'
+    if not (os.path.exists(csv_path) and os.path.exists(meta_path)):
+        return ''
     sig = pd.read_csv(csv_path)
     with open(meta_path, encoding='utf-8') as f:
         meta = json.load(f)
     forecast, fmeta = None, None
-    if os.path.exists('data/spread_forecast.csv') and os.path.exists('data/spread_forecast_meta.json'):
-        forecast = pd.read_csv('data/spread_forecast.csv')
-        with open('data/spread_forecast_meta.json', encoding='utf-8') as f:
+    if os.path.exists(f'data/spread_forecast{sfx}.csv') and os.path.exists(f'data/spread_forecast_meta{sfx}.json'):
+        forecast = pd.read_csv(f'data/spread_forecast{sfx}.csv')
+        with open(f'data/spread_forecast_meta{sfx}.json', encoding='utf-8') as f:
             fmeta = json.load(f)
     fig = build_signal_bars(sig, forecast)
     curve_html = ''
@@ -173,7 +201,7 @@ def build_signal_tab(tab_id='spread-signal'):
         curve = build_forecast_fig(forecast, fmeta, series_label='Spread')
         curve_html = f"""
 <h3>DART forecast vs. the two most similar days</h3>
-{curve.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-curve')}
+{curve.to_html(full_html=False, include_plotlyjs=False, div_id=zid(f'{tab_id}-curve', zone))}
 <p class="caveat">The point forecast of DART is {how}. On the archive it beat a model trained on DART directly:
 the sign right 62% of hours against 56%, and 1 MW following that sign made $8.4k against $5.7k over 68 days. The
 two similar days are the RT model's (closest on forecast load, wind and weather), shown with the DART that cleared
@@ -216,7 +244,7 @@ on them. On a past day the actual DART is overlaid.</p>"""
     # see the freshest version of every input rather than the 9:00 one and so flatter the signal.
     wf = {}
     wf_days = {'live': 0, 'reconstructed': 0}
-    for d, day in signal_history.items():
+    for d, day in signal_history.get(zone, {}).items():
         if not day['actual']:
             continue
         source = 'reconstructed' if day['backfilled'] else 'live'
@@ -233,11 +261,10 @@ on them. On a past day the actual DART is overlaid.</p>"""
         if v and t != 'low')  # no call in 'low'; the page scores the same way
     eval_days = bt.get('eval_days') or bt.get('days', '?')  # metas before the split scored the whole window
 
-    tab_content_html = f"""
-<div id="tab-{tab_id}" class="tab-content">
-<h2 id="{tab_id}-title">Spread Signal (DART = DA − RT) - {meta.get('zone')} ({meta.get('target_date')})</h2>
-<p class="caveat" id="{tab_id}-note">{note}</p>
-{fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-fig')}
+    return f"""
+<h2 id="{zid(f'{tab_id}-title', zone)}">Spread Signal (DART = DA − RT) - {meta.get('zone')} ({meta.get('target_date')})</h2>
+<p class="caveat" id="{zid(f'{tab_id}-note', zone)}">{note}</p>
+{fig.to_html(full_html=False, include_plotlyjs=False, div_id=zid(f'{tab_id}-fig', zone))}
 <p class="caveat"><span class="swatch" style="background:{TIER_COLORS[('DART > 0', 'high')]}"></span>DART &gt; 0 high
 <span class="swatch" style="background:{TIER_COLORS[('DART > 0', 'medium')]}"></span>DART &gt; 0 medium
 <span class="swatch" style="background:{TIER_COLORS[('DART < 0', 'high')]}"></span>DART &lt; 0 high
@@ -248,11 +275,11 @@ on them. On a past day the actual DART is overlaid.</p>"""
 (RT above DA, a virtual load pays); bright = high conviction, darker shade = medium, grey = no call. A red bar pointing up
 means the point forecast is slightly positive while calls like this one have paid on the negative side.</p>
 {curve_html}
-<h3 id="{tab_id}-table-title">Hour by hour</h3>
+<h3 id="{zid(f'{tab_id}-table-title', zone)}">Hour by hour</h3>
 <table class="naive-table signal-table">
   <thead><tr><th>Hour</th><th class="c stars-col">★</th><th class="c">Call</th><th class="c">Tier</th><th class="num">Hit rate</th><th class="num">Edge</th><th class="num">P(&gt;+${T})</th><th class="num">P(&lt;−${T})</th><th class="num">DART fc</th><th class="c">Fc agrees</th><th class="c">Watch</th>
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
-  <tbody id="{tab_id}-rows"></tbody>
+  <tbody id="{zid(f'{tab_id}-rows', zone)}"></tbody>
 </table>
 <p class="caveat"><strong>★</strong>: the three hours to look at first: high conviction before medium, then the hours
 where the point forecast backs the call the most, then the most extreme probability.
@@ -307,30 +334,33 @@ DART. Pick a past day in the Day bar and the table shows that day's signal with 
     </div>
   </div>
 </details>
-</div>
 """
-    tab_button_html = f'<button class="tab-btn group-predict" onclick="showTab(\'{tab_id}\', this)">Spread Signal</button>'
-    return tab_button_html, tab_content_html
 
 
-def scorecard_html(prefix):
-    """The out-of-sample record from data/forecast_scorecard.json (src/forecast/scorecard.py):
+def scorecard_html(prefix, zone):
+    """The out-of-sample record from data/forecast_scorecard{_ZONE}.json (src/forecast/scorecard.py):
     every archived forecast scored against what cleared, per vintage. Unlike the backtest
     tiles above it, this is what the model actually did on the days it was live for."""
-    path = 'data/forecast_scorecard.json'
+    path = f'data/forecast_scorecard{zone_suffix(zone)}.json'
     if not os.path.exists(path):
         return ''
     with open(path, encoding='utf-8') as f:
         card = json.load(f)
     rows = []
     for vintage, r in (card.get('prices') or {}).get(prefix, {}).items():
-        label = 'pre-DAM (9:00 run)' if vintage == 'pre_dam' else 'post-DAM (afternoon run)'
+        label = 'pre-DAM (9:00 run)' if vintage.startswith('pre_dam') else 'post-DAM (afternoon run)'
+        if vintage.endswith('_reconstructed'):
+            label += ', walk-forward reconstruction'
         extra = ''
         if prefix == 'rtm' and r.get('baseline_rt_eq_dam_real_mae') is not None:
             extra = f" · RT = real DAM would score ${r['baseline_rt_eq_dam_real_mae']:.1f}"
         if prefix == 'spread' and r.get('sign_hit_rate') is not None:
             extra = f" · sign right {r['sign_hit_rate']:.0f}% (always DART&gt;0: {r['base_rate_pos']:.0f}%)"
-        band = f" · P10-P90 covered {r['band_p10_p90_coverage']:.0f}% of hours" if r.get('band_p10_p90_coverage') is not None else ''
+        band = ''
+        if r.get('band_p10_p90_coverage') is not None:
+            # Bands only exist since 2026-09-22, so say over how many days (older scorecards lack it).
+            over = f" over the {r['band_n_days']} days with a band" if r.get('band_n_days') else ''
+            band = f" · P10-P90 covered {r['band_p10_p90_coverage']:.0f}% of hours{over}"
         rows.append(f"<li><b>{label}</b>: {r['n_days']} days archived, MAE ${r['mae']:.1f}, bias ${r['bias']:+.1f}{band}{extra}</li>")
     if not rows:
         return ''
@@ -353,20 +383,28 @@ def missing_cols_label(meta):
 def vintage_label(meta):
     """Which run produced the live forecast (see forecast_common.VINTAGES)."""
     v = meta.get('vintage')
+    rebuilt = ' · walk-forward reconstruction, not a live run' if meta.get('reconstruction') or meta.get('backfilled') else ''
     if v == 'post_dam':
-        return ' · post-DAM run (real DAM as input)'
+        return ' · post-DAM run (real DAM as input)' + rebuilt
     if v == 'pre_dam':
-        return ' · pre-DAM run (DAM input is itself a forecast)'
-    return ''
+        return ' · pre-DAM run (DAM input is itself a forecast)' + rebuilt
+    return rebuilt
 
 
-def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
-    """A forecast tab (predicted curve + backtest stats + similar-day comparison table),
-    shared by the DAM/RTM/Spread Forecast tabs -- only shown once the matching
-    predict_*.py script has been run manually. Its own refresh link lives in the shared
-    day-bar (see TAB_REFRESH), not inside the tab. Returns (tab_button_html, tab_content_html)."""
+def build_forecast_tab(prefix, tab_id, series_label):
+    """A forecast tab (DAM/RTM Forecast), one panel per forecast zone. Its refresh link lives in
+    the shared day-bar (see TAB_REFRESH), not inside the tab."""
+    return zone_panels({z: build_forecast_panel(prefix, tab_id, series_label, z) for z in FORECAST_ZONES},
+                       tab_id, f'{series_label} Forecast')
+
+
+def build_forecast_panel(prefix, tab_id, series_label, zone):
+    """One zone's forecast (predicted curve + backtest stats + similar-day comparison), or ''
+    when that zone's predict_*.py hasn't written its files yet."""
+    csv_path = f'data/{prefix}_forecast{zone_suffix(zone)}.csv'
+    meta_path = f'data/{prefix}_forecast_meta{zone_suffix(zone)}.json'
     if not (os.path.exists(csv_path) and os.path.exists(meta_path)):
-        return '', ''
+        return ''
 
     forecast = pd.read_csv(csv_path)
     with open(meta_path, encoding='utf-8') as f:
@@ -382,7 +420,8 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
     # Freshness line: a run that arrives late looks identical to a fresh one otherwise.
     generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
     missing = meta.get('missing_input_hours') or 0
-    freshness_html = f'<p class="caveat" id="{tab_id}-note">Generated {generated}{vintage_label(meta)}'
+    note_id = zid(f'{tab_id}-note', zone)
+    freshness_html = f'<p class="caveat" id="{note_id}">Generated {generated}{vintage_label(meta)}'
     if missing:
         freshness_html += f' · {missing} of 24 target hours had incomplete inputs{missing_cols_label(meta)}'
     freshness_html += ' · pick a past day in the Day bar to see that forecast against what actually cleared</p>'
@@ -394,7 +433,7 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
 
     analog_section_html = f"""
 <h3>Why this day? Tomorrow's forecast vs. the closest historical day{'s' if meta.get('analog_comparison_2') else ''}</h3>
-{analog_fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-analog')}""" if analog_fig else ''
+{analog_fig.to_html(full_html=False, include_plotlyjs=False, div_id=zid(f'{tab_id}-analog', zone))}""" if analog_fig else ''
 
     # Directional track record (spread only -- DAM/RTM prices have no Long/Short to call):
     # the model's own backtest predictions scored exactly like the Trading Simulator scores a
@@ -441,29 +480,23 @@ def build_forecast_tab(csv_path, meta_path, tab_id, series_label):
   </div>
 </div>"""
 
-    tab_content_html = f"""
-<div id="tab-{tab_id}" class="tab-content">
-<h2 id="{tab_id}-title">{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
+    return f"""
+<h2 id="{zid(f'{tab_id}-title', zone)}">{series_label} Forecast - {meta.get('zone')} ({meta.get('target_date')})</h2>
 {freshness_html}
 <div class="stat-row">
   <div class="stat-tile"><div class="stat-label">Model MAE ({backtest_days_label}d backtest)</div><div class="stat-value">{model_mae}</div></div>
   <div class="stat-tile"><div class="stat-label">Naive baseline MAE</div><div class="stat-value">{naive_mae}</div></div>
   <div class="stat-tile"><div class="stat-label">Most confident hour</div><div class="stat-value">{confident_hour_label}</div></div>
 </div>
-{scorecard_html(tab_id.replace('-forecast', '') if tab_id != 'forecast' else 'dam')}
+{scorecard_html(prefix, zone)}
 {track_section_html}
-{fig.to_html(full_html=False, include_plotlyjs=False, div_id=f'{tab_id}-forecast')}
+{fig.to_html(full_html=False, include_plotlyjs=False, div_id=zid(f'{tab_id}-forecast', zone))}
 {analog_section_html}
-</div>
 """
-    tab_button_html = f'<button class="tab-btn group-predict" onclick="showTab(\'{tab_id}\', this)">{series_label} Forecast</button>'
-    return tab_button_html, tab_content_html
 
 
-dam_forecast_tab_button, dam_forecast_tab_html = build_forecast_tab(
-    'data/dam_forecast.csv', 'data/dam_forecast_meta.json', 'forecast', 'DAM')
-rtm_forecast_tab_button, rtm_forecast_tab_html = build_forecast_tab(
-    'data/rtm_forecast.csv', 'data/rtm_forecast_meta.json', 'rtm-forecast', 'RTM')
+dam_forecast_tab_button, dam_forecast_tab_html = build_forecast_tab('dam', 'forecast', 'DAM')
+rtm_forecast_tab_button, rtm_forecast_tab_html = build_forecast_tab('rtm', 'rtm-forecast', 'RTM')
 spread_forecast_tab_button, spread_forecast_tab_html = build_signal_tab()
 
 # Mark whichever predict tab appears first as the group's visual start (extra left margin,
@@ -521,7 +554,6 @@ TAB_ZONES = {
         'hourlyDiv': 'wind-hourly', 'tableDiv': 'wind-table',
     },
 }
-TAB_ZONES_JSON = json.dumps(TAB_ZONES)
 
 # Each tab group opens on its own default day: the market tabs (DAM/RTM/Spread) on today,
 # the forecast tabs (Weather/Load/Wind, which all carry a look-ahead forecast) on tomorrow.
@@ -540,29 +572,26 @@ if supply_mix_fig is not None:
     TAB_DATES['supply'] = DAY_OPTION_STRS[default_forecast_date_idx]
 
 # Forecast tabs open on the live forecast's own target day, and let the Day bar reach back
-# to the oldest archived forecast (older than the TABLE_DAYS window the other tabs use).
+# to the oldest archived forecast (older than the TABLE_DAYS window the other tabs use). Both
+# are per zone ({prefix: {zone: date}}): the page JS reads the shown zone's.
 FORECAST_TABS = {'forecast': 'dam', 'rtm-forecast': 'rtm'}
 FORECAST_LATEST = {}
 for _tab, _prefix in FORECAST_TABS.items():
-    _meta_path = f'data/{_prefix}_forecast_meta.json'
-    if os.path.exists(_meta_path):
-        with open(_meta_path, encoding='utf-8') as _f:
-            FORECAST_LATEST[_prefix] = json.load(_f)['target_date']
-        TAB_DATES[_tab] = FORECAST_LATEST[_prefix]
-SIGNAL_BASE = {}
-if os.path.exists('data/spread_signal_meta.json'):
-    with open('data/spread_signal_meta.json', encoding='utf-8') as _f:
-        _m = json.load(_f)
-    SIGNAL_BASE = dict(_m.get('base_rates') or {}, big_t=_m['big_threshold'], latest=_m['target_date'])
-    TAB_DATES['spread-signal'] = _m['target_date']
+    for _zone in FORECAST_ZONES:
+        _meta_path = f'data/{_prefix}_forecast_meta{zone_suffix(_zone)}.json'
+        if os.path.exists(_meta_path):
+            with open(_meta_path, encoding='utf-8') as _f:
+                FORECAST_LATEST.setdefault(_prefix, {})[_zone] = json.load(_f)['target_date']
+    if FORECAST_LATEST.get(_prefix):
+        TAB_DATES[_tab] = next(iter(FORECAST_LATEST[_prefix].values()))
 
 
-def watch_record_title(name, label):
-    """Tooltip for a Watch star: that flag's record on the scored archive (pre-DAM, the vintage
-    the table shows), so the star reads with the trust it has earned. Kept visible on purpose
-    (TRACKING D-2, 2026-10-02): big_neg_watch had flagged 1 live hour, wrong, and caught 0 of 6
-    big hours -- hiding it was the alternative."""
-    path = 'data/forecast_scorecard.json'
+def watch_record_title(name, label, zone):
+    """Tooltip for a Watch star: that flag's record on the zone's scored archive (pre-DAM, the
+    vintage the table shows), so the star reads with the trust it has earned. Kept visible on
+    purpose (TRACKING D-2, 2026-10-02): OTTAWA's big_neg_watch had flagged 1 live hour, wrong,
+    and caught 0 of 6 big hours -- hiding it was the alternative."""
+    path = f'data/forecast_scorecard{zone_suffix(zone)}.json'
     if not os.path.exists(path):
         return ''
     with open(path, encoding='utf-8') as f:
@@ -573,21 +602,38 @@ def watch_record_title(name, label):
     if w:
         right = round((w['precision'] or 0) / 100 * w['n_flagged'])
         caught = round((w['recall'] or 0) / 100 * w['n_events'])
-        parts.append(f"Live 9:00 runs ({live['n_days']} days): flagged {w['n_flagged']} h, {right} right; "
+        parts.append(f"Live 9:00 runs ({live.get('n_days')} days): flagged {w['n_flagged']} h, {right} right; "
                      f"caught {caught} of {w['n_events']} big hours.")
     rec = runs.get('backfilled') or {}
     w = (rec.get('watch') or {}).get(name)
     if w and w['n_flagged']:
-        parts.append(f"Reconstructed ({rec['n_days']} days): {w['precision']:.0f}% of flags right "
+        parts.append(f"Reconstructed ({rec.get('n_days')} days): {w['precision']:.0f}% of flags right "
                      f"(base {w['base_rate']:.0f}%), caught {w['recall']:.0f}% of big hours.")
     return html_escape(' '.join(parts), quote=True)
 
 
+# The signal's live target day, big-hour threshold and watch tooltips, per zone.
+SIGNAL_BASE = {}
+for _zone in FORECAST_ZONES:
+    _meta_path = f'data/spread_signal_meta{zone_suffix(_zone)}.json'
+    if not os.path.exists(_meta_path):
+        continue
+    with open(_meta_path, encoding='utf-8') as _f:
+        _m = json.load(_f)
+    _t = _m['big_threshold']
+    SIGNAL_BASE[_zone] = dict(_m.get('base_rates') or {}, big_t=_t, latest=_m['target_date'], watch_title={
+        'big_pos': watch_record_title('big_pos_watch', f"DART > +${_t}", _zone),
+        'big_neg': watch_record_title('big_neg_watch', f"DART < −${_t}", _zone),
+    })
 if SIGNAL_BASE:
-    SIGNAL_BASE['watch_title'] = {
-        'big_pos': watch_record_title('big_pos_watch', f"DART > +${SIGNAL_BASE['big_t']}"),
-        'big_neg': watch_record_title('big_neg_watch', f"DART < −${SIGNAL_BASE['big_t']}"),
-    }
+    TAB_DATES['spread-signal'] = next(iter(SIGNAL_BASE.values()))['latest']
+
+# The predict tabs get the day-bar's Zone select once there's more than one zone to pick;
+# 'panels' tells applyZoneChange to swap the tab's .zone-panel instead of restyling a chart.
+if len(FORECAST_ZONES) > 1:
+    for _tab in ('forecast', 'rtm-forecast', 'spread-signal'):
+        TAB_ZONES[_tab] = {'label': 'Zone', 'options': FORECAST_ZONES, 'default': FORECAST_ZONES[0], 'panels': True}
+TAB_ZONES_JSON = json.dumps(TAB_ZONES)
 TAB_DATES_JSON = json.dumps(TAB_DATES)
 FORECAST_HISTORY_JSON = json.dumps(forecast_history)
 SIGNAL_HISTORY_JSON = json.dumps(signal_history)
@@ -595,6 +641,7 @@ SIGNAL_BASE_JSON = json.dumps(SIGNAL_BASE)
 TIER_COLORS_JSON = json.dumps({(k if isinstance(k, str) else f'{k[0]}|{k[1]}'): v for k, v in TIER_COLORS.items()})
 FORECAST_TABS_JSON = json.dumps(FORECAST_TABS)
 FORECAST_LATEST_JSON = json.dumps(FORECAST_LATEST)
+FORECAST_ZONE_JSON = json.dumps(FORECAST_ZONES[0] if FORECAST_ZONES else DEFAULT_ZONE)
 
 
 def zone_options_html(options, default):
@@ -966,6 +1013,8 @@ html = f"""<html>
   .signal-table tr.model-row td {{ font-weight:600; }}
   .signal-table td.pos, .signal-table td.neg {{ font-weight:600; }}
   .watch-flag {{ cursor:help; }}
+  .zone-panel {{ display:none; }}
+  .zone-panel.active {{ display:block; }}
   .signal-table .hit {{ color:#eee; font-weight:600; }}
   .signal-table .miss {{ color:#999; }}
   .tag {{ display:inline-block; padding:1px 9px; border-radius:999px; font-size:11.5px; font-weight:600; line-height:17px; white-space:nowrap; }}
@@ -1051,6 +1100,10 @@ const FORECAST_TABS = {FORECAST_TABS_JSON};
 const FORECAST_LATEST = {FORECAST_LATEST_JSON};
 const SIGNAL_HISTORY = {SIGNAL_HISTORY_JSON};
 const SIGNAL_BASE = {SIGNAL_BASE_JSON};
+// The zone the predict tabs show (DAM/RTM Forecast, Spread Signal): one for the three, so picking
+// TORONTO on one keeps it on the others. Each zone's elements carry the id suffix '--' + zone.
+let forecastZone = {FORECAST_ZONE_JSON};
+const fz = base => base + '--' + forecastZone;
 const DAY_RANGE = ['{DAY_OPTION_STRS[0]}', '{DAY_OPTION_STRS[-1]}'];
 const forecastMarks = {{}};  // each forecast chart's original vline/annotation, restored on the live day
 let currentTab = 'dam';
@@ -1060,20 +1113,56 @@ let currentTab = 'dam';
 // call lazyPlot instead of Plotly.newPlot (swapped in at the end of generar_web.py). Drawing
 // all ~30 charts at load, hidden tabs included, was most of the page's startup time.
 const PENDING_PLOTS = {{}};
+// A chart in a predict tab's hidden zone panel waits the same way: drawn into display:none it
+// would come out at Plotly's default width.
+function inHiddenPanel(el) {{
+  const panel = el.closest('.zone-panel');
+  return !!panel && !panel.classList.contains('active');
+}}
 function lazyPlot(id, data, layout, config) {{
   const el = document.getElementById(id);
   const tab = el && el.closest('.tab-content');
-  if (!tab || tab.classList.contains('active')) return Plotly['newPlot'](id, data, layout, config);  // not Plotly.newPlot: see the replace at the end
+  if (!tab || (tab.classList.contains('active') && !inHiddenPanel(el))) return Plotly['newPlot'](id, data, layout, config);  // not Plotly.newPlot: see the replace at the end
   PENDING_PLOTS[id] = [data, layout, config];
 }}
 function drawPendingPlots(tabEl) {{
-  const ids = Object.keys(PENDING_PLOTS).filter(id => tabEl.contains(document.getElementById(id)));
+  const ids = Object.keys(PENDING_PLOTS).filter(id => {{ const el = document.getElementById(id); return tabEl.contains(el) && !inHiddenPanel(el); }});
   ids.forEach(id => {{ const [d, l, c] = PENDING_PLOTS[id]; delete PENDING_PLOTS[id]; Plotly['newPlot'](id, d, l, c); }});
   return ids;
 }}
 function isDrawn(divId) {{
   const gd = document.getElementById(divId);
   return !!(gd && gd.data);
+}}
+
+// The shown zone's archive and live target day for a predict tab (null/undefined elsewhere).
+function zoneHistory(tab) {{
+  if (tab === 'spread-signal') return SIGNAL_HISTORY[forecastZone] || {{}};
+  const prefix = FORECAST_TABS[tab];
+  return prefix ? ((FORECAST_HISTORY[prefix] || {{}})[forecastZone] || {{}}) : null;
+}}
+function zoneLatest(tab) {{
+  if (tab === 'spread-signal') return (SIGNAL_BASE[forecastZone] || {{}}).latest;
+  return (FORECAST_LATEST[FORECAST_TABS[tab]] || {{}})[forecastZone];
+}}
+// Let the Day bar reach the archive's oldest day (forecast archives outlast the 30-day window).
+function setDateBounds(hist) {{
+  const dateInput = document.getElementById('global-date');
+  const days = hist ? Object.keys(hist).sort() : [];
+  dateInput.min = days.length ? days[0] : DAY_RANGE[0];
+  dateInput.max = days.length && days[days.length - 1] > DAY_RANGE[1] ? days[days.length - 1] : DAY_RANGE[1];
+}}
+// Show a predict tab's panel for forecastZone; returns the ids of the charts drawn just now.
+function showZonePanel(tab) {{
+  const tabEl = document.getElementById('tab-' + tab);
+  if (!tabEl) return [];
+  let shown = null;
+  tabEl.querySelectorAll('.zone-panel').forEach(p => {{
+    const on = p.dataset.zone === forecastZone;
+    p.classList.toggle('active', on);
+    if (on) shown = p;
+  }});
+  return shown && tabEl.classList.contains('active') ? drawPendingPlots(shown) : [];
 }}
 
 function showTab(name, btn) {{
@@ -1083,16 +1172,13 @@ function showTab(name, btn) {{
   tabEl.classList.add('active');
   btn.classList.add('active');
   currentTab = name;
+  if (tabEl.querySelector('.zone-panel')) showZonePanel(name);
   const drawn = drawPendingPlots(tabEl);
 
   const dateInput = document.getElementById('global-date');
-  if (TAB_DATES[name] && dateInput) dateInput.value = TAB_DATES[name];
-  if (dateInput) {{
-    const hist = name === 'spread-signal' ? SIGNAL_HISTORY : FORECAST_HISTORY[FORECAST_TABS[name]];
-    const days = hist ? Object.keys(hist).sort() : [];
-    dateInput.min = days.length ? days[0] : DAY_RANGE[0];
-    dateInput.max = days.length && days[days.length - 1] > DAY_RANGE[1] ? days[days.length - 1] : DAY_RANGE[1];
-  }}
+  const startDate = zoneLatest(name) || TAB_DATES[name];
+  if (startDate && dateInput) dateInput.value = startDate;
+  if (dateInput) setDateBounds(zoneHistory(name));
   if (FORECAST_TABS[name]) applyForecastDate(name);
   if (name === 'spread-signal') applySignalDate();
 
@@ -1111,7 +1197,7 @@ function showTab(name, btn) {{
     document.getElementById('tab-zone-label').textContent = z.label + ':';
     const sel = document.getElementById('tab-zone-select');
     sel.innerHTML = z.options.map(o =>
-      '<option value="' + o + '"' + (o === z.default ? ' selected' : '') + '>' + o + '</option>'
+      '<option value="' + o + '"' + (o === (z.panels ? forecastZone : z.default) ? ' selected' : '') + '>' + o + '</option>'
     ).join('');
     zoneGroup.style.display = '';
   }} else {{
@@ -1328,11 +1414,12 @@ function applyAllFigs() {{
 // Hour-by-hour table for the Spread Signal tab, rebuilt from the archive for whichever day
 // the Day bar shows. Columns past the DART forecast only appear for a day that has cleared.
 function renderSignalTable(date) {{
-  const day = SIGNAL_HISTORY[date];
-  const body = document.getElementById('spread-signal-rows');
+  const day = zoneHistory('spread-signal')[date];
+  const body = document.getElementById(fz('spread-signal-rows'));
   const table = body && body.closest('table');
   if (!day || !body) return;
-  const fc = ((FORECAST_HISTORY.spread || {{}})[date] || {{}}).predicted || [];
+  const fc = ((((FORECAST_HISTORY.spread || {{}})[forecastZone]) || {{}})[date] || {{}}).predicted || [];
+  const sb = SIGNAL_BASE[forecastZone] || {{}};
   const act = day.actual;
   table.classList.toggle('live', !act);
   const sign = v => v > 0 ? 'pos' : (v < 0 ? 'neg' : '');
@@ -1348,9 +1435,9 @@ function renderSignalTable(date) {{
   const rows = day.call.map((call, i) => {{
     const rated = day.tier[i] !== 'low';
     const cls = rated ? (call === 'DART > 0' ? 'call-pos' : 'call-neg') + ' tier-' + day.tier[i] : 'no-call';
-    const wt = SIGNAL_BASE.watch_title || {{}};
-    const watch = [day.big_pos_watch[i] ? '<span class="pos watch-flag" title="' + (wt.big_pos || '') + '">★ &gt; +$' + SIGNAL_BASE.big_t + '</span>' : '',
-                   day.big_neg_watch[i] ? '<span class="neg watch-flag" title="' + (wt.big_neg || '') + '">★ &lt; −$' + SIGNAL_BASE.big_t + '</span>' : ''].filter(Boolean).join(' ') || '—';
+    const wt = sb.watch_title || {{}};
+    const watch = [day.big_pos_watch[i] ? '<span class="pos watch-flag" title="' + (wt.big_pos || '') + '">★ &gt; +$' + sb.big_t + '</span>' : '',
+                   day.big_neg_watch[i] ? '<span class="neg watch-flag" title="' + (wt.big_neg || '') + '">★ &lt; −$' + sb.big_t + '</span>' : ''].filter(Boolean).join(' ') || '—';
     const f = fc[i];
     let past = '';
     if (act) {{
@@ -1377,7 +1464,7 @@ function renderSignalTable(date) {{
       + '<td class="c">' + watch + '</td>' + past + '</tr>';
   }});
   body.innerHTML = rows.join('');
-  const title = document.getElementById('spread-signal-table-title');
+  const title = document.getElementById(fz('spread-signal-table-title'));
   if (title) title.textContent = 'Hour by hour' + (act ? ' (' + date + ', scored)' : '');
 }}
 
@@ -1385,21 +1472,23 @@ function renderSignalTable(date) {{
 // ticks, 2 outcome marks) and the hour-by-hour table are rebuilt from the archive.
 const BAR_COLOR = {TIER_COLORS_JSON};
 function applySignalDate() {{
-  const divId = 'spread-signal-fig';
+  const divId = fz('spread-signal-fig');
   const gd = document.getElementById(divId);
-  const note = document.getElementById('spread-signal-note');
-  const title = document.getElementById('spread-signal-title');
-  if (!gd || !gd.layout || !Object.keys(SIGNAL_HISTORY).length) return;
+  const note = document.getElementById(fz('spread-signal-note'));
+  const title = document.getElementById(fz('spread-signal-title'));
+  const hist = zoneHistory('spread-signal');
+  const latest = zoneLatest('spread-signal');
+  if (!gd || !gd.layout || !Object.keys(hist).length) return;
   const date = document.getElementById('global-date').value;
-  const day = SIGNAL_HISTORY[date];
+  const day = hist[date];
   if (!day) {{
-    const days = Object.keys(SIGNAL_HISTORY).sort();
+    const days = Object.keys(hist).sort();
     note.textContent = 'No signal archived for ' + date + ' (archive spans ' + days[0] + ' to ' + days[days.length - 1] + ')';
     return;
   }}
   const H = Array.from({{length: 24}}, (_, i) => i + 1);
   const rated = day.tier.map(t => t !== 'low');
-  const fc = (FORECAST_HISTORY.spread || {{}})[date];
+  const fc = ((FORECAST_HISTORY.spread || {{}})[forecastZone] || {{}})[date];
   const signed = H.map((h, i) => fc && fc.predicted[i] != null ? fc.predicted[i] : 0);
   const act = day.actual;
   // A call is right when sign(DART) matches it; 1 MW P&L is +DART on DART > 0, -DART on DART < 0.
@@ -1413,17 +1502,17 @@ function applySignalDate() {{
   Plotly.restyle(divId, {{x: [scored.map(s => s.h)], y: [scored.map(s => signed[s.i] >= 0 ? -top * 0.12 : top * 0.12)],
                          text: [scored.map(s => s.hit ? '✓' : '✗')], textfont: [{{size: 14, color: scored.map(s => s.hit ? '#eee' : '#999')}}]}}, [1]);
   Plotly.relayout(divId, {{'yaxis.range': [-top, top]}});
-  if (fc) restyleForecastCurve('spread-signal-curve', fc, date === SIGNAL_BASE.latest);
-  title.textContent = 'Spread Signal (DART = DA − RT) - OTTAWA (' + date + ')';
+  if (fc) restyleForecastCurve(fz('spread-signal-curve'), fc, date === latest);
+  title.textContent = 'Spread Signal (DART = DA − RT) - ' + forecastZone + ' (' + date + ')';
   renderSignalTable(date);
-  let text = (day.backfilled ? 'Walk-forward reconstruction as of ' : 'Generated ') + day.generated;
+  let text = (day.backfilled ? 'Walk-forward reconstruction (built ' + day.generated + ')' : 'Generated ' + day.generated);
   const cleared = act ? act.filter(v => v != null).length : 0;
   if (cleared) {{
     const pnl = s => s.reduce((a, x) => a + (x.pos ? x.dart : -x.dart), 0);
     const high = scored.filter(s => s.tier === 'high');
     text += ' · ' + cleared + ' hours cleared, ' + scored.length + ' with a call: ' + scored.filter(s => s.hit).length + '/' + scored.length + ' right, 1 MW P&L $' + pnl(scored).toFixed(0);
     if (high.length) text += ' ($' + pnl(high).toFixed(0) + ' on ' + high.length + ' high, ' + high.filter(s => s.hit).length + ' right)';
-  }} else if (date === SIGNAL_BASE.latest) {{
+  }} else if (date === latest) {{
     text += ' · pick a past day in the Day bar to see that signal scored against what cleared';
   }}
   note.textContent = text;
@@ -1455,13 +1544,12 @@ function restyleForecastCurve(divId, day, isLive) {{
 }}
 
 function applyForecastDate(tab) {{
-  const prefix = FORECAST_TABS[tab];
-  const hist = FORECAST_HISTORY[prefix];
-  const divId = tab + '-forecast';
+  const hist = zoneHistory(tab);
+  const divId = fz(tab + '-forecast');
   const gd = document.getElementById(divId);
-  const note = document.getElementById(tab + '-note');
-  const title = document.getElementById(tab + '-title');
-  if (!hist || !gd || !gd.layout) return;
+  const note = document.getElementById(fz(tab + '-note'));
+  const title = document.getElementById(fz(tab + '-title'));
+  if (!hist || !Object.keys(hist).length || !gd || !gd.layout) return;
   const date = document.getElementById('global-date').value;
   const day = hist[date];
   const label = title.textContent.split(' Forecast')[0];
@@ -1470,12 +1558,12 @@ function applyForecastDate(tab) {{
     note.textContent = 'No forecast archived for ' + date + ' (archive spans ' + days[0] + ' to ' + days[days.length - 1] + ')';
     return;
   }}
-  const isLive = date === FORECAST_LATEST[prefix];
+  const isLive = date === zoneLatest(tab);
   restyleForecastCurve(divId, day, isLive);
   const actual = day.actual || new Array(24).fill(null);
-  title.textContent = label + ' Forecast - OTTAWA (' + date + ')';
+  title.textContent = label + ' Forecast - ' + forecastZone + ' (' + date + ')';
   const pairs = day.predicted.map((p, i) => [p, actual[i]]).filter(([p, a]) => p != null && a != null);
-  let text = 'Generated ' + day.generated;
+  let text = (day.backfilled ? 'Walk-forward reconstruction (built ' + day.generated + ')' : 'Generated ' + day.generated);
   if (pairs.length) {{
     const mae = pairs.reduce((s, [p, a]) => s + Math.abs(p - a), 0) / pairs.length;
     text += ' · realized MAE $' + mae.toFixed(1) + ' over ' + pairs.length + ' cleared hours';
@@ -1486,6 +1574,17 @@ function applyForecastDate(tab) {{
 function applyZoneChange() {{
   const z = TAB_ZONES[currentTab];
   if (!z) return;
+  if (z.panels) {{
+    forecastZone = document.getElementById('tab-zone-select').value;
+    showZonePanel(currentTab);
+    // Stay on the Day bar's day if this zone has it archived, else jump to its live forecast.
+    const hist = zoneHistory(currentTab), dateInput = document.getElementById('global-date');
+    setDateBounds(hist);
+    if (!hist[dateInput.value]) dateInput.value = zoneLatest(currentTab) || dateInput.value;
+    if (FORECAST_TABS[currentTab]) applyForecastDate(currentTab);
+    if (currentTab === 'spread-signal') applySignalDate();
+    return;
+  }}
   if (z.hourlyDiv) applyFigSelection(z.hourlyDiv);
   if (z.tableDiv && TABLE_CONFIGS[z.tableDiv] && isDrawn(z.tableDiv)) {{
     const sel = document.getElementById('tab-zone-select');
@@ -1516,7 +1615,7 @@ function copyTableTSV(btn, plotlyDivId) {{
 
 // This script block runs before the body, so the tiles it fills don't exist yet -- they start
 // as empty shells and get their first paint once the DOM is up.
-document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); updateWeatherTiles(); if (SIGNAL_BASE.latest) renderSignalTable(SIGNAL_BASE.latest); }});
+document.addEventListener('DOMContentLoaded', () => {{ updateSupplyTiles(); updateWeatherTiles(); if (SIGNAL_BASE[forecastZone]) renderSignalTable(SIGNAL_BASE[forecastZone].latest); }});
 </script>
 
 <div class="tabs-row">
