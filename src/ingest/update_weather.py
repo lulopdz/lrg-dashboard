@@ -9,6 +9,7 @@ from retry_requests import retry
 OTTAWA_COORDS = {"lat": 45.4000, "lon": -75.7000}
 PORT_ALMA_COORDS = {"lat": 42.1808, "lon": -82.2444}  # the wind fleet's site, Chatham-Kent
 TORONTO_COORDS = {"lat": 43.6532, "lon": -79.3832}    # the province's load centre
+THUNDER_BAY_COORDS = {"lat": 48.3809, "lon": -89.2477}  # the NORTHWEST hub's load centre
 
 # Wind is pulled at both 10m (the standard met-station height) and 100m. 100m is roughly
 # turbine hub height, and since wind power scales with the cube of speed, the two are not
@@ -24,6 +25,12 @@ PORT_ALMA_VARS = ["wind_speed_10m", "wind_speed_100m", "shortwave_radiation"]
 # snowfall there would be noise nothing reads.
 TORONTO_VARS = ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"]
 
+# Thunder Bay, the same three: the NORTHWEST hub sits ~1,000 km from Ottawa and Toronto, so its
+# own weather is the local demand signal there. Only NORTHWEST's models read it
+# (forecast_common.ZONE_FEATURES). History backfilled from Open-Meteo's ERA5 archive on
+# 2026-10-02, the same source as Toronto's.
+THUNDER_BAY_VARS = ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"]
+
 WEATHER_VARIABLES = [
     "temperature_2m",
     "relative_humidity_2m",
@@ -38,6 +45,7 @@ WEATHER_VARIABLES = [
 SECONDARY_STATIONS = [
     (PORT_ALMA_COORDS, PORT_ALMA_VARS, "port_alma"),
     (TORONTO_COORDS, TORONTO_VARS, "toronto"),
+    (THUNDER_BAY_COORDS, THUNDER_BAY_VARS, "thunder_bay"),
 ]
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "OTTAWA_weather.csv"

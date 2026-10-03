@@ -16,6 +16,19 @@ ZONE = "OTTAWA"  # the dashboard's zone; its files carry no suffix (dam_forecast
 ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")  # what the workflows forecast every day (NORTHWEST: D-4, 2026-10-02)
 
 
+# Inputs only one zone's models see, on top of each model's own FEATURE_COLS. NORTHWEST trades
+# ~1,000 km from Ottawa and Toronto, so its own weather (Thunder Bay, update_weather.py) is the
+# local demand signal there (TRACKING N-4). Its regional load forecast, ontario_northwest, is
+# already in every model's FEATURE_COLS.
+ZONE_FEATURES = {
+    "NORTHWEST": ["temperature_2m_thunder_bay", "wind_speed_10m_thunder_bay", "relative_humidity_2m_thunder_bay"],
+}
+
+
+def zone_feature_cols(feature_cols, zone):
+    return list(feature_cols) + [c for c in ZONE_FEATURES.get(zone, []) if c not in feature_cols]
+
+
 def zone_suffix(zone):
     return "" if zone == ZONE else f"_{zone}"
 
@@ -637,6 +650,7 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
     information cutoff and the DAM feature comes from the archived vintage in dam_forecast_dir,
     so the result is what the live run would have produced (walkforward.py drives this)."""
     model_params = DEFAULT_MODEL_PARAMS if model_params is None else model_params
+    feature_cols = zone_feature_cols(feature_cols, zone)
     load_fc, wind_fc, weather = load_forecast_inputs()
     tz = series_df["interval_start_local"].dt.tz
     reconstruction = target_date is not None

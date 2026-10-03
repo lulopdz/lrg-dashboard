@@ -97,6 +97,11 @@ WEATHER_VARS = {
     "shortwave_radiation": ("Solar Radiation", "W/m²"),
     "precipitation": ("Precipitation", "mm"),
     "snowfall": ("Snowfall", "cm"),
+    # Thunder Bay -- the NORTHWEST hub's load centre, ~1,000 km from the rest; only NORTHWEST's
+    # models read it (forecast_common.ZONE_FEATURES). Last so the indices above keep their place.
+    "temperature_2m_thunder_bay": ("Temperature", "°C"),
+    "wind_speed_10m_thunder_bay": ("Wind 10m", "m/s"),
+    "relative_humidity_2m_thunder_bay": ("Humidity", "%"),
 }
 
 # Section -> variables, in render order. Labels above are deliberately bare (no site name)
@@ -106,6 +111,8 @@ WEATHER_GROUPS = {
     "Demand centre · Toronto": ["temperature_2m_toronto", "wind_speed_10m_toronto",
                                  "relative_humidity_2m_toronto"],
     "Pricing zone · Ottawa": ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"],
+    "Northwest hub · Thunder Bay": ["temperature_2m_thunder_bay", "wind_speed_10m_thunder_bay",
+                                    "relative_humidity_2m_thunder_bay"],
     "Generation site · Port Alma": ["wind_speed_100m_port_alma", "shortwave_radiation_port_alma"],
     "Other conditions · Ottawa": ["shortwave_radiation", "precipitation", "snowfall"],
 }
@@ -120,6 +127,8 @@ WEATHER_SITE = {
     "wind_speed_100m_port_alma": "Port Alma", "shortwave_radiation_port_alma": "Port Alma",
     "temperature_2m": "Ottawa", "wind_speed_10m": "Ottawa", "relative_humidity_2m": "Ottawa",
     "shortwave_radiation": "Ottawa", "precipitation": "Ottawa", "snowfall": "Ottawa",
+    "temperature_2m_thunder_bay": "Thunder Bay", "wind_speed_10m_thunder_bay": "Thunder Bay",
+    "relative_humidity_2m_thunder_bay": "Thunder Bay",
 }
 
 

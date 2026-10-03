@@ -32,7 +32,7 @@ from sklearn.metrics import brier_score_loss
 from forecast_common import (
     archive_forecast, DATA_DIR, SUPPLY_COLS, ZONE, add_lag_features, attach_reference_price, build_grid, dam_target_prediction,
     determine_target_date, forecast_file, information_cutoff, load_forecast_inputs, load_price_series,
-    missing_inputs, parse_run_args, usable_feature_cols,
+    missing_inputs, parse_run_args, usable_feature_cols, zone_feature_cols,
 )
 
 BIG_T = 40  # $/MWh: |DART| beyond this is a big hour (~10% of hours each side)
@@ -278,7 +278,7 @@ def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=D
     df_target = df[df["interval_start_local"].dt.date == target_date].copy()
     print(f"Signal target: {target_date} | training rows: {len(df_hist)} through {df_hist['interval_start_local'].max()}")
 
-    cols_all = FEATURE_COLS
+    cols_all = zone_feature_cols(FEATURE_COLS, zone)
     metrics, base = backtest(df_hist, cols_all) or (None, None)
     if metrics and not backfill:
         print(f"Backtest (fit on {BACKTEST_DAYS - metrics['eval_days']}d, scored on the last {metrics['eval_days']}d, "
