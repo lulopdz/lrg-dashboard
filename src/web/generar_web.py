@@ -1,5 +1,6 @@
 import json
 import os
+from html import escape as html_escape
 
 import pandas as pd
 
@@ -554,6 +555,39 @@ if os.path.exists('data/spread_signal_meta.json'):
         _m = json.load(_f)
     SIGNAL_BASE = dict(_m.get('base_rates') or {}, big_t=_m['big_threshold'], latest=_m['target_date'])
     TAB_DATES['spread-signal'] = _m['target_date']
+
+
+def watch_record_title(name, label):
+    """Tooltip for a Watch star: that flag's record on the scored archive (pre-DAM, the vintage
+    the table shows), so the star reads with the trust it has earned. Kept visible on purpose
+    (TRACKING D-2, 2026-10-02): big_neg_watch had flagged 1 live hour, wrong, and caught 0 of 6
+    big hours -- hiding it was the alternative."""
+    path = 'data/forecast_scorecard.json'
+    if not os.path.exists(path):
+        return ''
+    with open(path, encoding='utf-8') as f:
+        runs = ((json.load(f).get('signal') or {}).get('pre_dam') or {})
+    parts = [f'{label} watch.']
+    live = runs.get('live') or {}
+    w = (live.get('watch') or {}).get(name)
+    if w:
+        right = round((w['precision'] or 0) / 100 * w['n_flagged'])
+        caught = round((w['recall'] or 0) / 100 * w['n_events'])
+        parts.append(f"Live 9:00 runs ({live['n_days']} days): flagged {w['n_flagged']} h, {right} right; "
+                     f"caught {caught} of {w['n_events']} big hours.")
+    rec = runs.get('backfilled') or {}
+    w = (rec.get('watch') or {}).get(name)
+    if w and w['n_flagged']:
+        parts.append(f"Reconstructed ({rec['n_days']} days): {w['precision']:.0f}% of flags right "
+                     f"(base {w['base_rate']:.0f}%), caught {w['recall']:.0f}% of big hours.")
+    return html_escape(' '.join(parts), quote=True)
+
+
+if SIGNAL_BASE:
+    SIGNAL_BASE['watch_title'] = {
+        'big_pos': watch_record_title('big_pos_watch', f"DART > +${SIGNAL_BASE['big_t']}"),
+        'big_neg': watch_record_title('big_neg_watch', f"DART < −${SIGNAL_BASE['big_t']}"),
+    }
 TAB_DATES_JSON = json.dumps(TAB_DATES)
 FORECAST_HISTORY_JSON = json.dumps(forecast_history)
 SIGNAL_HISTORY_JSON = json.dumps(signal_history)
@@ -931,6 +965,7 @@ html = f"""<html>
   .signal-table tr.no-call td {{ color:#777; }}
   .signal-table tr.model-row td {{ font-weight:600; }}
   .signal-table td.pos, .signal-table td.neg {{ font-weight:600; }}
+  .watch-flag {{ cursor:help; }}
   .signal-table .hit {{ color:#eee; font-weight:600; }}
   .signal-table .miss {{ color:#999; }}
   .tag {{ display:inline-block; padding:1px 9px; border-radius:999px; font-size:11.5px; font-weight:600; line-height:17px; white-space:nowrap; }}
@@ -1313,8 +1348,9 @@ function renderSignalTable(date) {{
   const rows = day.call.map((call, i) => {{
     const rated = day.tier[i] !== 'low';
     const cls = rated ? (call === 'DART > 0' ? 'call-pos' : 'call-neg') + ' tier-' + day.tier[i] : 'no-call';
-    const watch = [day.big_pos_watch[i] ? '<span class="pos">★ &gt; +$' + SIGNAL_BASE.big_t + '</span>' : '',
-                   day.big_neg_watch[i] ? '<span class="neg">★ &lt; −$' + SIGNAL_BASE.big_t + '</span>' : ''].filter(Boolean).join(' ') || '—';
+    const wt = SIGNAL_BASE.watch_title || {{}};
+    const watch = [day.big_pos_watch[i] ? '<span class="pos watch-flag" title="' + (wt.big_pos || '') + '">★ &gt; +$' + SIGNAL_BASE.big_t + '</span>' : '',
+                   day.big_neg_watch[i] ? '<span class="neg watch-flag" title="' + (wt.big_neg || '') + '">★ &lt; −$' + SIGNAL_BASE.big_t + '</span>' : ''].filter(Boolean).join(' ') || '—';
     const f = fc[i];
     let past = '';
     if (act) {{
