@@ -1,13 +1,13 @@
 {
   "zone": "OTTAWA",
-  "target_date": "2026-10-08",
-  "vintage": "post_dam",
+  "target_date": "2026-10-09",
+  "vintage": "pre_dam",
   "reconstruction": false,
-  "generated_at": "2026-10-07T23:38:59.072003+00:00",
-  "method": "real DAM - RT forecast",
-  "rtm_generated_at": "2026-10-07T23:38:58.832126+00:00",
+  "generated_at": "2026-10-08T13:02:14.825744+00:00",
+  "method": "DAM forecast - RT forecast",
+  "rtm_generated_at": "2026-10-08T13:02:14.619898+00:00",
   "missing_input_hours": 0,
-  "analog_date": "2025-10-08",
-  "analog_date_2": "2025-05-21",
+  "analog_date": "2026-10-06",
+  "analog_date_2": "2026-04-30",
   "backtest": null
 }
