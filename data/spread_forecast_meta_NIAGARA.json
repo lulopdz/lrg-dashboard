@@ -1,13 +1,13 @@
 {
   "zone": "NIAGARA",
-  "target_date": "2026-10-13",
-  "vintage": "post_dam",
+  "target_date": "2026-10-14",
+  "vintage": "pre_dam",
   "reconstruction": false,
-  "generated_at": "2026-10-13T01:29:30.704045+00:00",
-  "method": "real DAM - RT forecast",
-  "rtm_generated_at": "2026-10-13T01:29:30.514476+00:00",
+  "generated_at": "2026-10-13T13:02:29.135671+00:00",
+  "method": "DAM forecast - RT forecast",
+  "rtm_generated_at": "2026-10-13T13:02:28.999676+00:00",
   "missing_input_hours": 0,
-  "analog_date": "2025-09-22",
-  "analog_date_2": "2025-10-31",
+  "analog_date": "2026-04-30",
+  "analog_date_2": "2025-10-24",
   "backtest": null
 }
