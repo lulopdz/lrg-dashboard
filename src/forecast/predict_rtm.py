@@ -16,7 +16,9 @@ this script still runs without it, just with a weaker feature for tomorrow's hou
 Run manually: `python src/forecast/predict_rtm.py`. Writes data/rtm_forecast.csv and
 data/rtm_forecast_meta.json, which generar_web.py reads if present.
 """
-from forecast_common import DATA_DIR, SUPPLY_COLS, ZONE, load_price_series, parse_run_args, run_forecast
+from forecast_common import (
+    DATA_DIR, DEFAULT_MODEL_PARAMS, SUPPLY_COLS, ZONE, load_price_series, parse_run_args, run_forecast,
+)
 
 FEATURE_COLS = [
     # raw `hour` sits alongside hour_sin/cos so a tree can split directly on hour of day
@@ -33,12 +35,23 @@ FEATURE_COLS = [
     *SUPPLY_COLS,  # nuclear/gas/hydro availability, net load, capacity margin (forecast_common)
 ]
 
+# RT is fit as RT - dam_price (forecast_common.OffsetRegressor) on the absolute-error loss, i.e.
+# the median of how far RT strays from the DAM in hours like this one. With squared error the
+# booster chased the spike hours (5% of hours, 31% of the error) and lost to plain "RT = DAM":
+# walk-forward, 92 days (2026-07-10..10-17, OTTAWA), MAE $20.40 vs $19.31 for RT = real DAM
+# (post_dam) and $20.86 vs $21.16 for RT = DAM forecast (pre_dam). This: $17.91 and $19.08.
+# The median runs ~$8 below the mean RT (spikes are one-sided), so the point is a typical
+# hour, not an expectation; the P10-P90 band keeps the spike side.
+MODEL_PARAMS = dict(DEFAULT_MODEL_PARAMS, loss="absolute_error")
+OFFSET_COL = "dam_price"
+
 
 def main(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, dam_forecast_dir=DATA_DIR, backtest_enabled=True,
          zone=ZONE):
     rtm = load_price_series("ieso_rtm_prices.csv", zone)
     dam = load_price_series("ieso_dam_prices.csv", zone)
-    return run_forecast("rtm", rtm, FEATURE_COLS, dam, attach_dam_feature=True, vintage=vintage,
+    return run_forecast("rtm", rtm, FEATURE_COLS, dam, attach_dam_feature=True, model_params=MODEL_PARAMS,
+                        offset_col=OFFSET_COL, vintage=vintage,
                         target_date=target_date, out_dir=out_dir, dam_forecast_dir=dam_forecast_dir,
                         backtest_enabled=backtest_enabled, zone=zone)
 
