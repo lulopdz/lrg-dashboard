@@ -1,6 +1,5 @@
 import json
 import os
-from html import escape as html_escape
 
 import pandas as pd
 
@@ -210,8 +209,6 @@ the sign right 62% of hours against 56%, and 1 MW following that sign made $8.4k
 two similar days are the RT model's (closest on forecast load, wind and weather), shown with the DART that cleared
 on them. On a past day the actual DART is overlaid.</p>"""
     bt = meta.get('backtest') or {}
-    watch = bt.get('watch') or {}
-    T = meta.get('big_threshold')
 
     generated = pd.Timestamp(meta['generated_at']).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST')
     missing = meta.get('missing_input_hours') or 0
@@ -239,7 +236,6 @@ on them. On a past day the actual DART is overlaid.</p>"""
                 f"<td>{b['tier'] if rated else NO_CALL}</td></tr>")
 
     bin_rows = ''.join(bin_row(b) for b in bt.get('bins', []))
-    bp, bn = watch.get('big_pos') or {}, watch.get('big_neg') or {}
 
     # Walk-forward record: every archived day scored on what cleared (each day's signal was
     # produced with only earlier data, so this is out-of-sample end to end).
@@ -285,27 +281,15 @@ means the point forecast is slightly positive while calls like this one have pai
 {curve_html}
 <h3 id="{zid(f'{tab_id}-table-title', zone)}">Hour by hour</h3>
 <table class="naive-table signal-table">
-  <thead><tr><th>Hour</th><th class="c stars-col">★</th><th class="c">Call</th><th class="c">Tier</th><th class="num">Hit rate</th><th class="num">Edge</th><th class="num">P(&gt;+${T})</th><th class="num">P(&lt;−${T})</th><th class="num">DART fc</th><th class="c">Fc agrees</th><th class="c">Watch</th>
+  <thead><tr><th>Hour</th><th class="c stars-col">★</th><th class="num">DART fc</th><th class="num">P(DART &gt; 0)</th>
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
   <tbody id="{zid(f'{tab_id}-rows', zone)}"></tbody>
 </table>
-<p class="caveat"><strong>★ Top 3</strong>: the day's three hours to trade, each on the side of the DART point forecast
-(<span class="pos">gen</span> when it is above zero, <span class="neg">load</span> when below): of the hours where the
-P(DART &gt; 0) classifier agrees with the forecast's side, the three with the largest forecast, and none whose forecast is
-under $5 either way (so some days have fewer). Picked 2026-10-17 over nine other rankings on 62 days rebuilt
-walk-forward: $9–14/h at 1 MW and right 68–73% of the time in all four zones, against $2–4/h trading every hour; unlike
-the tiers it kept paying after the market turned around 2026-09-20. Its live record is the first row of the archive
-record below. The Call/Tier columns are the older signal and can disagree.
-<strong>Call</strong>: the side that has paid, over the last {bt.get('days', '?')} days, in hours whose
-probability fell in the same range as this one; <strong>—</strong> when that edge is noise. <strong>Hit rate</strong>: how
-often that call was right in those hours. <strong>Edge</strong>: their average 1 MW P&amp;L per hour. <strong>P(&gt;+${T})</strong> /
-<strong>P(&lt;−${T})</strong>: probability of a big hour each way (base rates {pct(bp.get('base_rate'))} / {pct(bn.get('base_rate'))}).
-<strong>Fc agrees</strong>: the point forecast has the call's sign; over the archive, calls the forecast agrees with
-have paid 2 to 3 times more per hour, and a medium DART &gt; 0 call the forecast disagrees with has paid nothing.
-<strong>Watch</strong>: that probability clears a threshold picked on the last {bt.get('days', '?')} days (the most hours
-flagged while at least 25% of them, and at least {meta.get('watch_lift')}× the base rate, were big hours); picked on the
-older half and scored on the newer {eval_days} days, the flag was right {pct(bp.get('precision'))} / {pct(bn.get('precision'))} of the time. <strong>DART fc</strong>: the point forecast of
-DART. Pick a past day in the Day bar and the table shows that day's signal with what actually cleared.</p>
+<p class="caveat"><strong>★ Top 3</strong>: the day's three hours to trade, each on the side of the DART forecast
+(<span class="pos">gen</span> above zero, <span class="neg">load</span> below): of the hours where the P(DART &gt; 0)
+classifier agrees with that side, the three with the largest forecast, none under $5 either way (so some days have
+fewer). On 62 days rebuilt walk-forward: $9–14/h at 1 MW, right 68–73% of the time in all four zones; live record in
+the archive table below. <strong>Result</strong> (past days): 1 MW P&amp;L on the forecast's side, dimmed outside the top 3.</p>
 <details class="stats-block">
   <summary>Model record: last {eval_days} days out of sample and the archive</summary>
   <div class="stat-row">
@@ -599,33 +583,7 @@ for _tab, _prefix in FORECAST_TABS.items():
         TAB_DATES[_tab] = next(iter(FORECAST_LATEST[_prefix].values()))
 
 
-def watch_record_title(name, label, zone):
-    """Tooltip for a Watch star: that flag's record on the zone's scored archive (pre-DAM, the
-    vintage the table shows), so the star reads with the trust it has earned. Kept visible on
-    purpose (TRACKING D-2, 2026-10-02): OTTAWA's big_neg_watch had flagged 1 live hour, wrong,
-    and caught 0 of 6 big hours -- hiding it was the alternative."""
-    path = f'data/forecast_scorecard{zone_suffix(zone)}.json'
-    if not os.path.exists(path):
-        return ''
-    with open(path, encoding='utf-8') as f:
-        runs = ((json.load(f).get('signal') or {}).get('pre_dam') or {})
-    parts = [f'{label} watch.']
-    live = runs.get('live') or {}
-    w = (live.get('watch') or {}).get(name)
-    if w:
-        right = round((w['precision'] or 0) / 100 * w['n_flagged'])
-        caught = round((w['recall'] or 0) / 100 * w['n_events'])
-        parts.append(f"Live 9:00 runs ({live.get('n_days')} days): flagged {w['n_flagged']} h, {right} right; "
-                     f"caught {caught} of {w['n_events']} big hours.")
-    rec = runs.get('backfilled') or {}
-    w = (rec.get('watch') or {}).get(name)
-    if w and w['n_flagged']:
-        parts.append(f"Reconstructed ({rec.get('n_days')} days): {w['precision']:.0f}% of flags right "
-                     f"(base {w['base_rate']:.0f}%), caught {w['recall']:.0f}% of big hours.")
-    return html_escape(' '.join(parts), quote=True)
-
-
-# The signal's live target day, big-hour threshold and watch tooltips, per zone.
+# The signal's live target day and big-hour threshold, per zone.
 SIGNAL_BASE = {}
 for _zone in FORECAST_ZONES:
     _meta_path = f'data/spread_signal_meta{zone_suffix(_zone)}.json'
@@ -634,10 +592,7 @@ for _zone in FORECAST_ZONES:
     with open(_meta_path, encoding='utf-8') as _f:
         _m = json.load(_f)
     _t = _m['big_threshold']
-    SIGNAL_BASE[_zone] = dict(_m.get('base_rates') or {}, big_t=_t, latest=_m['target_date'], watch_title={
-        'big_pos': watch_record_title('big_pos_watch', f"DART > +${_t}", _zone),
-        'big_neg': watch_record_title('big_neg_watch', f"DART < −${_t}", _zone),
-    })
+    SIGNAL_BASE[_zone] = dict(_m.get('base_rates') or {}, big_t=_t, latest=_m['target_date'])
 if SIGNAL_BASE:
     TAB_DATES['spread-signal'] = next(iter(SIGNAL_BASE.values()))['latest']
 
@@ -1031,7 +986,9 @@ html = f"""<html>
   .signal-table tbody tr:nth-child(even) td {{ background:rgba(255,255,255,0.015); }}
   .signal-table tbody tr:hover td {{ background:rgba(255,255,255,0.06); }}
   .signal-table tr.no-call td {{ color:#777; }}
-  .signal-table td.stars, .signal-table tr.no-call td.stars {{ color:#f1c40f; }}
+  .signal-table td.stars {{ color:#f1c40f; }}
+  table.signal-table {{ max-width:760px; }}
+  .signal-table .dim {{ color:#666; font-size:12px; }}
   .signal-table td.stars .pos {{ color:{COLORS['positive']}; }}
   .signal-table td.stars .neg {{ color:{COLORS['negative']}; }}
   .signal-table tr.model-row td {{ font-weight:600; }}
@@ -1443,44 +1400,35 @@ function renderSignalTable(date) {{
   const table = body && body.closest('table');
   if (!day || !body) return;
   const fc = ((((FORECAST_HISTORY.spread || {{}})[forecastZone]) || {{}})[date] || {{}}).predicted || [];
-  const sb = SIGNAL_BASE[forecastZone] || {{}};
   const act = day.actual;
   table.classList.toggle('live', !act);
   const sign = v => v > 0 ? 'pos' : (v < 0 ? 'neg' : '');
-  // The day's top 3 (picks.py, archived per day): traded on the point forecast's sign.
-  const rankOf = i => (day.pick || [])[i] || 0;
-  const money = (v, d = 1) => v == null ? '—' : '$' + (v < 0 ? '−' : '+') + Math.abs(v).toFixed(d);
-  const rows = day.call.map((call, i) => {{
-    const rated = day.tier[i] !== 'low';
-    const cls = rated ? (call === 'DART > 0' ? 'call-pos' : 'call-neg') + ' tier-' + day.tier[i] : 'no-call';
-    const wt = sb.watch_title || {{}};
-    const watch = [day.big_pos_watch[i] ? '<span class="pos watch-flag" title="' + (wt.big_pos || '') + '">★ &gt; +$' + sb.big_t + '</span>' : '',
-                   day.big_neg_watch[i] ? '<span class="neg watch-flag" title="' + (wt.big_neg || '') + '">★ &lt; −$' + sb.big_t + '</span>' : ''].filter(Boolean).join(' ') || '—';
+  const money = (v, d = 1) => {{
+    if (v == null) return '—';
+    const r = Number(v.toFixed(d));  // sign of the rounded value, so -0.3 at 0 decimals reads $0, not $−0
+    return '$' + (r < 0 ? '−' : r > 0 ? '+' : '') + Math.abs(r).toFixed(d);
+  }};
+  // ★ = the day's top 3 (picks.py, archived per day), traded on the point forecast's sign. A past
+  // day is scored on that same side for every hour; the picks in full, the rest dimmed.
+  const rows = day.p_pos.map((p, i) => {{
+    const rank = (day.pick || [])[i] || 0;
     const f = fc[i];
+    const side = f > 0 ? 'gen' : 'load';
     let past = '';
     if (act) {{
       const a = act[i];
-      const hit = a == null ? null : (a > 0) === (call === 'DART > 0');
+      const pnl = a == null || f == null || f === 0 ? null : (f > 0 ? a : -a);
       const result = a == null ? '<span class="tag tag-pending">pending</span>'
-        : (!rated ? '<span class="tag tag-none">—</span>' : (hit ? '<span class="tag tag-right">✓ right</span>' : '<span class="tag tag-wrong">✗ wrong</span>'));
-      past = '<td class="num ' + (a == null ? '' : sign(a)) + '">' + (a == null ? '—' : money(a)) + '</td><td class="c">' + result + '</td>';
+        : pnl == null ? '—'
+        : '<span class="' + (rank ? 'tag ' + (pnl > 0 ? 'tag-right' : 'tag-wrong') : 'dim') + '">' + (pnl > 0 ? '✓ ' : '✗ ') + money(pnl, 0) + '</span>';
+      past = '<td class="num ' + (a == null ? '' : sign(a)) + '">' + money(a) + '</td><td class="c">' + result + '</td>';
     }}
-    const tagCls = rated ? 'tag-' + (call === 'DART > 0' ? 'pos' : 'neg') + '-' + day.tier[i] : 'tag-none';
-    const rank = rankOf(i);
-    const tag = (txt, c) => '<span class="tag ' + c + '">' + txt + '</span>';
-    return '<tr class="' + cls + (day.tier[i] === 'high' ? ' model-row' : '') + (rank ? ' top' : '') + '">'
+    return '<tr class="' + (rank ? 'top' : '') + '">'
       + '<td>HE' + (i + 1) + '</td>'
-      + '<td class="c stars" title="' + (rank ? '#' + rank + ' hour to trade, virtual ' + (f > 0 ? 'gen' : 'load') : '') + '">'
-      + (rank ? '★' + rank + ' <span class="' + (f > 0 ? 'pos' : 'neg') + '">' + (f > 0 ? 'gen' : 'load') + '</span>' : '') + '</td>'
-      + '<td class="c">' + tag(rated ? call : '—', tagCls) + '</td>'
-      + '<td class="c">' + tag(rated ? day.tier[i] : 'no call', tagCls) + '</td>'
-      + '<td class="num">' + (rated && day.confidence[i] != null ? day.confidence[i].toFixed(0) + '%' : '—') + '</td>'
-      + '<td class="num">' + (rated && day.edge[i] != null ? '$' + day.edge[i].toFixed(1) + '/h' : '—') + '</td>'
-      + '<td class="num">' + day.p_big_pos[i].toFixed(0) + '%</td>'
-      + '<td class="num">' + day.p_big_neg[i].toFixed(0) + '%</td>'
-      + '<td class="num ' + (f == null ? '' : sign(f)) + '">' + (f == null ? '—' : money(f)) + '</td>'
-      + '<td class="c">' + (rated && f != null ? ((f > 0) === (call === 'DART > 0') ? '<span class="hit">✓</span>' : '<span class="miss">—</span>') : '—') + '</td>'
-      + '<td class="c">' + watch + '</td>' + past + '</tr>';
+      + '<td class="c stars" title="' + (rank ? '#' + rank + ' hour to trade, virtual ' + side : '') + '">'
+      + (rank ? '★' + rank + ' <span class="' + (f > 0 ? 'pos' : 'neg') + '">' + side + '</span>' : '') + '</td>'
+      + '<td class="num ' + (f == null ? '' : sign(f)) + '">' + money(f) + '</td>'
+      + '<td class="num">' + (p == null ? '—' : p.toFixed(0) + '%') + '</td>' + past + '</tr>';
   }});
   body.innerHTML = rows.join('');
   const title = document.getElementById(fz('spread-signal-table-title'));
