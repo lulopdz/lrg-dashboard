@@ -34,6 +34,7 @@ from forecast_common import (
     determine_target_date, forecast_file, information_cutoff, load_forecast_inputs, load_price_series,
     missing_inputs, parse_run_args, usable_feature_cols, zone_feature_cols,
 )
+from picks import top_picks
 
 BIG_T = 40  # $/MWh: |DART| beyond this is a big hour (~10% of hours each side)
 BACKTEST_DAYS = 60  # longer than the price models' 21: ~10% events need the hours
@@ -74,6 +75,7 @@ TARGETS = {
 }
 WATCHES = {"big_pos": "big_pos_watch", "big_neg": "big_neg_watch", "low_rt": "sbg_watch"}
 CALL_POS, CALL_NEG = "DART > 0", "DART < 0"
+
 
 
 def compute_spread_series(dam, rtm):
@@ -228,7 +230,7 @@ def backtest(df_hist, cols):
 
 
 SIGNAL_COLS = ["hour", "p_pos", "p_big_pos", "p_big_neg", "p_low_rt", "call", "tier", "confidence", "edge",
-               "big_pos_watch", "big_neg_watch", "sbg_watch"]
+               "big_pos_watch", "big_neg_watch", "sbg_watch", "pick"]
 
 
 def archive(out, meta, out_dir=DATA_DIR, zone=ZONE):
@@ -249,11 +251,12 @@ def archive(out, meta, out_dir=DATA_DIR, zone=ZONE):
 
 
 def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=DATA_DIR,
-               dam_forecast_dir=DATA_DIR, zone=ZONE):
+               dam_forecast_dir=DATA_DIR, zone=ZONE, forecast=None):
     """Signal for target_date (default: the live target for this vintage, anchored on the DAM
     like the price models). A past target_date is walk-forward: history is cut at that run's
     information cutoff and the DAM feature comes from the archived vintage in dam_forecast_dir,
-    so a reconstruction reproduces what would have been shown."""
+    so a reconstruction reproduces what would have been shown. forecast: this run's DART point
+    forecast (derived_forecast's frame), which the day's picks need; without it none are made."""
     dam = load_price_series("ieso_dam_prices.csv", zone)
     rtm = load_price_series("ieso_rtm_prices.csv", zone)
     dart = compute_spread_series(dam, rtm)
@@ -307,6 +310,9 @@ def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=D
     for name, col in WATCHES.items():
         thr = (metrics["watch"][name]["threshold"] if metrics else WATCH_LIFT * base[name]) if base else np.inf
         out[col] = out[f"p_{name}"] >= thr
+    fc = out["hour"].map(dict(zip(forecast["hour"], forecast["predicted_lmp"])) if forecast is not None else {}).astype(float)
+    out["pick"] = top_picks(fc, out["p_pos"])
+    picks = out.assign(fc=fc)[out["pick"] > 0].sort_values("pick")
 
     high = out[out["tier"] == "high"].sort_values("edge", ascending=False)
     meta = {
@@ -320,6 +326,8 @@ def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=D
         "backtest": metrics,
         "top_hours": [{"hour": int(h), "call": c, "confidence": conf}
                       for h, c, conf in zip(high["hour"], high["call"], high["confidence"])],
+        "picks": [{"hour": int(h), "side": "gen" if f > 0 else "load", "dart_forecast": round(float(f), 2)}
+                  for h, f in zip(picks["hour"], picks["fc"])],
         "missing_input_hours": missing,
         "missing_input_cols": missing_cols,
         "used_dam_forecast_feature": used_dam_forecast,
@@ -331,6 +339,7 @@ def run_signal(target_date=None, write_latest=True, vintage="pre_dam", out_dir=D
         out.to_csv(out_path, index=False)
         print(f"Saved {len(out)} rows to {out_path}")
         print("High-conviction hours:", ", ".join(f"HE{h} {c}" for h, c in zip(high["hour"], high["call"])) or "none")
+        print("Top hours:", ", ".join(f"HE{p['hour']} virtual {p['side']} ({p['dart_forecast']:+.1f})" for p in meta["picks"]) or "none")
         with open(out_dir / forecast_file("spread", "signal_meta", zone), "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
     archive(out, meta, out_dir=out_dir, zone=zone)
@@ -423,9 +432,9 @@ def main(vintage="pre_dam", target_date=None, out_dir=DATA_DIR, dam_forecast_dir
     archived first (predict_rtm.py; run_forecasts.py and walkforward.py keep that order).
     backtest_enabled is kept for walkforward.py's signature; the point forecast has no
     backtest of its own and the signal's is part of how its calls are made."""
-    derived_forecast(vintage, target_date, out_dir, dam_forecast_dir, zone)
+    forecast, _ = derived_forecast(vintage, target_date, out_dir, dam_forecast_dir, zone)
     return run_signal(target_date, write_latest=target_date is None, vintage=vintage, out_dir=out_dir,
-                      dam_forecast_dir=dam_forecast_dir, zone=zone)
+                      dam_forecast_dir=dam_forecast_dir, zone=zone, forecast=forecast)
 
 
 if __name__ == "__main__":

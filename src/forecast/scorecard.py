@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from forecast_common import DATA_DIR, ZONE, forecast_file, load_price_series, zone_suffix
+from picks import top_picks
 
 PREFIXES = ("dam", "rtm", "spread")
 LOW_RT = 5.0     # $/MWh: the SBG tail (RT collapsed to ~0)
@@ -131,6 +132,28 @@ def _derived_spread(directory, vintage, zone=ZONE):
     return d[["target_date", "hour", "derived"]]
 
 
+def with_picks(s, directory, zone=ZONE):
+    """s (signal history rows) with the DART point forecast of the same run as `fc` and the day's
+    picks (picks.top_picks) as `pick`. Rows archived before the column existed get it computed
+    here, with the same rule."""
+    path = Path(directory) / forecast_file("spread", "forecast_history", zone)
+    if path.exists():
+        f = pd.read_csv(path)
+        if "vintage" not in f.columns:
+            f["vintage"] = "pre_dam"
+        s = s.merge(f[["target_date", "vintage", "hour", "predicted_lmp"]].rename(columns={"predicted_lmp": "fc"}),
+                    on=["target_date", "vintage", "hour"], how="left")
+    else:
+        s = s.assign(fc=np.nan)
+    if "pick" not in s.columns:
+        s["pick"] = np.nan
+    s = s.sort_values(["target_date", "vintage", "hour"])
+    for _, g in s[s["pick"].isna()].groupby(["target_date", "vintage"]):
+        s.loc[g.index, "pick"] = top_picks(g["fc"], g["p_pos"])
+    s["pick"] = s["pick"].astype(int)
+    return s
+
+
 def score_signal(directory, actuals, zone=ZONE):
     """The spread signal scored the way it is traded: hit rate and 1 MW P&L per tier, the
     watch flags' precision/recall against their base rates, and P(DART > 0) calibration.
@@ -147,6 +170,7 @@ def score_signal(directory, actuals, zone=ZONE):
     # 9:00 one, so they flatter the signal; scored apart from the days it was actually live.
     backfilled = s["backfilled"].astype(str).str.lower().eq("true") if "backfilled" in s else pd.Series(False, index=s.index)
     s["source"] = np.where(backfilled, "backfilled", "live")
+    s = with_picks(s, directory, zone)
     out = {}
     for (vintage, source), g in s.groupby(["vintage", "source"]):
         call_pos = g["call"].eq("DART > 0")
@@ -161,6 +185,13 @@ def score_signal(directory, actuals, zone=ZONE):
             m = tiers == tier
             rec["tiers"][tier] = {"n": int(m.sum()), "hit_rate": round(float(hit[m].mean() * 100), 1),
                                   "pnl": round(float(pnl[m].sum()), 0), "pnl_per_hour": round(float(pnl[m].mean()), 2)}
+        # The day's picks, traded on the forecast's sign (picks.py): the page's top 3 hours.
+        p = g[g["pick"] > 0]
+        side = np.sign(p["fc"].values)
+        ppnl = side * p["dart"].values
+        rec["picks"] = {"n": int(len(p)), "hit_rate": round(float((ppnl > 0).mean() * 100), 1) if len(p) else None,
+                        "pnl": round(float(ppnl.sum()), 0), "pnl_per_hour": round(float(ppnl.mean()), 2) if len(p) else None,
+                        "n_gen": int((side > 0).sum()), "n_load": int((side < 0).sum())}
         rated = np.isin(tiers, ["high", "medium"])
         rec["rated"] = {"n": int(rated.sum()), "hit_rate": round(float(hit[rated].mean() * 100), 1) if rated.any() else None,
                         "pnl": round(float(pnl[rated].sum()), 0)}
@@ -214,6 +245,10 @@ def format_card(card, label):
             tiers = "  ".join(f"{k}: n={v['n']} hit={v['hit_rate']}% pnl=${v['pnl']:.0f}" for k, v in r["tiers"].items())
             lines.append(f"signal {vintage:8s} {source:10s} {r['n_days']:3d}d  rated n={r['rated']['n']} hit={r['rated']['hit_rate']}%"
                          f" pnl=${r['rated']['pnl']:.0f} (always-gen ${r['pnl_always_gen']:.0f}, optimal ${r['pnl_optimal']:.0f}) | {tiers}")
+            pk = r.get("picks") or {}
+            if pk.get("n"):
+                lines.append(f"       top {pk['n']} h: hit {pk['hit_rate']}%  pnl ${pk['pnl']:.0f} (${pk['pnl_per_hour']}/h)"
+                             f"  gen {pk['n_gen']} / load {pk['n_load']}")
             for k, w in r["watch"].items():
                 lines.append(f"       {k}: flagged {w['flagged_pct']}%  precision {w['precision']}%  recall {w['recall']}%"
                              f"  (base {w['base_rate']}%, {w['n_events']} events)")
