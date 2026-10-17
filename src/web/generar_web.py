@@ -170,6 +170,9 @@ def zone_panels(panels, tab_id, button_label):
             f'<div id="tab-{tab_id}" class="tab-content">{body}</div>')
 
 
+TOP_LABEL = 'top 3 (fc sign)'  # the day's picks (picks.py) in the archive record table
+
+
 def build_signal_tab(tab_id='spread-signal'):
     """The Spread Signal tab, one panel per forecast zone."""
     return zone_panels({z: build_signal_panel(z, tab_id) for z in FORECAST_ZONES}, tab_id, 'Spread Signal')
@@ -244,26 +247,31 @@ on them. On a past day the actual DART is overlaid.</p>"""
     # see the freshest version of every input rather than the 9:00 one and so flatter the signal.
     wf = {}
     wf_days = {'live': 0, 'reconstructed': 0}
+    fc_days = forecast_history['spread'].get(zone, {})
     for d, day in signal_history.get(zone, {}).items():
         if not day['actual']:
             continue
         source = 'reconstructed' if day['backfilled'] else 'live'
         wf_days[source] += 1
+        fc = (fc_days.get(d) or {}).get('predicted') or [None] * 24
         for i, dart in enumerate(day['actual']):
             if dart is None:
                 continue
             wf.setdefault((source, day['tier'][i]), []).append(dart if day['call'][i] == 'DART > 0' else -dart)
+            if day['pick'][i] and fc[i] is not None:
+                wf.setdefault((source, TOP_LABEL), []).append(dart if fc[i] > 0 else -dart)
     wf_rows = ''.join(
         f"<tr class=\"{'model-row' if t == 'high' else ''}\"><td>{source}</td><td>{t}</td><td>{len(v)}</td>"
         f"<td>{sum(1 for x in v if x > 0) / len(v) * 100:.0f}%</td><td class=\"{pnl_cls(sum(v))}\">${sum(v) / len(v):.1f}/h</td>"
         f"<td class=\"{pnl_cls(sum(v))}\">${sum(v):,.0f}</td></tr>"
-        for (source, t), v in sorted(wf.items(), key=lambda kv: (kv[0][0] != 'live', ['high', 'medium', 'low'].index(kv[0][1])))
+        for (source, t), v in sorted(wf.items(), key=lambda kv: (kv[0][0] != 'live', [TOP_LABEL, 'high', 'medium', 'low'].index(kv[0][1])))
         if v and t != 'low')  # no call in 'low'; the page scores the same way
     eval_days = bt.get('eval_days') or bt.get('days', '?')  # metas before the split scored the whole window
 
     return f"""
 <h2 id="{zid(f'{tab_id}-title', zone)}">Spread Signal (DART = DA − RT) - {meta.get('zone')} ({meta.get('target_date')})</h2>
 <p class="caveat" id="{zid(f'{tab_id}-note', zone)}">{note}</p>
+<div class="picks-box" id="{zid(f'{tab_id}-picks', zone)}"></div>
 {fig.to_html(full_html=False, include_plotlyjs=False, div_id=zid(f'{tab_id}-fig', zone))}
 <p class="caveat"><span class="swatch" style="background:{TIER_COLORS[('DART > 0', 'high')]}"></span>DART &gt; 0 high
 <span class="swatch" style="background:{TIER_COLORS[('DART > 0', 'medium')]}"></span>DART &gt; 0 medium
@@ -281,8 +289,13 @@ means the point forecast is slightly positive while calls like this one have pai
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
   <tbody id="{zid(f'{tab_id}-rows', zone)}"></tbody>
 </table>
-<p class="caveat"><strong>★</strong>: the three hours to look at first: high conviction before medium, then the hours
-where the point forecast backs the call the most, then the most extreme probability.
+<p class="caveat"><strong>★ Top 3</strong>: the day's three hours to trade, each on the side of the DART point forecast
+(<span class="pos">gen</span> when it is above zero, <span class="neg">load</span> when below): of the hours where the
+P(DART &gt; 0) classifier agrees with the forecast's side, the three with the largest forecast, and none whose forecast is
+under $5 either way (so some days have fewer). Picked 2026-10-17 over nine other rankings on 62 days rebuilt
+walk-forward: $9–14/h at 1 MW and right 68–73% of the time in all four zones, against $2–4/h trading every hour; unlike
+the tiers it kept paying after the market turned around 2026-09-20. Its live record is the first row of the archive
+record below. The Call/Tier columns are the older signal and can disagree.
 <strong>Call</strong>: the side that has paid, over the last {bt.get('days', '?')} days, in hours whose
 probability fell in the same range as this one; <strong>—</strong> when that edge is noise. <strong>Hit rate</strong>: how
 often that call was right in those hours. <strong>Edge</strong>: their average 1 MW P&amp;L per hour. <strong>P(&gt;+${T})</strong> /
@@ -1001,7 +1014,15 @@ html = f"""<html>
   .signal-table {{ width:100%; font-size:13px; margin-bottom:12px; table-layout:fixed; }}
   .signal-table th, .signal-table td {{ padding:4px 8px; text-align:center; border-bottom:1px solid #222; line-height:20px; }}
   .signal-table th:first-child, .signal-table td:first-child {{ text-align:left; width:52px; font-weight:600; }}
-  .signal-table .stars-col {{ width:36px; }}
+  .signal-table .stars-col {{ width:84px; }}
+  .picks-box {{ display:flex; flex-wrap:wrap; gap:10px; margin:6px 0 10px; }}
+  .picks-box .pick {{ background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:8px 12px; min-width:170px; }}
+  .picks-box .pick.gen {{ border-left:4px solid {COLORS['positive']}; }}
+  .picks-box .pick.load {{ border-left:4px solid {COLORS['negative']}; }}
+  .picks-box .pick-head {{ font-size:13px; color:#ccc; }}
+  .picks-box .pick-side {{ font-size:16px; font-weight:600; margin:2px 0; }}
+  .picks-box .pick-sub {{ font-size:12px; color:#999; }}
+  .picks-box .none {{ font-size:13px; color:#999; }}
   .signal-table td.stars {{ color:#f1c40f; font-size:15px; }}
   .signal-table tbody tr.top td {{ background:rgba(241,196,15,0.07); }}
   .signal-table tbody tr.top:hover td {{ background:rgba(241,196,15,0.13); }}
@@ -1010,6 +1031,9 @@ html = f"""<html>
   .signal-table tbody tr:nth-child(even) td {{ background:rgba(255,255,255,0.015); }}
   .signal-table tbody tr:hover td {{ background:rgba(255,255,255,0.06); }}
   .signal-table tr.no-call td {{ color:#777; }}
+  .signal-table td.stars, .signal-table tr.no-call td.stars {{ color:#f1c40f; }}
+  .signal-table td.stars .pos {{ color:{COLORS['positive']}; }}
+  .signal-table td.stars .neg {{ color:{COLORS['negative']}; }}
   .signal-table tr.model-row td {{ font-weight:600; }}
   .signal-table td.pos, .signal-table td.neg {{ font-weight:600; }}
   .watch-flag {{ cursor:help; }}
@@ -1423,14 +1447,8 @@ function renderSignalTable(date) {{
   const act = day.actual;
   table.classList.toggle('live', !act);
   const sign = v => v > 0 ? 'pos' : (v < 0 ? 'neg' : '');
-  // Top 3 hours to look at: high before medium, then how much the point forecast backs the
-  // call (fc in the call's direction), then the most extreme probability.
-  const support = i => {{ const f = fc[i]; return f == null ? 0 : (day.call[i] === 'DART > 0' ? f : -f); }};
-  const extremity = i => day.call[i] === 'DART > 0' ? day.p_pos[i] : 100 - day.p_pos[i];
-  const top = day.call.map((c, i) => i).filter(i => day.tier[i] !== 'low')
-    .sort((a, b) => (day.tier[b] === 'high') - (day.tier[a] === 'high') || support(b) - support(a) || extremity(b) - extremity(a))
-    .slice(0, 3);
-  const rankOf = i => top.indexOf(i) + 1;
+  // The day's top 3 (picks.py, archived per day): traded on the point forecast's sign.
+  const rankOf = i => (day.pick || [])[i] || 0;
   const money = (v, d = 1) => v == null ? '—' : '$' + (v < 0 ? '−' : '+') + Math.abs(v).toFixed(d);
   const rows = day.call.map((call, i) => {{
     const rated = day.tier[i] !== 'low';
@@ -1452,7 +1470,8 @@ function renderSignalTable(date) {{
     const tag = (txt, c) => '<span class="tag ' + c + '">' + txt + '</span>';
     return '<tr class="' + cls + (day.tier[i] === 'high' ? ' model-row' : '') + (rank ? ' top' : '') + '">'
       + '<td>HE' + (i + 1) + '</td>'
-      + '<td class="c stars" title="' + (rank ? '#' + rank + ' hour to look at' : '') + '">' + (rank ? '★' : '') + '</td>'
+      + '<td class="c stars" title="' + (rank ? '#' + rank + ' hour to trade, virtual ' + (f > 0 ? 'gen' : 'load') : '') + '">'
+      + (rank ? '★' + rank + ' <span class="' + (f > 0 ? 'pos' : 'neg') + '">' + (f > 0 ? 'gen' : 'load') + '</span>' : '') + '</td>'
       + '<td class="c">' + tag(rated ? call : '—', tagCls) + '</td>'
       + '<td class="c">' + tag(rated ? day.tier[i] : 'no call', tagCls) + '</td>'
       + '<td class="num">' + (rated && day.confidence[i] != null ? day.confidence[i].toFixed(0) + '%' : '—') + '</td>'
@@ -1505,6 +1524,20 @@ function applySignalDate() {{
   if (fc) restyleForecastCurve(fz('spread-signal-curve'), fc, date === latest);
   title.textContent = 'Spread Signal (DART = DA − RT) - ' + forecastZone + ' (' + date + ')';
   renderSignalTable(date);
+  // The day's top 3 (picks.py): outlined bars and one card each, scored once the day clears.
+  const pick = day.pick || new Array(24).fill(0);
+  Plotly.restyle(divId, {{'marker.line.width': [pick.map(r => r ? 3 : 0)], 'marker.line.color': '#f1c40f'}}, [0]);
+  const picked = H.map((h, i) => ({{h, i, r: pick[i]}})).filter(p => p.r && fc && fc.predicted[p.i] != null).sort((a, b) => a.r - b.r);
+  const box = document.getElementById(fz('spread-signal-picks'));
+  const pickPnl = picked.map(p => (act && act[p.i] != null) ? (fc.predicted[p.i] > 0 ? act[p.i] : -act[p.i]) : null);
+  if (box) box.innerHTML = picked.length ? picked.map((p, k) => {{
+    const v = fc.predicted[p.i], gen = v > 0, res = pickPnl[k];
+    const sub = res == null ? 'DART fc ' + (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(1) + ' · P(DART > 0) ' + day.p_pos[p.i].toFixed(0) + '%'
+      : 'fc ' + (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toFixed(1) + ' · actual ' + (act[p.i] >= 0 ? '+' : '−') + '$' + Math.abs(act[p.i]).toFixed(1)
+        + ' · <span class="' + (res > 0 ? 'pos' : 'neg') + '">' + (res > 0 ? '✓ ' : '✗ ') + (res >= 0 ? '+' : '−') + '$' + Math.abs(res).toFixed(0) + '</span>';
+    return '<div class="pick ' + (gen ? 'gen' : 'load') + '"><div class="pick-head">★' + p.r + ' · HE' + p.h + '</div>'
+      + '<div class="pick-side ' + (gen ? 'pos' : 'neg') + '">Virtual ' + (gen ? 'gen' : 'load') + '</div><div class="pick-sub">' + sub + '</div></div>';
+  }}).join('') : '<div class="none">No top hours this day: no hour where the forecast is $5 or more and the classifier agrees on its side.</div>';
   let text = (day.backfilled ? 'Walk-forward reconstruction (built ' + day.generated + ')' : 'Generated ' + day.generated);
   const cleared = act ? act.filter(v => v != null).length : 0;
   if (cleared) {{
@@ -1512,6 +1545,8 @@ function applySignalDate() {{
     const high = scored.filter(s => s.tier === 'high');
     text += ' · ' + cleared + ' hours cleared, ' + scored.length + ' with a call: ' + scored.filter(s => s.hit).length + '/' + scored.length + ' right, 1 MW P&L $' + pnl(scored).toFixed(0);
     if (high.length) text += ' ($' + pnl(high).toFixed(0) + ' on ' + high.length + ' high, ' + high.filter(s => s.hit).length + ' right)';
+    const done = pickPnl.filter(v => v != null);
+    if (done.length) text += ' · top ' + done.length + ': ' + done.filter(v => v > 0).length + '/' + done.length + ' right, $' + done.reduce((a, v) => a + v, 0).toFixed(0);
   }} else if (date === latest) {{
     text += ' · pick a past day in the Day bar to see that signal scored against what cleared';
   }}

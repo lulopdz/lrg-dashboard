@@ -5,8 +5,12 @@ Importing this module reads every price/weather CSV (~20MB). Anything that only 
 palette or figure sizes should import theme.py instead, which has no data dependency."""
 import glob
 import os
+import sys
 
 import pandas as pd
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'forecast'))
+from picks import top_picks  # noqa: E402 -- numpy only: the same rule predict_spread.py archives
 
 from theme import COLORS  # noqa: F401 -- re-exported: existing importers read COLORS from here
 
@@ -240,12 +244,20 @@ def _signal_history(zone):
     act['date'] = act['interval_start_local'].dt.strftime('%Y-%m-%d')
     actual = {d: dict(zip(g['hour'], g['lmp'])) for d, g in act.groupby('date')}
     days = {}
+    fc_days = forecast_history['spread'].get(zone, {})
     for d, g in hist.groupby('target_date'):
         g = g.sort_values('hour')
         a = actual.get(d)
+        # The day's top hours (picks.py); days archived before the column get the same rule here.
+        if 'pick' in g and g['pick'].notna().all():
+            pick = [int(v) for v in g['pick']]
+        else:
+            fc = (fc_days.get(d) or {}).get('predicted') or [None] * 24
+            pick = [int(v) for v in top_picks([fc[h - 1] if fc[h - 1] is not None else float('nan') for h in g['hour']], g['p_pos'])]
         days[d] = {
             'generated': pd.Timestamp(g['generated_at'].iloc[0]).tz_convert('-05:00').strftime('%Y-%m-%d %H:%M EST'),
             'backfilled': bool(g['backfilled'].iloc[0]) if 'backfilled' in g else False,
+            'pick': pick,
             'p_pos': _clean(g['p_pos'] * 100), 'p_big_pos': _clean(g['p_big_pos'] * 100), 'p_big_neg': _clean(g['p_big_neg'] * 100),
             'call': list(g['call']), 'tier': list(g['tier']),
             'confidence': _clean(g['confidence']) if 'confidence' in g else [None] * len(g),
