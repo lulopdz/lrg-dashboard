@@ -1,8 +1,8 @@
 {
   "zone": "NORTHWEST",
   "target_date": "2026-10-27",
-  "vintage": "pre_dam",
-  "generated_at": "2026-10-26T13:02:20.179332+00:00",
+  "vintage": "post_dam",
+  "generated_at": "2026-10-26T23:12:27.306489+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
@@ -18,22 +18,22 @@
     "n_hours": 720,
     "bins_hours": 1440,
     "base_rate_pos": 68.7,
-    "hit_rate_all": 52.4,
-    "pnl_all": -1648.91,
+    "hit_rate_all": 58.2,
+    "pnl_all": -1146.34,
     "n_rated": 0,
     "hit_rate_rated": null,
     "pnl_rated": 0.0,
     "n_high": 0,
     "hit_rate_high": null,
     "pnl_high": 0.0,
-    "optimal_pnl": 12713.39,
-    "always_gen_pnl": -2362.11,
-    "always_load_pnl": 2362.11,
+    "optimal_pnl": 12820.1,
+    "always_gen_pnl": -2411.77,
+    "always_load_pnl": 2411.77,
     "brier_skill": {
-      "pos": -0.003,
-      "big_pos": 0.234,
-      "big_neg": -0.003,
-      "low_rt": 0.311
+      "pos": -0.012,
+      "big_pos": 0.2,
+      "big_neg": 0.016,
+      "low_rt": 0.326
     },
     "bins": [
       {
@@ -51,71 +51,71 @@
       {
         "lo": 0.35,
         "hi": 0.5,
-        "n": 27,
-        "call": "DART > 0",
-        "e_dart": 1.4,
-        "se": 2.44,
-        "hit_rate": 55.6,
-        "pnl": 37.83,
-        "edge": 1.4,
+        "n": 22,
+        "call": "DART < 0",
+        "e_dart": -0.11,
+        "se": 5.28,
+        "hit_rate": 36.4,
+        "pnl": 2.32,
+        "edge": 0.11,
         "tier": "low"
       },
       {
         "lo": 0.5,
         "hi": 0.65,
-        "n": 281,
+        "n": 272,
         "call": "DART < 0",
-        "e_dart": -0.28,
-        "se": 1.09,
-        "hit_rate": 48.8,
-        "pnl": 77.97,
-        "edge": 0.28,
+        "e_dart": -2.31,
+        "se": 1.57,
+        "hit_rate": 51.1,
+        "pnl": 628.55,
+        "edge": 2.31,
         "tier": "low"
       },
       {
         "lo": 0.65,
         "hi": 0.8,
-        "n": 862,
+        "n": 822,
         "call": "DART < 0",
-        "e_dart": -1.31,
-        "se": 1.27,
-        "hit_rate": 38.5,
-        "pnl": 1131.46,
-        "edge": 1.31,
+        "e_dart": -1.93,
+        "se": 1.29,
+        "hit_rate": 39.3,
+        "pnl": 1589.67,
+        "edge": 1.93,
         "tier": "low"
       },
       {
         "lo": 0.8,
         "hi": 1.0,
-        "n": 270,
-        "call": "DART < 0",
-        "e_dart": -2.0,
-        "se": 3.85,
-        "hit_rate": 35.9,
-        "pnl": 541.26,
-        "edge": 2.0,
+        "n": 324,
+        "call": "DART > 0",
+        "e_dart": 1.5,
+        "se": 3.16,
+        "hit_rate": 66.4,
+        "pnl": 486.68,
+        "edge": 1.5,
         "tier": "low"
       }
     ],
     "watch": {
       "big_pos": {
-        "threshold": 0.3625,
-        "n_flagged": 101,
-        "precision": 12.9,
-        "recall": 81.2,
+        "threshold": 0.4078,
+        "n_flagged": 89,
+        "precision": 13.5,
+        "recall": 75.0,
         "base_rate": 2.2
       },
       "big_neg": {
-        "threshold": 0.235,
-        "n_flagged": 104,
-        "precision": 11.5,
+        "threshold": 0.1532,
+        "n_flagged": 85,
+        "precision": 14.1,
         "recall": 34.3,
         "base_rate": 4.9
       },
       "low_rt": {
-        "threshold": 0.0442,
-        "n_flagged": 5,
-        "precision": 0.0,
+        "threshold": 0.1266,
+        "n_flagged": 0,
+        "precision": null,
         "recall": 0.0,
         "base_rate": 0.7
       }
@@ -124,22 +124,22 @@
   "top_hours": [],
   "picks": [
     {
-      "hour": 8,
+      "hour": 18,
       "side": "gen",
-      "dart_forecast": 16.71
+      "dart_forecast": 11.53
     },
     {
       "hour": 7,
       "side": "gen",
-      "dart_forecast": 15.54
+      "dart_forecast": 10.29
     },
     {
-      "hour": 13,
-      "side": "load",
-      "dart_forecast": -6.15
+      "hour": 17,
+      "side": "gen",
+      "dart_forecast": 9.76
     }
   ],
   "missing_input_hours": 0,
   "missing_input_cols": {},
-  "used_dam_forecast_feature": true
+  "used_dam_forecast_feature": false
 }
