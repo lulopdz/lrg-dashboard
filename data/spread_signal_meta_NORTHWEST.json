@@ -1,14 +1,14 @@
 {
   "zone": "NORTHWEST",
-  "target_date": "2026-10-29",
-  "vintage": "post_dam",
-  "generated_at": "2026-10-28T23:22:16.532862+00:00",
+  "target_date": "2026-10-30",
+  "vintage": "pre_dam",
+  "generated_at": "2026-10-29T13:02:35.519718+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
   "base_rates": {
     "pos": 68.8,
-    "big_pos": 14.8,
+    "big_pos": 14.7,
     "big_neg": 7.6,
     "low_rt": 6.3
   },
@@ -18,22 +18,22 @@
     "n_hours": 720,
     "bins_hours": 1440,
     "base_rate_pos": 68.8,
-    "hit_rate_all": 50.1,
-    "pnl_all": 2470.9,
+    "hit_rate_all": 49.0,
+    "pnl_all": 1826.43,
     "n_rated": 0,
     "hit_rate_rated": null,
     "pnl_rated": 0.0,
     "n_high": 0,
     "hit_rate_high": null,
     "pnl_high": 0.0,
-    "optimal_pnl": 12905.4,
-    "always_gen_pnl": -2345.05,
-    "always_load_pnl": 2345.05,
+    "optimal_pnl": 13033.9,
+    "always_gen_pnl": -2441.06,
+    "always_load_pnl": 2441.06,
     "brier_skill": {
-      "pos": 0.027,
-      "big_pos": 0.104,
-      "big_neg": -0.005,
-      "low_rt": 0.324
+      "pos": 0.023,
+      "big_pos": 0.083,
+      "big_neg": -0.044,
+      "low_rt": 0.315
     },
     "bins": [
       {
@@ -51,69 +51,69 @@
       {
         "lo": 0.35,
         "hi": 0.5,
-        "n": 49,
-        "call": "DART > 0",
-        "e_dart": 0.03,
-        "se": 1.74,
-        "hit_rate": 55.1,
-        "pnl": 1.68,
-        "edge": 0.03,
+        "n": 30,
+        "call": "DART < 0",
+        "e_dart": -0.31,
+        "se": 2.43,
+        "hit_rate": 46.7,
+        "pnl": 9.21,
+        "edge": 0.31,
         "tier": "low"
       },
       {
         "lo": 0.5,
         "hi": 0.65,
-        "n": 352,
+        "n": 337,
         "call": "DART < 0",
-        "e_dart": -1.49,
-        "se": 1.21,
-        "hit_rate": 47.7,
-        "pnl": 522.97,
-        "edge": 1.49,
+        "e_dart": -1.29,
+        "se": 0.91,
+        "hit_rate": 49.9,
+        "pnl": 433.13,
+        "edge": 1.29,
         "tier": "low"
       },
       {
         "lo": 0.65,
         "hi": 0.8,
-        "n": 717,
+        "n": 774,
         "call": "DART < 0",
-        "e_dart": -2.95,
-        "se": 1.44,
-        "hit_rate": 41.6,
-        "pnl": 2118.72,
-        "edge": 2.95,
+        "e_dart": -3.45,
+        "se": 1.47,
+        "hit_rate": 42.4,
+        "pnl": 2669.12,
+        "edge": 3.45,
         "tier": "medium"
       },
       {
         "lo": 0.8,
         "hi": 1.0,
-        "n": 322,
+        "n": 299,
         "call": "DART > 0",
-        "e_dart": 1.34,
-        "se": 3.28,
-        "hit_rate": 66.8,
-        "pnl": 431.08,
-        "edge": 1.34,
+        "e_dart": 1.52,
+        "se": 3.38,
+        "hit_rate": 68.6,
+        "pnl": 453.94,
+        "edge": 1.52,
         "tier": "low"
       }
     ],
     "watch": {
       "big_pos": {
-        "threshold": 0.423,
-        "n_flagged": 116,
-        "precision": 11.2,
+        "threshold": 0.3963,
+        "n_flagged": 131,
+        "precision": 9.9,
         "recall": 81.2,
         "base_rate": 2.2
       },
       "big_neg": {
-        "threshold": 0.1525,
-        "n_flagged": 108,
-        "precision": 13.0,
-        "recall": 38.9,
+        "threshold": 0.1523,
+        "n_flagged": 127,
+        "precision": 9.4,
+        "recall": 33.3,
         "base_rate": 5.0
       },
       "low_rt": {
-        "threshold": 0.126,
+        "threshold": 0.1258,
         "n_flagged": 0,
         "precision": null,
         "recall": 0.0,
@@ -122,8 +122,26 @@
     }
   },
   "top_hours": [],
-  "picks": [],
-  "missing_input_hours": 0,
-  "missing_input_cols": {},
-  "used_dam_forecast_feature": false
+  "picks": [
+    {
+      "hour": 8,
+      "side": "load",
+      "dart_forecast": -15.43
+    },
+    {
+      "hour": 9,
+      "side": "load",
+      "dart_forecast": -15.31
+    },
+    {
+      "hour": 10,
+      "side": "load",
+      "dart_forecast": -7.25
+    }
+  ],
+  "missing_input_hours": 1,
+  "missing_input_cols": {
+    "spread_lag_7d": 1
+  },
+  "used_dam_forecast_feature": true
 }
