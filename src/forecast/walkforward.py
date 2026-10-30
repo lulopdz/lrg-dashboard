@@ -19,7 +19,7 @@ the code, rebuild, compare.
 only the archived ones (2026-07-10 on), so a change is judged on winter and spring too -- the SBG
 hours a July-October window barely has. Days before the archive have no 9:00 DAM forecast to
 reuse, so they need --dam-source candidate (this run rebuilds the DAM first); scorecard.py
-reports them apart as rebuilt_latest_inputs. ~11 s per day and zone on 4 cores.
+reports them apart as rebuilt_latest_inputs. ~20 min per zone with --jobs 4 on 4 cores.
 
 --jobs N splits the days into N contiguous chunks, each rebuilt by its own process into
 out/_part<i>/ (the history archives are rewritten per day, so processes can't share a

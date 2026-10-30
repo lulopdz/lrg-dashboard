@@ -94,7 +94,7 @@ python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand
 
 Las cuatro últimas son la vara que un modelo tiene que superar. Cada una se reporta por segmento: `live` (lo publicado), `rebuilt_9am_inputs` (walk-forward con las entradas de las 9:00) y `rebuilt_latest_inputs` (walk-forward con las entradas más recientes: optimista).
 
-Para que la comparación cubra invierno y primavera, y no solo julio-octubre, `--all-days` reconstruye todo el histórico desde el 19/07/2025 (unos 11 s por día y zona con 4 núcleos, ~40 min por zona con `--jobs 4`). Los días anteriores al archivo no tienen pronóstico DAM de las 9:00, así que se reconstruye también el DAM:
+Para que la comparación cubra invierno y primavera, y no solo julio-octubre, `--all-days` reconstruye todo el histórico desde el 19/07/2025 (~20 min por zona con `--jobs 4` en 4 núcleos). Los días anteriores al archivo no tienen pronóstico DAM de las 9:00, así que se reconstruye también el DAM:
 
 ```bash
 python src/forecast/walkforward.py --out /tmp/base --all-days --dam-source candidate --jobs 4 --zone OTTAWA   # repetir por zona
