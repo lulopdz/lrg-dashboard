@@ -6,6 +6,7 @@ scorecard.py can grade next to the real archive.
     python src/forecast/walkforward.py --out /tmp/cand                      # every day in the archive
     python src/forecast/walkforward.py --out /tmp/cand --models rtm,spread  # DAM feature from data/'s archive
     python src/forecast/walkforward.py --out /tmp/cand --jobs 4             # 4 processes, ~4x faster
+    python src/forecast/walkforward.py --out /tmp/cand --all-days --jobs 4  # the whole price history, not just the archive
     python src/forecast/scorecard.py --dir data --compare /tmp/cand
 
 Caveat shared with the live backtests: the load/wind/weather inputs are the latest published
@@ -13,6 +14,12 @@ version, except for target days that data/forecast_inputs_dayahead.csv covers (v
 where the 9:00 view is used. So absolute numbers are somewhat optimistic; comparisons between
 two reconstructions are fair -- both see the same inputs -- which is what this is for: change
 the code, rebuild, compare.
+
+--all-days rebuilds every day from MIN_TRAIN_DAYS after the first DAM day (2025-07-19) instead of
+only the archived ones (2026-07-10 on), so a change is judged on winter and spring too -- the SBG
+hours a July-October window barely has. Days before the archive have no 9:00 DAM forecast to
+reuse, so they need --dam-source candidate (this run rebuilds the DAM first); scorecard.py
+reports them apart as rebuilt_latest_inputs. ~11 s per day and zone on 4 cores.
 
 --jobs N splits the days into N contiguous chunks, each rebuilt by its own process into
 out/_part<i>/ (the history archives are rewritten per day, so processes can't share a
@@ -28,15 +35,23 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from forecast_common import DATA_DIR, VINTAGES, ZONE  # noqa: E402
+from forecast_common import DATA_DIR, MIN_TRAIN_DAYS, VINTAGES, ZONE  # noqa: E402
+
+
+def archived_days():
+    return sorted(pd.read_csv(DATA_DIR / "dam_forecast_history.csv")["target_date"].unique())
 
 
 def target_days(args):
-    if args.since or args.until:
+    if args.all_days:
+        dam = pd.read_csv(DATA_DIR / "ieso_dam_prices.csv", usecols=["interval_start_local"])
+        first = pd.Timestamp(dam["interval_start_local"].min()[:10]) + pd.Timedelta(days=MIN_TRAIN_DAYS)
+        days = [str(d.date()) for d in pd.date_range(first, archived_days()[-1])]
+    elif args.since or args.until:
         hist = pd.read_csv(DATA_DIR / "rtm_forecast_history.csv") if (DATA_DIR / "rtm_forecast_history.csv").exists() else None
         days = sorted(hist["target_date"].unique()) if hist is not None else []
     else:
-        days = sorted(pd.read_csv(DATA_DIR / "dam_forecast_history.csv")["target_date"].unique())
+        days = archived_days()
     days = [d for d in days if (not args.since or d >= args.since) and (not args.until or d <= args.until)]
     if args.days:
         days = days[-args.days:]
@@ -44,8 +59,7 @@ def target_days(args):
 
 
 def rebuild(days, out, models, vintage, dam_source, zone, label=""):
-    """Rebuild `days` into `out`, one day at a time. Imported here, not at module level, so a
-    --jobs worker sets its thread count before scikit-learn loads."""
+    """Rebuild `days` into `out`, one day at a time."""
     import predict_dam, predict_rtm, predict_spread  # noqa: E401
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -63,9 +77,13 @@ def rebuild(days, out, models, vintage, dam_source, zone, label=""):
 
 
 def _worker(threads, *args):
-    os.environ["OMP_NUM_THREADS"] = str(threads)
-    os.environ["LOKY_MAX_CPU_COUNT"] = str(threads)
-    return rebuild(*args)
+    # Capped at runtime: setting OMP_NUM_THREADS here came too late -- the worker has already
+    # loaded scikit-learn (this module imports forecast_common), so OpenMP had started with every
+    # core, and on a 4-core box two such workers took 7 minutes for one day that a single
+    # process rebuilds in 11 seconds.
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=threads):
+        return rebuild(*args)
 
 
 def merge_parts(parts, out):
@@ -87,6 +105,8 @@ def main():
     ap.add_argument("--vintage", choices=VINTAGES, default="pre_dam")
     ap.add_argument("--dam-source", choices=["archived", "candidate"], default="archived",
                     help="where RTM/Spread take the target day's DAM forecast: data/ (archived vintages) or --out (this run's DAM)")
+    ap.add_argument("--all-days", action="store_true",
+                    help="every day since MIN_TRAIN_DAYS after the first DAM day, not just the archived ones (needs --dam-source candidate)")
     ap.add_argument("--days", type=int, default=None, help="only the last N target days")
     ap.add_argument("--since", default=None, help="YYYY-MM-DD")
     ap.add_argument("--until", default=None, help="YYYY-MM-DD")
@@ -98,6 +118,11 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     models = [m.strip() for m in args.models.split(",")]
     days = target_days(args)
+    archived = set(archived_days())
+    unarchived = [d for d in days if str(d) not in archived]
+    if unarchived and (args.dam_source == "archived" or "dam" not in models):
+        ap.error(f"{len(unarchived)} days ({unarchived[0]}..) have no archived DAM forecast to feed RTM/Spread: "
+                 "rebuild it too (dam in --models) and pass --dam-source candidate")
     print(f"Reconstructing {len(days)} days ({days[0]} -> {days[-1]}), models={models}, vintage={args.vintage}, "
           f"dam from {'--out' if args.dam_source == 'candidate' else DATA_DIR}, jobs={args.jobs}")
     t0 = time.time()

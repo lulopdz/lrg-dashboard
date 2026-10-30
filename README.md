@@ -42,6 +42,7 @@ lrg-dashboard/
 │   │   ├── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py hace el pronóstico de DART y la señal (clasificadores)
 │   │   ├── run_forecasts.py <-- Corre los tres modelos para todas las zonas en un proceso (lo que llaman los workflows)
 │   │   ├── scorecard.py    <-- Puntúa el archivo contra lo que efectivamente se liquidó
+│   │   ├── strategies.py   <-- El archivo como estrategias a 1 MW (picks y baselines): P&L por día con IC90, peor hora, drawdown
 │   │   ├── walkforward.py  <-- Reconstruye días pasados con el código actual, para comparar cambios (--jobs N en paralelo)
 │   │   ├── vintages.py     <-- Archivo de entradas day-ahead (--rebuild lo reconstruye desde git)
 │   │   └── backfill_history.py <-- One-off ya ejecutado; no volver a correrlo (borra las columnas vintage/p10/p90)
@@ -80,6 +81,28 @@ python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand
 ```
 
 `scorecard.py` sin argumentos puntúa el archivo live (`data/*_history.csv`): lo que el modelo realmente dijo cada día contra lo que se liquidó. Es la cifra que muestra el dashboard como *Out-of-sample record*.
+
+**La métrica que decide es el P&L, no el MAE.** El dinero está en pocas horas: el 5% de horas con mayor |DART| concentra el 38% de todo el |DART|, y desde el 24/09/2026 las 10 peores horas de OTTAWA, todas HE17-19, convirtieron +$704 de *always gen* en −$1,471. Por eso `scorecard.py` puntúa además el archivo como estrategias a 1 MW (`src/forecast/strategies.py`, sección `strategies` del JSON), con P&L por día y su IC90 por bootstrap de días, P&L por hora operada, acierto, peor hora, peor día y drawdown:
+
+| Estrategia | Qué hace |
+|---|---|
+| `picks` | Los picks del día como se operan (`picks.py`): el signo del pronóstico de DART en sus 3 horas |
+| `follow_sign` | El signo del pronóstico de DART en todas las horas |
+| `always_gen` | Virtual gen en todas las horas |
+| `gen_ex_evening` | Virtual gen en todas menos HE17-19 |
+| `gen_top3_dam` | Virtual gen en las 3 horas de DAM más alto (pre-DAM: el pronosticado; post-DAM: el real) |
+
+Las cuatro últimas son la vara que un modelo tiene que superar. Cada una se reporta por segmento: `live` (lo publicado), `rebuilt_9am_inputs` (walk-forward con las entradas de las 9:00) y `rebuilt_latest_inputs` (walk-forward con las entradas más recientes: optimista).
+
+Para que la comparación cubra invierno y primavera, y no solo julio-octubre, `--all-days` reconstruye todo el histórico desde el 19/07/2025 (unos 11 s por día y zona con 4 núcleos, ~40 min por zona con `--jobs 4`). Los días anteriores al archivo no tienen pronóstico DAM de las 9:00, así que se reconstruye también el DAM:
+
+```bash
+python src/forecast/walkforward.py --out /tmp/base --all-days --dam-source candidate --jobs 4 --zone OTTAWA   # repetir por zona
+python src/forecast/walkforward.py --out /tmp/cand --all-days --dam-source candidate --jobs 4 --zone OTTAWA
+python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand --zone all
+```
+
+Con `--compare`, cada estrategia muestra la diferencia de P&L por día entre candidato y base sobre los días en común, con su IC90 pareado; con `--zone all` cierra con un veredicto por estrategia. **Un cambio entra si mejora el P&L en al menos 3 de las 4 zonas** (`MIN_ZONES_BETTER` en `scorecard.py`): una zona sola puede ganar por suerte, y como el DART de las zonas se mueve junto (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), una mejora real debería verse en la mayoría.
 
 ## Configuración y Uso Local
 
