@@ -313,6 +313,32 @@ def information_cutoff(target_date, vintage, tz):
     return today + pd.Timedelta(hours=RT_HOURS_KNOWN[vintage])
 
 
+# Where the money is lost: from 2026-09-24 OTTAWA's 10 worst DART hours were all HE17-19, the
+# evening ramp -- load climbing while solar drops out, earlier every autumn day -- and HE17-20
+# is where the picks land most. Nothing told the models where an hour sits against sunset, or
+# how steep the ramp into and out of it is forecast to be. Added to the RT model and the spread
+# signal 2026-10-31; full-history walk-forward (2025-07-19..2026-10-30, pre_dam), 5 picks a day:
+# more P&L in all four zones, both on the 106 days with the 9:00 inputs (+$4.4 to +$13.3/day,
+# 90% interval clear of zero in OTTAWA and NIAGARA) and on the rest (+$5.5 to +$18.0/day); RT
+# MAE down $0.2-0.6 everywhere, still above RT = predicted DAM.
+RAMP_COLS = ["hours_from_sunset", "load_ramp_in", "load_ramp_out", "net_load_ramp_in", "net_load_ramp_out", "solar_ramp_out"]
+OTTAWA_LAT, OTTAWA_LON = 45.42, -75.70
+
+
+def sunset_hour(dates):
+    """Ottawa's sunset in market time (EST, fractional hours) for each date -- the NOAA
+    approximation, good to a few minutes, which is plenty for an hourly feature."""
+    doy = pd.DatetimeIndex(dates).dayofyear.to_numpy()
+    b = 2 * np.pi * (doy - 81) / 364
+    eqtime = 9.87 * np.sin(2 * b) - 7.53 * np.cos(b) - 1.5 * np.sin(b)  # minutes
+    decl = np.radians(23.44) * np.sin(2 * np.pi * (284 + doy) / 365)
+    lat = np.radians(OTTAWA_LAT)
+    cos_h = (np.sin(np.radians(-0.833)) - np.sin(lat) * np.sin(decl)) / (np.cos(lat) * np.cos(decl))
+    half_day = np.degrees(np.arccos(np.clip(cos_h, -1, 1))) / 15
+    noon = 12 + (-75 - OTTAWA_LON) / 15 - eqtime / 60  # EST's meridian is 75 W
+    return noon + half_day
+
+
 def build_grid(target_df, load_fc, wind_fc, weather, target_date, tz, supply=None):
     """One continuous hourly grid spanning history through target_date, with the target
     series ('lmp'), forecast inputs, supply-side inputs and calendar features merged in.
@@ -344,6 +370,19 @@ def build_grid(target_df, load_fc, wind_fc, weather, target_date, tz, supply=Non
     for col, period in [("hour", 24), ("dow", 7), ("month", 12)]:
         df[f"{col}_sin"] = np.sin(2 * np.pi * df[col] / period)
         df[f"{col}_cos"] = np.cos(2 * np.pi * df[col] / period)
+
+    # The evening ramp (RAMP_COLS): the mid-hour against sunset, and the forecast load, net load
+    # and solar one hour either side -- all forecasts, so the target day has them like history.
+    # The grid ends at the target day's HE24, which has no next hour: its ramp out repeats its
+    # ramp in (solar: 0, it's night), so the last hour isn't flagged as a missing input every day.
+    day = df["interval_start_local"].dt.normalize()
+    df["hours_from_sunset"] = df["hour"] + 0.5 - day.map(dict(zip(day.unique(), sunset_hour(day.unique().tz_localize(None)))))
+    for src, name in (("ontario", "load"), ("net_load", "net_load")):
+        if src in df.columns:
+            df[f"{name}_ramp_in"] = df[src] - df[src].shift(1)
+            df[f"{name}_ramp_out"] = (df[src].shift(-1) - df[src]).fillna(df[f"{name}_ramp_in"])
+    if "solar_forecast" in df.columns:
+        df["solar_ramp_out"] = (df["solar_forecast"].shift(-1) - df["solar_forecast"]).fillna(0)
 
     return df
 

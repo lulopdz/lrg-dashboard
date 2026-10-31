@@ -16,7 +16,7 @@ this script still runs without it, just with a weaker feature for tomorrow's hou
 Run manually: `python src/forecast/predict_rtm.py`. Writes data/rtm_forecast.csv and
 data/rtm_forecast_meta.json, which generar_web.py reads if present.
 """
-from forecast_common import DATA_DIR, SUPPLY_COLS, ZONE, load_price_series, parse_run_args, run_forecast
+from forecast_common import DATA_DIR, RAMP_COLS, SUPPLY_COLS, ZONE, load_price_series, parse_run_args, run_forecast
 
 FEATURE_COLS = [
     # raw `hour` sits alongside hour_sin/cos so a tree can split directly on hour of day
@@ -31,6 +31,7 @@ FEATURE_COLS = [
     # see forecast_common.add_lag_features for why not rtm_lag_1d
     "rtm_lag_2d", "rtm_lag_7d", "rtm_roll_7d", "rtm_roll_28d", "rtm_today_early_mean", "rtm_today_early_max",
     *SUPPLY_COLS,  # nuclear/gas/hydro availability, net load, capacity margin (forecast_common)
+    *RAMP_COLS,  # the evening ramp: hours from sunset, load/net-load/solar ramps (forecast_common)
 ]
 
 

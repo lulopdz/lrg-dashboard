@@ -30,7 +30,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import brier_score_loss
 
 from forecast_common import (
-    archive_forecast, DATA_DIR, SUPPLY_COLS, ZONE, add_lag_features, attach_reference_price, build_grid, dam_target_prediction,
+    archive_forecast, DATA_DIR, RAMP_COLS, SUPPLY_COLS, ZONE, add_lag_features, attach_reference_price, build_grid, dam_target_prediction,
     determine_target_date, forecast_file, information_cutoff, load_forecast_inputs, load_price_series,
     missing_inputs, parse_run_args, usable_feature_cols, zone_feature_cols,
 )
@@ -59,6 +59,7 @@ FEATURE_COLS = [
     "dam_price",
     "spread_lag_2d", "spread_lag_7d", "spread_roll_7d", "spread_roll_28d", "spread_today_early_mean", "spread_today_early_max",
     *SUPPLY_COLS,  # nuclear/gas/hydro availability, net load, capacity margin (forecast_common)
+    *RAMP_COLS,  # the evening ramp: hours from sunset, load/net-load/solar ramps (forecast_common)
 ]
 
 LOW_RT = 5.0  # $/MWh: RT collapsed to the floor -- the SBG regime (2026-09-21 HE4-5 was $0.5 / $0.0)
