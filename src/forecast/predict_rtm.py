@@ -38,11 +38,13 @@ FEATURE_COLS = [
 # The point model is fit on RT capped at +/-$300; the P10/P90 boosters still see every spike.
 # A handful of $1,000+ hours dragged the squared-error fit up on every hour that resembled them,
 # and the DART forecast (DAM - RT) turned sharply negative there: load picks in the wrong hours.
-# Chosen 2026-10-31 on a bench refitting every 14 days over the full history (2025-07-19..
-# 2026-10-30, four zones, 5 picks a day): every cap from $150 to $500 beat no cap, $300 by +16%
-# on the days with the 9:00 inputs and +18% on the rest; it touches ~2% of hours (RT > $300).
-# Median (L1) losses got the sign right more often (61-64%) and made less: they shrink the
-# forecast, and the picks rank hours by its size.
+# Chosen 2026-10-31: on a bench refitting every 14 days over the full history, every cap from
+# $150 to $500 beat no cap, and $300 is the middle of that plateau (it touches ~2% of hours).
+# Full-history walk-forward (2025-07-19..2026-10-30, pre_dam, 5 picks a day): +16% on the days
+# with the 9:00 inputs (better in 3 of 4 zones, TORONTO flat) and +24% on the rest (all four),
+# and the RT model now beats RT = predicted DAM in every zone (OTTAWA MAE $36.89 -> $34.00
+# against $34.92). Median (L1) losses got the sign right more often (61-64%) and made less:
+# they shrink the forecast, and the picks rank hours by its size.
 TARGET_CLIP = 300.0
 
 
