@@ -6,7 +6,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 
 - **Datos de Mercado**: Descarga automatizada de precios DAM y RTM directamente de IESO a través de la librería `gridstatusio`.
 - **Datos Climáticos y de Red**: Recopilación de pronósticos de demanda, generación eólica y clima mediante `openmeteo_requests`.
-- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h), en dos corridas por día: pre-DAM (9:00) y post-DAM (tarde). Cada día marca además las **3 horas a operar** (★ en la pestaña Spread Signal): del lado del pronóstico (gen si DART > 0, load si < 0), las de mayor |pronóstico| ≥ $5 donde el clasificador de P(DART > 0) coincide (`src/forecast/picks.py`); `scorecard.py` lleva su récord en vivo.
+- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h), en dos corridas por día: pre-DAM (9:00) y post-DAM (tarde). Cada día marca además las **5 horas a operar**, ordenadas de ★1 a ★5 para tomar las primeras 3, 4 o 5 según el colateral (★ en la pestaña Spread Signal): del lado del pronóstico (gen si DART > 0, load si < 0), las de mayor |pronóstico| ≥ $5 donde el clasificador de P(DART > 0) coincide (`src/forecast/picks.py`); `scorecard.py` lleva su récord en vivo.
 - **Trading Simulator**: Backtest interactivo -- elige una fecha pasada, ve solo la información disponible en ese momento, y evalúa tus apuestas Long/Flat/Short contra el spread real.
 - **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de `data/portfolio_positions.csv`, las posiciones extraídas de los reportes XML de IESO), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
 - **Visualización Interactiva**: Gráficos y tablas dinámicas generados con `plotly`, compilados en un formato HTML estático sin necesidad de un backend activo.
@@ -42,6 +42,7 @@ lrg-dashboard/
 │   │   ├── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py hace el pronóstico de DART y la señal (clasificadores)
 │   │   ├── run_forecasts.py <-- Corre los tres modelos para todas las zonas en un proceso (lo que llaman los workflows)
 │   │   ├── scorecard.py    <-- Puntúa el archivo contra lo que efectivamente se liquidó
+│   │   ├── strategies.py   <-- El archivo como estrategias a 1 MW (picks y baselines): P&L por día con IC90, peor hora, drawdown
 │   │   ├── walkforward.py  <-- Reconstruye días pasados con el código actual, para comparar cambios (--jobs N en paralelo)
 │   │   ├── vintages.py     <-- Archivo de entradas day-ahead (--rebuild lo reconstruye desde git)
 │   │   └── backfill_history.py <-- One-off ya ejecutado; no volver a correrlo (borra las columnas vintage/p10/p90)
@@ -80,6 +81,30 @@ python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand
 ```
 
 `scorecard.py` sin argumentos puntúa el archivo live (`data/*_history.csv`): lo que el modelo realmente dijo cada día contra lo que se liquidó. Es la cifra que muestra el dashboard como *Out-of-sample record*.
+
+**La métrica que decide es el P&L, no el MAE.** El dinero está en pocas horas: el 5% de horas con mayor |DART| concentra el 38% de todo el |DART|, y desde el 24/09/2026 las 10 peores horas de OTTAWA, todas HE17-19, convirtieron +$704 de *always gen* en −$1,471. Por eso `scorecard.py` puntúa además el archivo como estrategias a 1 MW (`src/forecast/strategies.py`, sección `strategies` del JSON), con P&L por día y su IC90 por bootstrap de días, P&L por hora operada, acierto, peor hora, peor día y drawdown:
+
+| Estrategia | Qué hace |
+|---|---|
+| `picks` | Los picks del día como se archivaron (`picks.py`): el signo del pronóstico de DART en sus 5 horas (3 antes del 31/10/2026) |
+| `picks_5` | La misma regla con 5 picks por día |
+| `top5_fc` | Las 5 horas de mayor \|pronóstico de DART\|, en su signo, sin filtros |
+| `follow_sign` | El signo del pronóstico de DART en todas las horas |
+| `always_gen` | Virtual gen en todas las horas |
+| `gen_ex_evening` | Virtual gen en todas menos HE17-19 |
+| `gen_top3_dam` | Virtual gen en las 3 horas de DAM más alto (pre-DAM: el pronosticado; post-DAM: el real) |
+
+`picks_5` y `top5_fc` son el punto de operación (el colateral permite 3 a 5 posiciones por día, y en el walk-forward completo 5 por día dieron ~50% más que 3 con un $/h parecido): un cambio a los modelos se juzga primero por ellas. Las cuatro últimas son la vara que un modelo tiene que superar. Cada una se reporta por segmento: `live` (lo publicado), `rebuilt_9am_inputs` (walk-forward con las entradas de las 9:00) y `rebuilt_latest_inputs` (walk-forward con las entradas más recientes: optimista).
+
+Para que la comparación cubra invierno y primavera, y no solo julio-octubre, `--all-days` reconstruye todo el histórico desde el 19/07/2025 (~20 min por zona con `--jobs 4` en 4 núcleos). Los días anteriores al archivo no tienen pronóstico DAM de las 9:00, así que se reconstruye también el DAM:
+
+```bash
+python src/forecast/walkforward.py --out /tmp/base --all-days --dam-source candidate --jobs 4 --zone OTTAWA   # repetir por zona
+python src/forecast/walkforward.py --out /tmp/cand --all-days --dam-source candidate --jobs 4 --zone OTTAWA
+python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand --zone all
+```
+
+Con `--compare`, cada estrategia muestra la diferencia de P&L por día entre candidato y base sobre los días en común, con su IC90 pareado; con `--zone all` cierra con un veredicto por estrategia. **Un cambio entra si mejora el P&L en al menos 3 de las 4 zonas** (`MIN_ZONES_BETTER` en `scorecard.py`): una zona sola puede ganar por suerte, y como el DART de las zonas se mueve junto (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), una mejora real debería verse en la mayoría.
 
 ## Configuración y Uso Local
 

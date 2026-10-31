@@ -169,7 +169,7 @@ def zone_panels(panels, tab_id, button_label):
             f'<div id="tab-{tab_id}" class="tab-content">{body}</div>')
 
 
-TOP_LABEL = 'top 3 (fc sign)'  # the day's picks (picks.py) in the archive record table
+TOP_LABEL = 'top 5 (fc sign)'  # the day's picks (picks.py) in the archive record table
 
 
 def build_signal_tab(tab_id='spread-signal'):
@@ -285,11 +285,12 @@ means the point forecast is slightly positive while calls like this one have pai
     <th class="num past-only">Actual DART</th><th class="c past-only">Result</th></tr></thead>
   <tbody id="{zid(f'{tab_id}-rows', zone)}"></tbody>
 </table>
-<p class="caveat"><strong>★ Top 3</strong>: the day's three hours to trade, each on the side of the DART forecast
-(<span class="pos">gen</span> above zero, <span class="neg">load</span> below): of the hours where the P(DART &gt; 0)
-classifier agrees with that side, the three with the largest forecast, none under $5 either way (so some days have
-fewer). On 62 days rebuilt walk-forward: $9–14/h at 1 MW, right 68–73% of the time in all four zones; live record in
-the archive table below. <strong>Result</strong> (past days): 1 MW P&amp;L on the forecast's side, dimmed outside the top 3.</p>
+<p class="caveat"><strong>★ Top 5</strong>: the day's five hours to trade, ranked ★1 to ★5 (with less collateral, trade
+from ★1 down), each on the side of the DART forecast (<span class="pos">gen</span> above zero, <span class="neg">load</span>
+below): of the hours where the P(DART &gt; 0) classifier agrees with that side, the five with the largest forecast, none
+under $5 either way (so some days have fewer). On 106 days rebuilt walk-forward with the 9:00 inputs: $4.8–7.9/h at 1 MW,
+right 64–72% of the time in all four zones; days before 2026-10-31 were archived with three. Live record in the archive
+table below. <strong>Result</strong> (past days): 1 MW P&amp;L on the forecast's side, dimmed outside the picks.</p>
 <details class="stats-block">
   <summary>Model record: last {eval_days} days out of sample and the archive</summary>
   <div class="stat-row">
@@ -1408,7 +1409,7 @@ function renderSignalTable(date) {{
     const r = Number(v.toFixed(d));  // sign of the rounded value, so -0.3 at 0 decimals reads $0, not $−0
     return '$' + (r < 0 ? '−' : r > 0 ? '+' : '') + Math.abs(r).toFixed(d);
   }};
-  // ★ = the day's top 3 (picks.py, archived per day), traded on the point forecast's sign. A past
+  // ★ = the day's picks (picks.py, archived per day), traded on the point forecast's sign. A past
   // day is scored on that same side for every hour; the picks in full, the rest dimmed.
   const rows = day.p_pos.map((p, i) => {{
     const rank = (day.pick || [])[i] || 0;
@@ -1472,7 +1473,7 @@ function applySignalDate() {{
   if (fc) restyleForecastCurve(fz('spread-signal-curve'), fc, date === latest);
   title.textContent = 'Spread Signal (DART = DA − RT) - ' + forecastZone + ' (' + date + ')';
   renderSignalTable(date);
-  // The day's top 3 (picks.py): outlined bars and one card each, scored once the day clears.
+  // The day's picks (picks.py): outlined bars and one card each, scored once the day clears.
   const pick = day.pick || new Array(24).fill(0);
   Plotly.restyle(divId, {{'marker.line.width': [pick.map(r => r ? 3 : 0)], 'marker.line.color': '#f1c40f'}}, [0]);
   const picked = H.map((h, i) => ({{h, i, r: pick[i]}})).filter(p => p.r && fc && fc.predicted[p.i] != null).sort((a, b) => a.r - b.r);

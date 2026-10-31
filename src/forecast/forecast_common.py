@@ -578,8 +578,11 @@ def dam_target_prediction(target_date, vintage, source_dir=DATA_DIR, zone=ZONE):
         h = h[h["target_date"] == str(target_date)]
         if len(h):
             return dict(zip(h["hour"], h["predicted_lmp"]))
+    # The latest run only if it is for this day: a reconstruction of a day the archive doesn't
+    # cover would otherwise be fed tomorrow's DAM forecast as its own.
     latest = source_dir / forecast_file("dam", "forecast", zone)
-    if latest.exists():
+    meta = source_dir / forecast_file("dam", "forecast_meta", zone)
+    if latest.exists() and meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("target_date") == str(target_date):
         f = pd.read_csv(latest)
         return dict(zip(f["hour"], f["predicted_lmp"]))
     return {}

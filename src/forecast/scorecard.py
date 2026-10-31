@@ -7,6 +7,7 @@ real 9:00 vintages the bot had (see forecast_common.archive_forecast).
     python src/forecast/scorecard.py                 # score data/*_history.csv, write data/forecast_scorecard.json
     python src/forecast/scorecard.py --dir A         # score histories in another folder (walkforward.py output)
     python src/forecast/scorecard.py --dir A --compare B   # side by side: A (baseline) vs B (candidate)
+    python src/forecast/scorecard.py --dir A --compare B --zone all   # every zone, and the verdict
 
 Every history row carries a `vintage` ("pre_dam": the 9:00 run, before tomorrow's DAM is
 published -- what a virtual bid at the 10:00 deadline can use; "post_dam": the afternoon
@@ -18,7 +19,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from forecast_common import DATA_DIR, ZONE, forecast_file, load_price_series, zone_suffix
+import strategies
+from forecast_common import DATA_DIR, DAYAHEAD_PATH, ZONE, ZONES, forecast_file, load_price_series, zone_suffix
 from picks import top_picks
 
 PREFIXES = ("dam", "rtm", "spread")
@@ -185,7 +187,7 @@ def score_signal(directory, actuals, zone=ZONE):
             m = tiers == tier
             rec["tiers"][tier] = {"n": int(m.sum()), "hit_rate": round(float(hit[m].mean() * 100), 1),
                                   "pnl": round(float(pnl[m].sum()), 0), "pnl_per_hour": round(float(pnl[m].mean()), 2)}
-        # The day's picks, traded on the forecast's sign (picks.py): the page's top 3 hours.
+        # The day's picks, traded on the forecast's sign (picks.py): the page's top hours.
         p = g[g["pick"] > 0]
         side = np.sign(p["fc"].values)
         ppnl = side * p["dart"].values
@@ -217,10 +219,48 @@ def score_signal(directory, actuals, zone=ZONE):
     return out
 
 
+def strategy_frame(directory, actuals, zone=ZONE):
+    """One row per (target_date, vintage, hour) with what the strategies need -- realized DART,
+    the run's DART forecast (fc), its picks, and dam_ref (pre_dam: the DAM forecast of the same
+    folder, else data/'s archive; post_dam: the real DAM) -- plus `segment`:
+      live                   what was actually published
+      rebuilt_9am_inputs     walk-forward, on a day forecast_inputs_dayahead.csv covers (the 9:00 inputs)
+      rebuilt_latest_inputs  walk-forward on the latest inputs (before 2026-07-10): optimistic
+    None if the folder has no signal archive."""
+    path = Path(directory) / forecast_file("spread", "signal_history", zone)
+    if not path.exists():
+        return None
+    s = pd.read_csv(path)
+    if "vintage" not in s.columns:
+        s["vintage"] = "pre_dam"
+    s = s.merge(actuals["spread"].rename(columns={"lmp": "dart"}), on=["target_date", "hour"], how="inner")
+    s = with_picks(s, directory, zone)
+    dam_hist = _load_history(directory, "dam", zone)
+    if dam_hist is None:
+        dam_hist = _load_history(DATA_DIR, "dam", zone)
+    dam_fc = dam_hist[dam_hist["vintage"] == "pre_dam"][["target_date", "hour", "predicted_lmp"]].rename(columns={"predicted_lmp": "dam_fc"})
+    s = s.merge(dam_fc, on=["target_date", "hour"], how="left")
+    s = s.merge(actuals["dam"].rename(columns={"lmp": "dam_real"}), on=["target_date", "hour"], how="left")
+    s["dam_ref"] = np.where(s["vintage"] == "post_dam", s["dam_real"], s["dam_fc"])
+    rebuilt = s["backfilled"].astype(str).str.lower().eq("true") if "backfilled" in s else pd.Series(False, index=s.index)
+    covered = set(pd.read_csv(DAYAHEAD_PATH, usecols=["target_date"])["target_date"]) if DAYAHEAD_PATH.exists() else set()
+    s["segment"] = np.where(~rebuilt, "live", np.where(s["target_date"].isin(covered), "rebuilt_9am_inputs", "rebuilt_latest_inputs"))
+    return s[["target_date", "vintage", "segment", "hour", "dart", "fc", "p_pos", "pick", "dam_ref"]]
+
+
+def score_strategies(frame):
+    """{vintage: {segment: {strategy: metrics}}} -- see strategies.py."""
+    if frame is None:
+        return None
+    return {vintage: {segment: strategies.score(g) for segment, g in v.groupby("segment")}
+            for vintage, v in frame.groupby("vintage")}
+
+
 def build(directory, zone=ZONE):
     actuals = _actuals(zone)
     return {"zone": zone, "directory": str(directory), "prices": score_prices(directory, actuals, zone),
-            "signal": score_signal(directory, actuals, zone)}
+            "signal": score_signal(directory, actuals, zone),
+            "strategies": score_strategies(strategy_frame(directory, actuals, zone))}
 
 
 def format_card(card, label):
@@ -252,6 +292,46 @@ def format_card(card, label):
             for k, w in r["watch"].items():
                 lines.append(f"       {k}: flagged {w['flagged_pct']}%  precision {w['precision']}%  recall {w['recall']}%"
                              f"  (base {w['base_rate']}%, {w['n_events']} events)")
+    for vintage, segments in (card.get("strategies") or {}).items():
+        lines.append(f"strategies {vintage} (1 MW):")
+        for segment, scores in segments.items():
+            lines.append(strategies.format_scores(scores, segment))
+    return "\n".join(lines)
+
+
+def compare_strategies(base_dir, cand_dir, zone=ZONE):
+    """{vintage: strategies.compare(...)} on the days both folders have, all segments pooled
+    (a folder holds one row set per day and vintage)."""
+    actuals = _actuals(zone)
+    b, c = strategy_frame(base_dir, actuals, zone), strategy_frame(cand_dir, actuals, zone)
+    if b is None or c is None:
+        return {}
+    return {v: strategies.compare(b[b["vintage"] == v], c[c["vintage"] == v])
+            for v in sorted(set(b["vintage"]) & set(c["vintage"]))}
+
+
+# A change ships when the strategy it targets makes more money in at least this many zones
+# (README, "Evaluar un cambio"): one zone can win by luck, and the zones' DART moves together
+# (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), so a real improvement should show in most.
+MIN_ZONES_BETTER = 3
+
+
+def verdict(per_zone):
+    """per_zone: {zone: compare_strategies(...)}. One line per vintage and strategy: in how many
+    zones the candidate made more, and in how many its 90% interval clears zero."""
+    lines = ["--- veredicto (candidato vs base, P&L por día a 1 MW) ---"]
+    vintages = sorted({v for d in per_zone.values() for v in d})
+    for v in vintages:
+        for name in strategies.STRATEGIES:
+            rows = {z: d[v][name] for z, d in per_zone.items() if v in d and name in d[v]}
+            if not rows:
+                continue
+            better = [z for z, r in rows.items() if r["diff_per_day"] > 0]
+            sure = [z for z, r in rows.items() if r["diff_per_day_ci90"] and r["diff_per_day_ci90"][0] > 0]
+            ok = "MEJORA" if len(better) >= min(MIN_ZONES_BETTER, len(rows)) else "no mejora"
+            deltas = ", ".join(f"{z} {r['diff_per_day']:+.2f}" for z, r in rows.items())  # no nested quotes: CI runs 3.11
+            lines.append(f"{v:8s} {name:15s} {ok:9s} mejor en {len(better)}/{len(rows)} zonas"
+                         f" ({', '.join(better) or '-'}), IC90 > 0 en {len(sure)} | Δ/día: {deltas}")
     return "\n".join(lines)
 
 
@@ -270,16 +350,25 @@ def main():
     ap.add_argument("--dir", default=str(DATA_DIR), help="folder holding *_forecast_history.csv / spread_signal_history.csv")
     ap.add_argument("--compare", default=None, help="second folder (candidate) to print next to --dir")
     ap.add_argument("--json", default=None, help="where to write the JSON (default: data/forecast_scorecard{_ZONE}.json when scoring data/)")
-    ap.add_argument("--zone", default=ZONE)
+    ap.add_argument("--zone", default=ZONE, help=f"a zone, or 'all' for {', '.join(ZONES)} (each folder holds every zone's files)")
     args = ap.parse_args()
 
-    card = build(args.dir, args.zone)
-    print(format_card(card, f"baseline: {args.dir} [{args.zone}]"))
-    if args.compare:
-        print(format_card(build(args.compare, args.zone), f"candidate: {args.compare} [{args.zone}]"))
-    json_path = args.json or (default_json_path(args.zone) if Path(args.dir).resolve() == DATA_DIR.resolve() else None)
-    if json_path:
-        save(card, json_path)
+    zones = ZONES if args.zone == "all" else (args.zone,)
+    per_zone = {}
+    for zone in zones:
+        card = build(args.dir, zone)
+        print(format_card(card, f"baseline: {args.dir} [{zone}]"))
+        if args.compare:
+            print(format_card(build(args.compare, zone), f"candidate: {args.compare} [{zone}]"))
+            per_zone[zone] = compare_strategies(args.dir, args.compare, zone)
+            for v, diffs in per_zone[zone].items():
+                print(strategies.format_compare(diffs, f"candidate - baseline, {v} [{zone}]"))
+        json_path = (args.json if len(zones) == 1 else None) or (
+            default_json_path(zone) if Path(args.dir).resolve() == DATA_DIR.resolve() else None)
+        if json_path:
+            save(card, json_path)
+    if args.compare and len(zones) > 1:
+        print(verdict(per_zone))
 
 
 if __name__ == "__main__":

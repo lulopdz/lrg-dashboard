@@ -12,7 +12,11 @@ import numpy as np
 # of the time in all four zones, against $2-4/h trading every hour, and the only ranking positive
 # in every zone after 09-20. MIN_FC drops the near-zero hours a gen-leaning classifier leaves to
 # pick from on some days: the same total P&L on ~20% fewer hours (no floor: $8-11/h, 65-71%).
-N_PICKS = 3
+# Five, not three, since 2026-10-31: collateral allows 3 to 5 positions a day, and over the
+# full-history walk-forward (2025-07-19..2026-10-30, four zones) the fourth and fifth picks
+# added ~50% to the total at about the same $/h; ranked, so a day with less collateral trades
+# the first three (strategies.py scores both).
+N_PICKS = 5
 MIN_FC = 5.0  # $/MWh
 
 
