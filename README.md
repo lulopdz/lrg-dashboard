@@ -6,7 +6,7 @@ Este proyecto genera un dashboard interactivo web, un simulador y un registro de
 
 - **Datos de Mercado**: Descarga automatizada de precios DAM y RTM directamente de IESO a través de la librería `gridstatusio`.
 - **Datos Climáticos y de Red**: Recopilación de pronósticos de demanda, generación eólica y clima mediante `openmeteo_requests`.
-- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h), en dos corridas por día: pre-DAM (9:00) y post-DAM (tarde). Cada día marca además las **3 horas a operar** (★ en la pestaña Spread Signal): del lado del pronóstico (gen si DART > 0, load si < 0), las de mayor |pronóstico| ≥ $5 donde el clasificador de P(DART > 0) coincide (`src/forecast/picks.py`); `scorecard.py` lleva su récord en vivo.
+- **Modelos Predictivos (Machine Learning)**: `scikit-learn` para predecir precios DAM y RTM del día siguiente, y para el spread, siempre como **DART = DA − RT**, el pronóstico puntual con sus dos días similares más una **señal** por hora: P(DART > 0), P(DART > +$40) y P(DART < −$40) contra sus tasas base, con nivel de convicción ganado en backtest (acierto y $/h), en dos corridas por día: pre-DAM (9:00) y post-DAM (tarde). Cada día marca además las **5 horas a operar**, ordenadas de ★1 a ★5 para tomar las primeras 3, 4 o 5 según el colateral (★ en la pestaña Spread Signal): del lado del pronóstico (gen si DART > 0, load si < 0), las de mayor |pronóstico| ≥ $5 donde el clasificador de P(DART > 0) coincide (`src/forecast/picks.py`); `scorecard.py` lleva su récord en vivo.
 - **Trading Simulator**: Backtest interactivo -- elige una fecha pasada, ve solo la información disponible en ese momento, y evalúa tus apuestas Long/Flat/Short contra el spread real.
 - **Portfolio**: Registro mensual de las participaciones reales enviadas a IESO (a partir de `data/portfolio_positions.csv`, las posiciones extraídas de los reportes XML de IESO), con el PnL de cada caso y un resumen Ganadas/Perdidas/Sin exposición.
 - **Visualización Interactiva**: Gráficos y tablas dinámicas generados con `plotly`, compilados en un formato HTML estático sin necesidad de un backend activo.
@@ -86,7 +86,7 @@ python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand
 
 | Estrategia | Qué hace |
 |---|---|
-| `picks` | Los picks del día como se operan (`picks.py`): el signo del pronóstico de DART en sus 3 horas |
+| `picks` | Los picks del día como se archivaron (`picks.py`): el signo del pronóstico de DART en sus 5 horas (3 antes del 31/10/2026) |
 | `picks_5` | La misma regla con 5 picks por día |
 | `top5_fc` | Las 5 horas de mayor \|pronóstico de DART\|, en su signo, sin filtros |
 | `follow_sign` | El signo del pronóstico de DART en todas las horas |

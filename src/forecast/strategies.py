@@ -8,8 +8,8 @@ money is in a few hours -- the 5% largest |DART| hours carry 38% of all |DART| (
 Every strategy maps an hour to a side: +1 virtual gen (earns DART), -1 virtual load (earns
 -DART), 0 flat. The fixed baselines are the bar a model has to clear:
 
-    picks           the day's picks as traded (picks.py): the DART forecast's sign, top 3 hours
-    picks_5         the same rule with 5 picks a day
+    picks           the day's picks as archived (picks.py): the DART forecast's sign, top 5 hours (3 before 2026-10-31)
+    picks_5         the same rule with 5 picks a day, recomputed for every day
     top5_fc         the 5 hours with the largest |DART forecast|, on its sign, no filters
     follow_sign     the DART forecast's sign, every hour
     always_gen      gen every hour

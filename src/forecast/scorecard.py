@@ -187,7 +187,7 @@ def score_signal(directory, actuals, zone=ZONE):
             m = tiers == tier
             rec["tiers"][tier] = {"n": int(m.sum()), "hit_rate": round(float(hit[m].mean() * 100), 1),
                                   "pnl": round(float(pnl[m].sum()), 0), "pnl_per_hour": round(float(pnl[m].mean()), 2)}
-        # The day's picks, traded on the forecast's sign (picks.py): the page's top 3 hours.
+        # The day's picks, traded on the forecast's sign (picks.py): the page's top hours.
         p = g[g["pick"] > 0]
         side = np.sign(p["fc"].values)
         ppnl = side * p["dart"].values
