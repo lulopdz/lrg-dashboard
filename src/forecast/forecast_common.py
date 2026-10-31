@@ -429,11 +429,18 @@ def usable_feature_cols(df, feature_cols):
     return [c for c in feature_cols if df[c].notna().any()]
 
 
-def backtest(df_hist, feature_cols, naive_col, model_params=None):
+def training_target(df, target_clip=None):
+    """The series a point model is fit on: 'lmp', capped at +/-target_clip when given. Only
+    the fit sees the cap; every error is still scored against the real price."""
+    return df["lmp"] if target_clip is None else df["lmp"].clip(-target_clip, target_clip)
+
+
+def backtest(df_hist, feature_cols, naive_col, model_params=None, target_clip=None):
     """Trailing holdout: honest accuracy vs. a naive 'same hour last week' baseline, plus
     a per-hour-of-day error breakdown (which hours the model has historically nailed vs.
-    missed) used to recommend the hour we're most confident in. model_params must match what
-    fit_final_model uses, or the reported accuracy won't describe the shipped model."""
+    missed) used to recommend the hour we're most confident in. model_params and target_clip
+    must match what fit_final_model uses, or the reported accuracy won't describe the shipped
+    model."""
     cutoff = df_hist["interval_start_local"].max() - pd.Timedelta(days=BACKTEST_DAYS)
     train = df_hist[df_hist["interval_start_local"] < cutoff]
     test = df_hist[df_hist["interval_start_local"] >= cutoff]
@@ -442,7 +449,7 @@ def backtest(df_hist, feature_cols, naive_col, model_params=None):
 
     usable_cols = usable_feature_cols(train, feature_cols)
     model = HistGradientBoostingRegressor(random_state=0, **(model_params or {}))
-    model.fit(train[usable_cols], train["lmp"])
+    model.fit(train[usable_cols], training_target(train, target_clip))
     pred = model.predict(test[usable_cols])
 
     naive = test[naive_col].fillna(train["lmp"].mean())
@@ -574,12 +581,12 @@ def fit_quantile_model(df_hist, usable_cols, quantile, model_params=None):
     return model
 
 
-def fit_final_model(df_hist, feature_cols, model_params=None):
+def fit_final_model(df_hist, feature_cols, model_params=None, target_clip=None):
     """Returns (model, usable_cols) -- usable_cols is feature_cols minus anything entirely
     missing in df_hist; predict() calls must select the same columns, not the original list."""
     usable_cols = usable_feature_cols(df_hist, feature_cols)
     model = HistGradientBoostingRegressor(random_state=0, **(model_params or {}))
-    model.fit(df_hist[usable_cols], df_hist["lmp"])
+    model.fit(df_hist[usable_cols], training_target(df_hist, target_clip))
     return model, usable_cols
 
 
@@ -672,7 +679,7 @@ def find_similar_day(df, df_hist, target_date, n=2):
 
 def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
                  model_params=None, vintage="pre_dam", target_date=None, out_dir=DATA_DIR,
-                 dam_forecast_dir=DATA_DIR, backtest_enabled=True, zone=ZONE):
+                 dam_forecast_dir=DATA_DIR, backtest_enabled=True, zone=ZONE, target_clip=None):
     """End-to-end driver shared by predict_dam.py/predict_rtm.py/predict_spread.py: builds the
     hourly grid, optionally attaches the same-hour DAM price as a feature, backtests, fits the
     final model, predicts the target day, finds a similar-day analog, and writes
@@ -728,7 +735,8 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
         print("Note: no DAM forecast for the target day -- run predict_dam.py first for a same-hour DAM "
               "feature; the target hours will have no DAM info this run.")
 
-    metrics = (backtest(df_hist, feature_cols, naive_col=f"{prefix}_lag_7d", model_params=model_params)
+    metrics = (backtest(df_hist, feature_cols, naive_col=f"{prefix}_lag_7d", model_params=model_params,
+                        target_clip=target_clip)
                if backtest_enabled else None)
     if metrics:
         print(f"Backtest (last {BACKTEST_DAYS}d): model MAE ${metrics['model_mae']:.2f} vs. "
@@ -745,7 +753,7 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
               f"({track_record['win_rate']:.0f}% win rate), ${track_record['total_pnl']:.0f} of "
               f"${track_record['optimal_pnl']:.0f} possible ({track_record['pct_of_optimal']:.0f}% of optimal)")
 
-    model, usable_cols = fit_final_model(df_hist, feature_cols, model_params=model_params)
+    model, usable_cols = fit_final_model(df_hist, feature_cols, model_params=model_params, target_clip=target_clip)
     missing_features, missing_cols = missing_inputs(df_target, feature_cols)
     df_target["predicted_lmp"] = model.predict(df_target[usable_cols])
     for q in QUANTILES:
