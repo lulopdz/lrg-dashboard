@@ -22,11 +22,20 @@ MIN_FC = 5.0  # $/MWh
 
 def top_picks(pred, p_pos, n=N_PICKS, min_fc=MIN_FC):
     """Rank (1..n) of each hour among the day's picks, 0 for the rest. pred: DART forecast per
-    hour; p_pos: P(DART > 0) per hour. Hours with no forecast, a forecast under min_fc either
-    way, or where the two disagree are out, so a day can have fewer than n picks, or none."""
+    hour; p_pos: P(DART > 0) per hour. Hours with no forecast or a forecast under min_fc either
+    way are out, and so are load hours (pred < 0) the classifier doesn't side with, so a day can
+    have fewer than n picks, or none.
+
+    The classifier's veto applies to load only since 2026-10-31. On gen hours it was turning down
+    good trades: dropping it there made more in all four zones over the full-history walk-forward
+    (2025-07-19..2026-10-30, 5 picks a day, +$0.8 to +$6.0 per day; OTTAWA's 90% interval clear
+    of zero). Load picks keep it: they pay ~$1.3/h against gen's ~$7.2/h, and none of the
+    stricter load rules tried (|forecast|, P(DART > 0) or P(DART < -40) thresholds) beat it in
+    three of four zones."""
     pred, p_pos = np.asarray(pred, dtype=float), np.asarray(p_pos, dtype=float)
-    agree = (np.abs(np.nan_to_num(pred)) >= min_fc) & (np.sign(pred) == np.sign(p_pos - 0.5))
-    order = [i for i in np.argsort(-np.abs(np.nan_to_num(pred))) if agree[i]][:n]
+    agree = np.sign(pred) == np.sign(p_pos - 0.5)
+    eligible = (np.abs(np.nan_to_num(pred)) >= min_fc) & ((pred > 0) | agree)
+    order = [i for i in np.argsort(-np.abs(np.nan_to_num(pred))) if eligible[i]][:n]
     rank = np.zeros(len(pred), dtype=int)
     rank[order] = np.arange(1, len(order) + 1)
     return rank
