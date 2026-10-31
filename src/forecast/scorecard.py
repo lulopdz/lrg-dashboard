@@ -245,7 +245,7 @@ def strategy_frame(directory, actuals, zone=ZONE):
     rebuilt = s["backfilled"].astype(str).str.lower().eq("true") if "backfilled" in s else pd.Series(False, index=s.index)
     covered = set(pd.read_csv(DAYAHEAD_PATH, usecols=["target_date"])["target_date"]) if DAYAHEAD_PATH.exists() else set()
     s["segment"] = np.where(~rebuilt, "live", np.where(s["target_date"].isin(covered), "rebuilt_9am_inputs", "rebuilt_latest_inputs"))
-    return s[["target_date", "vintage", "segment", "hour", "dart", "fc", "pick", "dam_ref"]]
+    return s[["target_date", "vintage", "segment", "hour", "dart", "fc", "p_pos", "pick", "dam_ref"]]
 
 
 def score_strategies(frame):

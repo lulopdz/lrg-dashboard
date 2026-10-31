@@ -87,12 +87,14 @@ python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand
 | Estrategia | Qué hace |
 |---|---|
 | `picks` | Los picks del día como se operan (`picks.py`): el signo del pronóstico de DART en sus 3 horas |
+| `picks_5` | La misma regla con 5 picks por día |
+| `top5_fc` | Las 5 horas de mayor \|pronóstico de DART\|, en su signo, sin filtros |
 | `follow_sign` | El signo del pronóstico de DART en todas las horas |
 | `always_gen` | Virtual gen en todas las horas |
 | `gen_ex_evening` | Virtual gen en todas menos HE17-19 |
 | `gen_top3_dam` | Virtual gen en las 3 horas de DAM más alto (pre-DAM: el pronosticado; post-DAM: el real) |
 
-Las cuatro últimas son la vara que un modelo tiene que superar. Cada una se reporta por segmento: `live` (lo publicado), `rebuilt_9am_inputs` (walk-forward con las entradas de las 9:00) y `rebuilt_latest_inputs` (walk-forward con las entradas más recientes: optimista).
+`picks_5` y `top5_fc` son el punto de operación (el colateral permite 3 a 5 posiciones por día, y en el walk-forward completo 5 por día dieron ~50% más que 3 con un $/h parecido): un cambio a los modelos se juzga primero por ellas. Las cuatro últimas son la vara que un modelo tiene que superar. Cada una se reporta por segmento: `live` (lo publicado), `rebuilt_9am_inputs` (walk-forward con las entradas de las 9:00) y `rebuilt_latest_inputs` (walk-forward con las entradas más recientes: optimista).
 
 Para que la comparación cubra invierno y primavera, y no solo julio-octubre, `--all-days` reconstruye todo el histórico desde el 19/07/2025 (~20 min por zona con `--jobs 4` en 4 núcleos). Los días anteriores al archivo no tienen pronóstico DAM de las 9:00, así que se reconstruye también el DAM:
 

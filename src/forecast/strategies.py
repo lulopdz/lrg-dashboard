@@ -9,16 +9,24 @@ Every strategy maps an hour to a side: +1 virtual gen (earns DART), -1 virtual l
 -DART), 0 flat. The fixed baselines are the bar a model has to clear:
 
     picks           the day's picks as traded (picks.py): the DART forecast's sign, top 3 hours
+    picks_5         the same rule with 5 picks a day
+    top5_fc         the 5 hours with the largest |DART forecast|, on its sign, no filters
     follow_sign     the DART forecast's sign, every hour
     always_gen      gen every hour
     gen_ex_evening  gen every hour but HE17-19, where the autumn RT spikes sit
     gen_top3_dam    gen in the 3 hours with the highest DAM (pre_dam: the DAM forecast, post_dam: the real DAM)
+
+picks_5 and top5_fc are the operating point: collateral allows 3 to 5 positions a day, and over
+the full-history walk-forward (2025-07-19..2026-10-30, four zones) 5 a day made ~50% more than 3
+at about the same $/h, so a change to the models is judged on those two first.
 
 The P&L is resampled by day (bootstrap) for a 90% interval: hours within a day move together,
 so resampling hours would claim far more certainty than ~40 days carry. compare() does the same
 on the per-day difference between two runs over their common days."""
 import numpy as np
 import pandas as pd
+
+from picks import top_picks
 
 EVENING_HOURS = (17, 18, 19)  # hour-ending
 N_BOOT = 2000
@@ -29,8 +37,14 @@ def _sides(g):
     fc = g["fc"].to_numpy(dtype=float)
     hour = g["hour"].to_numpy()
     dam_rank = g.groupby("target_date")["dam_ref"].rank(ascending=False, method="first").to_numpy()
+    fc_rank = g["fc"].abs().groupby(g["target_date"]).rank(ascending=False, method="first").to_numpy()
+    picks_5 = np.zeros(len(g))
+    for idx in g.groupby("target_date").indices.values():
+        picks_5[idx] = top_picks(fc[idx], g["p_pos"].to_numpy(dtype=float)[idx], n=5)
     return {
         "picks": np.where(g["pick"].to_numpy() > 0, np.sign(np.nan_to_num(fc)), 0.0),
+        "picks_5": np.where(picks_5 > 0, np.sign(np.nan_to_num(fc)), 0.0),
+        "top5_fc": np.where(fc_rank <= 5, np.sign(np.nan_to_num(fc)), 0.0),
         "follow_sign": np.sign(np.nan_to_num(fc)),
         "always_gen": np.ones(len(g)),
         "gen_ex_evening": np.where(np.isin(hour, EVENING_HOURS), 0.0, 1.0),
@@ -38,7 +52,7 @@ def _sides(g):
     }
 
 
-STRATEGIES = ("picks", "follow_sign", "always_gen", "gen_ex_evening", "gen_top3_dam")
+STRATEGIES = ("picks", "picks_5", "top5_fc", "follow_sign", "always_gen", "gen_ex_evening", "gen_top3_dam")
 
 
 def daily_pnl(frame):
@@ -71,7 +85,7 @@ def _max_drawdown(daily):
 
 def score(frame):
     """{strategy: metrics} for one record. frame: one row per (target_date, hour) with dart, fc,
-    pick and dam_ref."""
+    p_pos, pick and dam_ref."""
     g = frame.sort_values(["target_date", "hour"]).reset_index(drop=True)
     sides = _sides(g)
     dart = g["dart"].to_numpy(dtype=float)
