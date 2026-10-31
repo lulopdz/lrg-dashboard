@@ -329,9 +329,9 @@ def verdict(per_zone):
             better = [z for z, r in rows.items() if r["diff_per_day"] > 0]
             sure = [z for z, r in rows.items() if r["diff_per_day_ci90"] and r["diff_per_day_ci90"][0] > 0]
             ok = "MEJORA" if len(better) >= min(MIN_ZONES_BETTER, len(rows)) else "no mejora"
+            deltas = ", ".join(f"{z} {r['diff_per_day']:+.2f}" for z, r in rows.items())  # no nested quotes: CI runs 3.11
             lines.append(f"{v:8s} {name:15s} {ok:9s} mejor en {len(better)}/{len(rows)} zonas"
-                         f" ({', '.join(better) or '-'}), IC90 > 0 en {len(sure)}"
-                         f" | Δ/día: {', '.join(f'{z} {r['diff_per_day']:+.2f}' for z, r in rows.items())}")
+                         f" ({', '.join(better) or '-'}), IC90 > 0 en {len(sure)} | Δ/día: {deltas}")
     return "\n".join(lines)
 
 
