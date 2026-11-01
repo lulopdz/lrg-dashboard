@@ -44,6 +44,7 @@ lrg-dashboard/
 │   │   ├── scorecard.py    <-- Puntúa el archivo contra lo que efectivamente se liquidó
 │   │   ├── strategies.py   <-- El archivo como estrategias a 1 MW (picks y baselines): P&L por día con IC90, peor hora, drawdown
 │   │   ├── walkforward.py  <-- Reconstruye días pasados con el código actual, para comparar cambios (--jobs N en paralelo)
+│   │   ├── bench.py        <-- Banco rápido: prueba variantes del pronóstico de DART en minutos, contra el modelo en producción
 │   │   ├── vintages.py     <-- Archivo de entradas day-ahead (--rebuild lo reconstruye desde git)
 │   │   └── backfill_history.py <-- One-off ya ejecutado; no volver a correrlo (borra las columnas vintage/p10/p90)
 │   └── web/                <-- Construye el HTML que se publica en docs/
@@ -103,6 +104,15 @@ python src/forecast/walkforward.py --out /tmp/base --all-days --dam-source candi
 python src/forecast/walkforward.py --out /tmp/cand --all-days --dam-source candidate --jobs 4 --zone OTTAWA
 python src/forecast/scorecard.py --dir /tmp/base --compare /tmp/cand --zone all
 ```
+
+**Antes del walk-forward, el banco rápido** (`src/forecast/bench.py`). Ajusta los modelos cada 14 días en lugar de cada día, así que prueba una idea en ~2–3 minutos para las cuatro zonas en lugar de ~80. Compara cada variante contra el modelo en producción (`current`) con el mismo veredicto de 3 de 4 zonas:
+
+```bash
+python src/forecast/bench.py --variants rt_clip:200,direct_l2           # variantes ya definidas
+python src/forecast/bench.py --variants rt_clip:200 --zones OTTAWA      # una zona, ~1 min
+```
+
+Calibrado contra el walk-forward real (2026-11-01): mismos totales (−10% con las entradas de las 9:00, −0.1% en el resto), pero una zona sola puede moverse ±30% solo por la frecuencia de reajuste. Sirve para descartar ideas rápido; la que gane con claridad se confirma con el walk-forward completo antes de entrar a producción. Para probar una idea nueva se agrega una función al diccionario `VARIANTS` del archivo (instrucciones en su docstring).
 
 Con `--compare`, cada estrategia muestra la diferencia de P&L por día entre candidato y base sobre los días en común, con su IC90 pareado; con `--zone all` cierra con un veredicto por estrategia. **Un cambio entra si mejora el P&L en al menos 3 de las 4 zonas** (`MIN_ZONES_BETTER` en `scorecard.py`): una zona sola puede ganar por suerte, y como el DART de las zonas se mueve junto (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), una mejora real debería verse en la mayoría.
 
