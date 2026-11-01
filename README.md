@@ -2,6 +2,8 @@
 
 Este proyecto genera un dashboard interactivo web, un simulador y un registro de operaciones (portfolio) para analizar, predecir y hacer seguimiento de resultados en el mercado eléctrico de Ontario (IESO). El sistema monitorea el **Day-Ahead Market (DAM)**, el **Real-Time Market (RTM)**, el *spread* entre ambos, además de recopilar y visualizar datos climáticos, de demanda y de generación eólica.
 
+Próximos pasos del plan de mejora del pronóstico, con prompts listos para sesiones futuras: [`PROMPTS.md`](PROMPTS.md).
+
 ## Características
 
 - **Datos de Mercado**: Descarga automatizada de precios DAM y RTM directamente de IESO a través de la librería `gridstatusio`.
