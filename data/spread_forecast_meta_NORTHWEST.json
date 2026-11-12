@@ -1,13 +1,13 @@
 {
   "zone": "NORTHWEST",
-  "target_date": "2026-11-11",
+  "target_date": "2026-11-12",
   "vintage": "post_dam",
   "reconstruction": false,
-  "generated_at": "2026-11-11T00:07:24.028063+00:00",
+  "generated_at": "2026-11-12T01:36:14.307030+00:00",
   "method": "real DAM - RT forecast",
-  "rtm_generated_at": "2026-11-11T00:07:23.910154+00:00",
+  "rtm_generated_at": "2026-11-12T01:36:14.214152+00:00",
   "missing_input_hours": 0,
-  "analog_date": "2025-10-24",
-  "analog_date_2": "2025-11-14",
+  "analog_date": "2025-11-13",
+  "analog_date_2": "2025-11-25",
   "backtest": null
 }
