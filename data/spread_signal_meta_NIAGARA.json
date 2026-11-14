@@ -1,14 +1,14 @@
 {
   "zone": "NIAGARA",
-  "target_date": "2026-11-13",
+  "target_date": "2026-11-14",
   "vintage": "post_dam",
-  "generated_at": "2026-11-13T00:36:09.996561+00:00",
+  "generated_at": "2026-11-14T00:24:11.536031+00:00",
   "backfilled": false,
   "big_threshold": 40,
   "watch_lift": 2.0,
   "base_rates": {
     "pos": 64.2,
-    "big_pos": 8.7,
+    "big_pos": 8.6,
     "big_neg": 8.4,
     "low_rt": 3.0
   },
@@ -18,105 +18,105 @@
     "n_hours": 721,
     "bins_hours": 1441,
     "base_rate_pos": 64.2,
-    "hit_rate_all": 41.3,
-    "pnl_all": -1194.23,
-    "n_rated": 164,
-    "hit_rate_rated": 53.0,
-    "pnl_rated": 282.56,
+    "hit_rate_all": 41.7,
+    "pnl_all": -1089.38,
+    "n_rated": 137,
+    "hit_rate_rated": 50.4,
+    "pnl_rated": 130.36,
     "n_high": 0,
     "hit_rate_high": null,
     "pnl_high": 0.0,
-    "optimal_pnl": 10290.48,
-    "always_gen_pnl": 1194.23,
-    "always_load_pnl": -1194.23,
+    "optimal_pnl": 10460.9,
+    "always_gen_pnl": 1089.38,
+    "always_load_pnl": -1089.38,
     "brier_skill": {
-      "pos": 0.047,
-      "big_pos": 0.177,
-      "big_neg": 0.015,
-      "low_rt": 0.036
+      "pos": 0.04,
+      "big_pos": 0.089,
+      "big_neg": 0.008,
+      "low_rt": 0.039
     },
     "bins": [
       {
         "lo": 0.0,
         "hi": 0.35,
-        "n": 23,
+        "n": 16,
         "call": "DART < 0",
-        "e_dart": -6.81,
-        "se": 3.38,
-        "hit_rate": 60.9,
-        "pnl": 156.67,
-        "edge": 6.81,
+        "e_dart": -6.15,
+        "se": 3.28,
+        "hit_rate": 68.8,
+        "pnl": 98.33,
+        "edge": 6.15,
         "tier": "low"
       },
       {
         "lo": 0.35,
         "hi": 0.5,
-        "n": 265,
+        "n": 231,
         "call": "DART < 0",
-        "e_dart": -2.73,
-        "se": 1.05,
-        "hit_rate": 54.7,
-        "pnl": 723.97,
-        "edge": 2.73,
+        "e_dart": -2.13,
+        "se": 0.95,
+        "hit_rate": 54.1,
+        "pnl": 491.9,
+        "edge": 2.13,
         "tier": "medium"
       },
       {
         "lo": 0.5,
         "hi": 0.65,
         "n": 581,
-        "call": "DART > 0",
-        "e_dart": 0.61,
-        "se": 0.65,
-        "hit_rate": 55.9,
-        "pnl": 355.07,
-        "edge": 0.61,
+        "call": "DART < 0",
+        "e_dart": -0.58,
+        "se": 0.76,
+        "hit_rate": 46.8,
+        "pnl": 338.13,
+        "edge": 0.58,
         "tier": "low"
       },
       {
         "lo": 0.65,
         "hi": 0.8,
-        "n": 401,
-        "call": "DART < 0",
-        "e_dart": -0.8,
-        "se": 1.8,
-        "hit_rate": 39.2,
-        "pnl": 321.68,
-        "edge": 0.8,
+        "n": 411,
+        "call": "DART > 0",
+        "e_dart": 0.06,
+        "se": 1.7,
+        "hit_rate": 60.1,
+        "pnl": 26.63,
+        "edge": 0.06,
         "tier": "low"
       },
       {
         "lo": 0.8,
         "hi": 1.0,
-        "n": 171,
-        "call": "DART > 0",
-        "e_dart": 0.14,
-        "se": 6.44,
-        "hit_rate": 76.0,
-        "pnl": 24.17,
-        "edge": 0.14,
+        "n": 202,
+        "call": "DART < 0",
+        "e_dart": -0.08,
+        "se": 5.46,
+        "hit_rate": 26.7,
+        "pnl": 16.76,
+        "edge": 0.08,
         "tier": "low"
       }
     ],
     "watch": {
       "big_pos": {
-        "threshold": 0.3707,
-        "n_flagged": 18,
-        "precision": 27.8,
-        "recall": 38.5,
-        "base_rate": 1.8
+        "threshold": 0.4335,
+        "n_flagged": 24,
+        "precision": 20.8,
+        "recall": 35.7,
+        "base_rate": 1.9
       },
       "big_neg": {
-        "threshold": 0.1689,
-        "n_flagged": 53,
-        "precision": 5.7,
-        "recall": 16.7,
-        "base_rate": 2.5
+        "threshold": 0.1687,
+        "n_flagged": 62,
+        "precision": 4.8,
+        "recall": 15.0,
+        "base_rate": 2.8
       },
       "low_rt": {
-        "threshold": 0.033,
-        "n_flagged": 7,
-        "precision": 14.3,
-        "recall": 11.1,
+        "threshold": 0.0422,
+        "n_flagged": 1,
+        "precision": 0.0,
+        "recall": 0.0,
         "base_rate": 1.2
       }
     }
@@ -124,29 +124,9 @@
   "top_hours": [],
   "picks": [
     {
-      "hour": 19,
-      "side": "gen",
-      "dart_forecast": 31.02
-    },
-    {
       "hour": 18,
       "side": "gen",
-      "dart_forecast": 28.84
-    },
-    {
-      "hour": 14,
-      "side": "gen",
-      "dart_forecast": 16.07
-    },
-    {
-      "hour": 8,
-      "side": "gen",
-      "dart_forecast": 12.53
-    },
-    {
-      "hour": 13,
-      "side": "gen",
-      "dart_forecast": 11.44
+      "dart_forecast": 6.22
     }
   ],
   "missing_input_hours": 0,
