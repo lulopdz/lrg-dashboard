@@ -59,12 +59,20 @@ REVISION_DAYS = (1, 2, 3)  # compare against the runs from 1, 2 and 3 days earli
 
 
 def _get(url, params):
-    r = requests.get(url, params=params, timeout=180)
-    r.raise_for_status()
-    payload = r.json()
+    try:
+        r = requests.get(url, params=params, timeout=180)
+        r.raise_for_status()
+        payload = r.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise RuntimeError(f"{url}: request/JSON error: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{url}: unexpected response payload type {type(payload).__name__}")
     if payload.get("error"):
         raise RuntimeError(f"{url}: {payload.get('reason')}")
-    return payload["hourly"]
+    hourly = payload.get("hourly")
+    if not isinstance(hourly, dict) or not hourly.get("time"):
+        raise RuntimeError(f"{url}: missing hourly time series in response")
+    return hourly
 
 
 def _timestamps(hourly):
@@ -80,8 +88,12 @@ def ensemble_spread(coords, variables):
         "timezone": "UTC", "wind_speed_unit": "ms",
     })
     out = pd.DataFrame({"timestamp": _timestamps(hourly)})
+    if out.empty:
+        raise RuntimeError("Ensemble response returned 0 hours")
     for var, prefix in variables:
         members = [k for k in hourly if k == var or k.startswith(f"{var}_member")]
+        if not members:
+            raise RuntimeError(f"Ensemble response missing member series for {var}")
         # shape (hours, members); nanpercentile so a member dropping out doesn't void the hour
         block = np.array([hourly[k] for k in members], dtype=float).T
         with np.errstate(all="ignore"):
@@ -113,6 +125,8 @@ def run_revisions(coords, variables):
         "timezone": "UTC", "wind_speed_unit": "ms",
     })
     out = pd.DataFrame({"timestamp": _timestamps(hourly)})
+    if out.empty:
+        raise RuntimeError("Previous-runs response returned 0 hours")
     for var, prefix in variables:
         for d in REVISION_DAYS:
             key = f"{var}_previous_day{d}"
@@ -133,10 +147,15 @@ def build():
         frames.append(merged.set_index("timestamp"))
 
     fresh = pd.concat(frames, axis=1).reset_index()
+    if fresh.empty:
+        raise RuntimeError("Weather confidence fetch produced no rows.")
 
     if DATA_PATH.exists():
-        existing = pd.read_csv(DATA_PATH, parse_dates=["timestamp"])
-        combined = pd.concat([existing, fresh], axis=0)
+        existing = pd.read_csv(DATA_PATH)
+        if "timestamp" not in existing.columns:
+            raise ValueError(f"{DATA_PATH} is missing expected column: 'timestamp'")
+        existing["timestamp"] = pd.to_datetime(existing["timestamp"])
+        combined = pd.concat([existing, fresh], axis=0, ignore_index=True) if not existing.empty else fresh
     else:
         combined = fresh
 

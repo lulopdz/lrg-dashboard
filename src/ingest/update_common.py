@@ -33,31 +33,50 @@ def fetch_and_merge(dataset_id, data_path, dedup_subset, sort_by, past_hours, fo
     end = (now + timedelta(hours=forecast_hours)).strftime("%Y-%m-%d %H:%M:%S")
 
     print(f"Fetching {dataset_id} from {start} to {end}...")
-    new_df = client.get_dataset(
-        dataset=dataset_id,
-        start=start,
-        end=end,
-        publish_time="latest",
-        timezone="market",
-    )
+    try:
+        new_df = client.get_dataset(
+            dataset=dataset_id,
+            start=start,
+            end=end,
+            publish_time="latest",
+            timezone="market",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to fetch {dataset_id} ({start} to {end}): {exc}") from exc
+
+    if new_df is None or new_df.empty:
+        raise RuntimeError(f"{dataset_id} returned no rows for window {start} to {end}.")
+
+    required = {"interval_start_local"}
+    required.update([dedup_subset] if isinstance(dedup_subset, str) else dedup_subset)
+    required.update([sort_by] if isinstance(sort_by, str) else sort_by)
+    if keep_cols is not None:
+        required.update(keep_cols)
+
+    missing = [c for c in sorted(required) if c not in new_df.columns]
+    if missing:
+        raise RuntimeError(f"{dataset_id} response is missing expected columns: {missing}")
+
     new_df["interval_start_local"] = pd.to_datetime(new_df["interval_start_local"])
 
     if keep_cols is not None:
-        missing = [c for c in keep_cols if c not in new_df.columns]
-        if missing:
-            raise RuntimeError(f"{dataset_id} response is missing expected columns: {missing}")
         new_df = new_df[keep_cols]
 
     if data_path.exists():
-        existing_df = pd.read_csv(data_path, parse_dates=["interval_start_local"])
+        existing_df = pd.read_csv(data_path)
+        existing_missing = [c for c in sorted(required) if c not in existing_df.columns]
+        if existing_missing:
+            raise ValueError(f"{data_path} is missing expected columns: {existing_missing}")
+        existing_df["interval_start_local"] = pd.to_datetime(existing_df["interval_start_local"])
         if keep_cols is not None:
             existing_df = existing_df[keep_cols]
-        combined = pd.concat([existing_df, new_df], axis=0)
+        combined = pd.concat([existing_df, new_df], axis=0, ignore_index=True) if not existing_df.empty else new_df
     else:
         combined = new_df
 
     combined = combined.drop_duplicates(subset=dedup_subset, keep="last")
     combined = combined.sort_values(sort_by)
+    data_path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(data_path, index=False)
     print(f"Saved {len(combined)} rows to {data_path}")
     return combined

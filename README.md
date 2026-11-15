@@ -38,8 +38,9 @@ lrg-dashboard/
 │   │   ├── check_freshness.py <-- Falla si el RT quedó viejo (job "verificar")
 │   │   └── parse_reports.py <-- Suma los XML de data/reports/ a portfolio_positions.csv y escribe data/historical_pnl.csv
 │   ├── forecast/           <-- Modelos que proyectan el día siguiente
-│   │   ├── forecast_common.py <-- Features, entrenamiento, *backtest* y archivo que comparten los predict_*
-│   │   ├── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py hace el pronóstico de DART y la señal (clasificadores)
+│   │   ├── config.py / io_archive.py / features.py / analog.py / modeling.py <-- Módulos internos compartidos (re-exportados en forecast_common.py)
+│   │   ├── spread_signal.py <-- Clasificadores probabilísticos P(DART > 0 / ±$40) y niveles de convicción
+│   │   ├── predict_*.py    <-- DAM y RTM (regresión); predict_spread.py hace el pronóstico de DART y la señal
 │   │   ├── run_forecasts.py <-- Corre los tres modelos para todas las zonas en un proceso (lo que llaman los workflows)
 │   │   ├── scorecard.py    <-- Puntúa el archivo contra lo que efectivamente se liquidó
 │   │   ├── strategies.py   <-- El archivo como estrategias a 1 MW (picks y baselines): P&L por día con IC90, peor hora, drawdown
@@ -47,12 +48,17 @@ lrg-dashboard/
 │   │   ├── vintages.py     <-- Archivo de entradas day-ahead (--rebuild lo reconstruye desde git)
 │   │   └── backfill_history.py <-- One-off ya ejecutado; no volver a correrlo (borra las columnas vintage/p10/p90)
 │   └── web/                <-- Construye el HTML que se publica en docs/
-│       ├── theme.py        <-- Colores y estilo compartidos
+│       ├── theme.py / gate.py / refresh.py <-- Estilo, barrera de acceso y dispara-workflow
 │       ├── dashboard_data.py <-- Carga los CSVs de data/ y los deja listos para graficar
 │       ├── dashboard_figures.py <-- Construye las figuras de Plotly
+│       ├── tabs/           <-- Secciones HTML del dashboard principal (market, weather, supply, predict)
+│       ├── assets/         <-- CSS y JS cliente del dashboard principal (`dashboard.css`, `dashboard.js`)
 │       └── generar_*.py    <-- Ensamblan y exportan index.html, simulator.html y portfolio.html
+├── tests/                  <-- Tests unitarios (pytest) para ingest, picks, scorecard y features
 ├── ops/                    <-- Apps Script que dispara el run de las 9:00 y el botón de refresh (ver ops/README.md), y subir_reportes.bat
-├── requirements.txt        <-- Dependencias requeridas
+├── pyproject.toml          <-- Configuración de ruff y pytest
+├── requirements.txt        <-- Dependencias de runtime fijadas (pip install -r requirements.txt)
+├── requirements-dev.txt    <-- Herramientas de desarrollo (pytest, ruff)
 └── README.md               <-- Este archivo de documentación
 ```
 
@@ -60,11 +66,11 @@ lrg-dashboard/
 
 El dashboard se actualiza bajo tres modalidades; todas comitean los datos nuevos y publican en *GitHub Pages*:
 
-1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los forecasts del vintage **pre-DAM** para OTTAWA, TORONTO, NIAGARA y NORTHWEST (`run_forecasts.py`, más el scorecard; NORTHWEST suma el clima de Thunder Bay, ver `forecast_common.ZONE_FEATURES`) y la regeneración del sitio. Pre-DAM quiere decir que el DAM de mañana todavía no salió y RT/spread usan el DAM pronosticado: es el vintage con el que se puede ofertar antes de las 10:00. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`0 15 * * *` UTC, 11:00 EDT / 10:00 EST) es solo respaldo y se salta las descargas si ese día ya hubo un run disparado a mano o por el Apps Script. Si fallan los forecasts, el sitio se publica igual con los datos frescos; el job `verificar` pone el run en rojo si el RT quedó con más de 4 h de atraso o si fallaron los forecasts, para que un fallo no pase desapercibido detrás de `continue-on-error`.
+1. **Actualización diaria (`daily.yml`)**: a las 9:00 hora de Ottawa, un solo job corre el pipeline completo en orden: DAM, RT, clima, carga, viento, adecuación, portafolio y P&L (`parse_reports.py`), los forecasts del vintage **pre-DAM** para OTTAWA, TORONTO, NIAGARA y NORTHWEST (`run_forecasts.py`, más el scorecard; NORTHWEST suma el clima de Thunder Bay, ver `config.ZONE_FEATURES`) y la regeneración del sitio. Pre-DAM quiere decir que el DAM de mañana todavía no salió y RT/spread usan el DAM pronosticado: es el vintage con el que se puede ofertar antes de las 10:00. El disparo de las 9:00 en punto lo hace un Apps Script externo (ver `ops/README.md`); el cron de GitHub (`0 15 * * *` UTC, 11:00 EDT / 10:00 EST) es solo respaldo y se salta las descargas si ese día ya hubo un run disparado a mano o por el Apps Script. Si fallan los forecasts, el sitio se publica igual con los datos frescos; el job `verificar` pone el run en rojo si el RT quedó con más de 4 h de atraso o si fallaron los forecasts, para que un fallo no pase desapercibido detrás de `continue-on-error`.
 2. **Forecast post-DAM (`forecast_pm.yml`)**: por la tarde (cron 19:30 UTC, con un reintento a las 23:30 UTC que no hace nada si el primero completó), una vez que IESO publicó el DAM de mañana (~12:35 EST). Trae ese DAM y el RT de hoy de los reportes públicos de IESO (0 requests del cupo) y repite RT y spread con el DAM real: el vintage **post-DAM**, para decidir exposición en tiempo real.
 3. **Refresh Real-Time (`refresh_rtm.yml`)**: bajo demanda, desde el botón *Refresh Real-Time* del dashboard (pestañas RT y Spread) y de la página Portfolio. Trae los últimos intervalos RT publicados (la hora en curso se descarta hasta que tenga sus 12 intervalos de 5 minutos) y el DAM de mañana desde IESO si ya salió, recalcula spreads y el P&L del portafolio y republica. Con la variable `REFRESH_RT_URL` configurada el botón dispara el workflow con un clic; sin ella abre la página de Actions.
 
-Un `push` a `main` (un reporte nuevo, un cambio de código) también corre `daily.yml`, pero sin descargas: solo recalcula el P&L y regenera el sitio. Si un cambio de código necesita datos frescos, se lanza a mano con *Run workflow*. Los push que tocan código corren además `smoke.yml`: compila, puntúa el archivo, reconstruye un día con los tres modelos y genera las tres páginas, sin escribir en `data/`.
+Un `push` a `main` (un reporte nuevo, un cambio de código) también corre `daily.yml`, pero sin descargas: solo recalcula el P&L y regenera el sitio. Si un cambio de código necesita datos frescos, se lanza a mano con *Run workflow*. Los push que tocan código y los PRs corren además `smoke.yml`: ejecuta lint (`ruff`), tests (`pytest`), compila, puntúa el archivo, reconstruye un día con los tres modelos y genera las tres páginas, sin escribir en `data/`.
 
 **Cupo de API.** GridStatus da 250 requests por mes por cuenta. Una corrida diaria completa gasta hasta 5 (DAM, RT, carga, viento, adecuación; el DAM se salta si ya está al día) y cada clic de *Refresh Real-Time* 1 (el DAM viene gratis de IESO). La corrida post-DAM no gasta nada. Con una descarga diaria y ~2 clics por día se llega a fin de mes; el 20/09/2026 el cupo se agotó porque `daily.yml` corría 3 o 4 veces al día. Si vuelve a pasar, el paso RT muestra `Error 403: API requests limit reached` y el job `verificar` sale en rojo.
 
@@ -122,6 +128,7 @@ Para correr el proyecto en tu propia máquina:
 2. **Instalar dependencias**:
    ```bash
    pip install -r requirements.txt
+   pip install -r requirements-dev.txt   # opcional, para correr pytest y ruff en local
    ```
 
 3. **Configurar Variable de Entorno**:
