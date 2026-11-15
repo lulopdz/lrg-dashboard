@@ -132,7 +132,6 @@ def _grid_cell_arrays(dates, month_df, whatif=False):
     'No exposure' cells recolor to the (softer-opacity) hypothetical Won/Lost category, using
     whatif_pnl (same position, real spread for that hour, WHATIF_FILL_MW instead of the 0 MW
     that actually cleared)."""
-    date_strs = [f"{d:%Y-%m-%d}" for d in dates]
     n = len(dates)
     row_of = {d: i for i, d in enumerate(dates)}
     TOTAL_COL = 24
@@ -311,8 +310,8 @@ def build_portfolio():
         m_net = m_trades.loc[m_trades['outcome'] != 'Pending', 'pnl'].sum() if len(m_trades) else 0
         m_total_cases = len(m_df)
 
-        def _pct(count):
-            return f"{count} ({count / m_total_cases:.0%})" if m_total_cases else str(count)
+        def _pct(count, total=m_total_cases):
+            return f"{count} ({count / total:.0%})" if total else str(count)
 
         month_tiles = stat_tile('Won', _pct(m_won), cls='pos')
         month_tiles += stat_tile('Lost', _pct(m_lost), cls='neg')

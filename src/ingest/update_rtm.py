@@ -13,16 +13,28 @@ SAFETY_BUFFER_HOURS = 2  # re-fetch a small overlap in case IESO revises recent 
 INTERVALS_PER_HOUR = 12  # 5-min intervals in a settled hour
 
 
+REQUIRED_COLS = ["location", "interval_start_local", "lmp"]
+
+
 def determine_start(now, lookback_hours):
     if lookback_hours is not None:
+        if lookback_hours <= 0:
+            raise ValueError(f"lookback_hours must be positive, got {lookback_hours}")
         return now - timedelta(hours=lookback_hours)
 
     if DATA_PATH.exists():
-        existing = pd.read_csv(DATA_PATH, parse_dates=["interval_start_local"])
+        existing = pd.read_csv(DATA_PATH)
+        missing = [c for c in REQUIRED_COLS if c not in existing.columns]
+        if missing:
+            raise ValueError(f"{DATA_PATH} is missing expected columns: {missing}")
         if not existing.empty:
-            # Anchor to the earliest "last hour" across zones, so no zone is left with a gap
-            last_complete = existing.groupby("location")["interval_start_local"].max().min()
-            return last_complete - timedelta(hours=SAFETY_BUFFER_HOURS)
+            existing["interval_start_local"] = pd.to_datetime(existing["interval_start_local"], errors="coerce")
+            valid = existing.dropna(subset=["location", "interval_start_local"])
+            if not valid.empty:
+                # Anchor to the earliest "last hour" across zones, so no zone is left with a gap
+                last_complete = valid.groupby("location")["interval_start_local"].max().min()
+                if pd.notna(last_complete):
+                    return last_complete - timedelta(hours=SAFETY_BUFFER_HOURS)
 
     return now - timedelta(hours=DEFAULT_LOOKBACK_HOURS)
 
@@ -40,13 +52,24 @@ def update_rtm_prices(lookback_hours=None):
     end = now.strftime("%Y-%m-%d %H:%M:%S")  # RTM is real-time, never in the future
 
     print(f"Fetching {DATASET_ID} from {start} to {end}...")
-    new_df = client.get_dataset(
-        dataset=DATASET_ID,
-        start=start,
-        end=end,
-        publish_time="latest",
-        timezone="market",
-    )
+    try:
+        new_df = client.get_dataset(
+            dataset=DATASET_ID,
+            start=start,
+            end=end,
+            publish_time="latest",
+            timezone="market",
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to fetch {DATASET_ID} ({start} to {end}): {exc}") from exc
+
+    if new_df is None or new_df.empty:
+        raise RuntimeError(f"{DATASET_ID} returned no rows for window {start} to {end}.")
+
+    missing = [c for c in REQUIRED_COLS if c not in new_df.columns]
+    if missing:
+        raise RuntimeError(f"{DATASET_ID} response is missing expected columns: {missing}")
+
     new_df["interval_start_local"] = pd.to_datetime(new_df["interval_start_local"])
 
     # Aggregate the 5-min RTM data to hourly immediately: the dashboard only ever
@@ -64,16 +87,24 @@ def update_rtm_prices(lookback_hours=None):
     if partial.any():
         print(f"Dropping the in-progress hour ({new_df.loc[partial, 'interval_start_local'].max()}, "
               f"{int(new_df.loc[partial, 'count'].max())} of {INTERVALS_PER_HOUR} intervals)")
-    new_df = new_df[~partial].rename(columns={"mean": "lmp"})[["location", "interval_start_local", "lmp"]]
+    new_df = new_df[~partial].rename(columns={"mean": "lmp"})[REQUIRED_COLS]
 
     if DATA_PATH.exists():
-        existing_df = pd.read_csv(DATA_PATH, parse_dates=["interval_start_local"])
-        combined = pd.concat([existing_df, new_df], axis=0)
+        existing_df = pd.read_csv(DATA_PATH)
+        existing_missing = [c for c in REQUIRED_COLS if c not in existing_df.columns]
+        if existing_missing:
+            raise ValueError(f"{DATA_PATH} is missing expected columns: {existing_missing}")
+        existing_df["interval_start_local"] = pd.to_datetime(existing_df["interval_start_local"])
+        parts = [part for part in (existing_df, new_df) if not part.empty]
+        combined = pd.concat(parts, axis=0, ignore_index=True) if parts else pd.DataFrame(columns=REQUIRED_COLS)
     else:
+        if new_df.empty:
+            raise RuntimeError(f"{DATASET_ID} only returned partial hour data for {start} to {end}; nothing to save.")
         combined = new_df
 
     combined = combined.drop_duplicates(subset=["interval_start_local", "location"], keep="last")
     combined = combined.sort_values(["location", "interval_start_local"])
+    DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(DATA_PATH, index=False)
     print(f"Saved {len(combined)} rows to {DATA_PATH} (window: {start} to {end})")
 

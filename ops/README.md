@@ -8,7 +8,7 @@ GitHub Actions no puede ni correr a las 9:00 hora de Ottawa en punto (cron solo 
 2. **Script**: [script.google.com](https://script.google.com) > Nuevo proyecto > pegar `refresh_trigger.gs`.
    - Project settings > Time zone: **America/Toronto**.
    - Project settings > Script properties: `GITHUB_TOKEN` = el token.
-3. **9:00 diario**: en el editor, ejecutar `armDaily` una vez (autorizar cuando lo pida). Verificar en *Triggers* que aparece `runDaily` para mañana a las 9:00. Se re-arma solo cada día.
+3. **9:00 diario**: en el editor, ejecutar `armBackupOnce` una vez (autorizar cuando lo pida). Esto deja dos triggers en *Triggers*: `ensureDailyArmed` (todos los días ~8:00 AM, re-arma la corrida de las 9:00 si Google la perdió) y `runDaily` (one-shot para las 9:00 en punto, que se re-arma solo en un `finally`).
 4. **Botón**: Deploy > New deployment > Web app. Execute as: *Me*. Who has access: *Anyone*. Copiar la URL `.../exec`.
 5. **Variable**: GitHub > repo > Settings > Secrets and variables > Actions > Variables > `REFRESH_RT_URL` = esa URL. El sitio la incorpora en la siguiente regeneración; hasta entonces el botón abre la página de Actions.
 

@@ -26,10 +26,14 @@ function doGet() {
   return ContentService.createTextOutput(code === 204 ? 'Refresh Real-Time requested' : `GitHub said ${code}`);
 }
 
-// 9:00 run. Exact-minute triggers only exist as one-shots, so each run re-arms tomorrow's.
+// 9:00 run. Exact-minute triggers only exist as one-shots, so each run re-arms tomorrow's
+// inside finally so a transient dispatch error never breaks the chain.
 function runDaily() {
-  dispatch('daily.yml');
-  armDaily();
+  try {
+    dispatch('daily.yml');
+  } finally {
+    armDaily();
+  }
 }
 
 function armDaily() {
@@ -40,4 +44,23 @@ function armDaily() {
   next.setHours(DAILY_HOUR, 0, 0, 0);
   if (next <= new Date()) next.setDate(next.getDate() + 1);
   ScriptApp.newTrigger('runDaily').timeBased().at(next).create();
+}
+
+// Self-healing backup: run armBackupOnce() once in the editor to add an 8:00 AM daily check
+// that re-arms runDaily if Google ever drops a one-shot trigger (e.g. around DST changes).
+function ensureDailyArmed() {
+  // Always recreate today's 9:00 AM one-shot (recovers even if a stale un-fired trigger sits in Triggers).
+  armDaily();
+}
+
+function armBackupOnce() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'ensureDailyArmed')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('ensureDailyArmed')
+    .timeBased()
+    .everyDays(1)
+    .atHour(DAILY_HOUR - 1)
+    .create();
+  armDaily();
 }

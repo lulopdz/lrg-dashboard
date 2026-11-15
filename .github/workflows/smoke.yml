@@ -8,7 +8,7 @@ name: Smoke test
 on:
   push:
     branches: [ main ]
-    paths: [ 'src/**', 'requirements.txt', '.github/workflows/**' ]
+    paths: [ 'src/**', 'tests/**', 'requirements*.txt', 'pyproject.toml', '.github/workflows/**' ]
   pull_request:
   workflow_dispatch:
 
@@ -29,7 +29,13 @@ jobs:
         cache: 'pip'
 
     - name: Instalar librerías
-      run: pip install -r requirements.txt
+      run: pip install -r requirements.txt -r requirements-dev.txt
+
+    - name: Lint (ruff)
+      run: ruff check src tests
+
+    - name: Tests unitarios (pytest)
+      run: pytest -v
 
     - name: Compilar
       run: python -m compileall -q src

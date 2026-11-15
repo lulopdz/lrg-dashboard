@@ -1,0 +1,30 @@
+[project]
+name = "lrg-dashboard"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src/web", "src/forecast", "src/ingest", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+# E501 ignored while inline HTML/JS templates exist; B905 (zip strict=) ignored for compatibility.
+ignore = ["E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# Entrypoint scripts prepend sibling src/ paths before local imports.
+"src/web/dashboard_data.py" = ["E402"]
+"src/forecast/walkforward.py" = ["E402"]
+"src/forecast/backfill_history.py" = ["E402"]
+"src/forecast/run_forecasts.py" = ["E402"]
+"src/forecast/vintages.py" = ["E402"]
+"tests/test_parse_reports.py" = ["E402"]
+"tests/test_picks.py" = ["E402"]
+"tests/test_scorecard.py" = ["E402"]
+"tests/test_update_common.py" = ["E402"]
+"tests/test_forecast_common.py" = ["E402"]

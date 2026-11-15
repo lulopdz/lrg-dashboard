@@ -27,7 +27,16 @@ def dam_is_current(now=None):
     expected_day = now.normalize()
     if now - expected_day >= PUBLISH_TIME_EST:
         expected_day += pd.Timedelta(days=1)
-    latest = pd.read_csv(DATA_PATH, parse_dates=["interval_start_local"])["interval_start_local"].max()
+    df = pd.read_csv(DATA_PATH)
+    if df.empty or "interval_start_local" not in df.columns:
+        return False
+    latest = pd.to_datetime(df["interval_start_local"], errors="coerce").max()
+    if pd.isna(latest):
+        return False
+    if latest.tzinfo is None:
+        latest = latest.tz_localize("-05:00")
+    else:
+        latest = latest.tz_convert("-05:00")
     return latest.normalize() >= expected_day
 
 

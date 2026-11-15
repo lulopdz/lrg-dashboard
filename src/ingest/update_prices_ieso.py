@@ -33,11 +33,17 @@ def market_now():
 
 
 def fetch(url):
-    r = requests.get(url, timeout=60)
-    if r.status_code == 404:
-        return None
-    r.raise_for_status()
-    return ET.fromstring(r.content)
+    try:
+        r = requests.get(url, timeout=60)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(f"HTTP request failed for {url}: {exc}") from exc
+    try:
+        return ET.fromstring(r.content)
+    except ET.ParseError as exc:
+        raise RuntimeError(f"Invalid XML from {url}: {exc}") from exc
 
 
 def dam_rows(date):
@@ -47,14 +53,23 @@ def dam_rows(date):
         return None
     rows = []
     for zone in root.iter(f"{{{NS['i']}}}TransactionZone"):
-        name = zone.findtext("i:ZoneName", namespaces=NS).replace(":HUB", "")
+        zone_text = (zone.findtext("i:ZoneName", namespaces=NS) or "").strip()
+        if not zone_text:
+            raise ValueError(f"DAM XML for {date} has TransactionZone without ZoneName")
+        name = zone_text.replace(":HUB", "")
         for comp in zone.findall("i:Components", NS):
             if comp.findtext("i:PriceComponent", namespaces=NS) != "Zonal Price":
                 continue
             for dh in comp.findall("i:DeliveryHour", NS):
-                hour = int(dh.findtext("i:Hour", namespaces=NS))
+                hour_text = (dh.findtext("i:Hour", namespaces=NS) or "").strip()
+                lmp_text = (dh.findtext("i:LMP", namespaces=NS) or "").strip()
+                if not hour_text or not lmp_text:
+                    raise ValueError(f"DAM XML for {date} ({name}) has DeliveryHour missing Hour or LMP")
+                hour = int(hour_text)
                 start = pd.Timestamp(date, tz="-05:00") + pd.Timedelta(hours=hour - 1)
-                rows.append((start, name, float(dh.findtext("i:LMP", namespaces=NS))))
+                rows.append((start, name, float(lmp_text)))
+    if not rows:
+        raise RuntimeError(f"DAM XML for {date} contained no Zonal Price rows")
     return pd.DataFrame(rows, columns=["interval_start_local", "location", "lmp"])
 
 
@@ -68,17 +83,36 @@ def rtm_rows(date, hours):
             break
         start = pd.Timestamp(date, tz="-05:00") + pd.Timedelta(hours=he - 1)
         for zone in root.iter(f"{{{NS['i']}}}TransactionZone"):
-            name = zone.findtext("i:ZoneName", namespaces=NS).replace(":HUB", "")
-            prices = [float(ip.findtext("i:ZonalPrice", namespaces=NS)) for ip in zone.findall("i:IntervalPrice", NS)]
+            zone_text = (zone.findtext("i:ZoneName", namespaces=NS) or "").strip()
+            if not zone_text:
+                raise ValueError(f"RTM XML for {date} HE {he} has TransactionZone without ZoneName")
+            name = zone_text.replace(":HUB", "")
+            prices = []
+            for ip in zone.findall("i:IntervalPrice", NS):
+                price_text = (ip.findtext("i:ZonalPrice", namespaces=NS) or "").strip()
+                if not price_text:
+                    raise ValueError(f"RTM XML for {date} HE {he} ({name}) has IntervalPrice missing ZonalPrice")
+                prices.append(float(price_text))
             if prices:
                 rows.append((start, name, sum(prices) / len(prices)))
     return pd.DataFrame(rows, columns=["interval_start_local", "location", "lmp"])
 
 
 def merge(path, new, sort_by):
-    existing = pd.read_csv(path, parse_dates=["interval_start_local"]) if path.exists() else pd.DataFrame(columns=new.columns)
-    combined = pd.concat([existing, new]).drop_duplicates(subset=["interval_start_local", "location"], keep="last")
+    required = ["interval_start_local", "location", "lmp"]
+    if path.exists():
+        existing = pd.read_csv(path)
+        missing = [c for c in required if c not in existing.columns]
+        if missing:
+            raise ValueError(f"{path} is missing expected columns: {missing}")
+        existing["interval_start_local"] = pd.to_datetime(existing["interval_start_local"])
+        parts = [part for part in (existing, new) if not part.empty]
+        combined = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=required)
+    else:
+        combined = new
+    combined = combined.drop_duplicates(subset=["interval_start_local", "location"], keep="last")
     combined = combined.sort_values(sort_by)
+    path.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(path, index=False)
     print(f"Saved {len(combined)} rows to {path} (+{len(new)} fetched)")
 
@@ -100,7 +134,15 @@ def main():
     else:
         date = pd.Timestamp(args.date).date() if args.date else now.date()
         if args.hours:
-            lo, hi = (int(x) for x in args.hours.split("-"))
+            parts = args.hours.split("-")
+            if len(parts) != 2:
+                ap.error("--hours must be a range like 1-14")
+            try:
+                lo, hi = int(parts[0]), int(parts[1])
+            except ValueError:
+                ap.error("--hours must contain integers like 1-14")
+            if not (1 <= lo <= hi <= 24):
+                ap.error("--hours range must satisfy 1 <= start <= end <= 24")
         else:
             lo, hi = 1, (now.hour if date == now.date() else 24)  # the current hour is still open
         new = rtm_rows(date, range(lo, hi + 1))

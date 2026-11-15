@@ -57,6 +57,13 @@ FORECAST_DAYS = 3
 def _client():
     cache_session = requests_cache.CachedSession(str(CACHE_PATH), expire_after=3600)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    orig_request = retry_session.request
+
+    def _request_with_timeout(*args, **kwargs):
+        kwargs.setdefault("timeout", 60)
+        return orig_request(*args, **kwargs)
+
+    retry_session.request = _request_with_timeout
     return openmeteo_requests.Client(session=retry_session)
 
 
@@ -70,12 +77,29 @@ def _fetch(openmeteo, coords, variables, past_days, forecast_days):
         "forecast_days": forecast_days,
         "wind_speed_unit": "ms",
     }
-    response = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=params)[0]
+    try:
+        responses = openmeteo.weather_api("https://api.open-meteo.com/v1/forecast", params=params)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Open-Meteo request failed for ({coords['lat']}, {coords['lon']}): {exc}"
+        ) from exc
+    if not responses:
+        raise RuntimeError(f"Open-Meteo returned empty response for ({coords['lat']}, {coords['lon']})")
+    response = responses[0]
     hourly = response.Hourly()
+    if hourly is None or hourly.VariablesLength() < len(variables):
+        got = 0 if hourly is None else hourly.VariablesLength()
+        raise RuntimeError(
+            f"Open-Meteo response for ({coords['lat']}, {coords['lon']}) missing hourly variables "
+            f"(expected {len(variables)}, got {got})"
+        )
+    n_steps = len(hourly.Variables(0).ValuesAsNumpy())
+    if n_steps == 0 or hourly.Interval() <= 0:
+        raise RuntimeError(f"Open-Meteo returned empty hourly series for ({coords['lat']}, {coords['lon']})")
     start_time = pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert("-05:00")
     timestamps = pd.date_range(
         start=start_time,
-        periods=len(hourly.Variables(0).ValuesAsNumpy()),
+        periods=n_steps,
         freq=pd.Timedelta(seconds=hourly.Interval()),
         inclusive="left",
     )
@@ -86,13 +110,17 @@ def _fetch(openmeteo, coords, variables, past_days, forecast_days):
 def determine_past_days():
     if not DATA_PATH.exists():
         return DEFAULT_PAST_DAYS
-    existing = pd.read_csv(DATA_PATH, usecols=["timestamp"])
-    if existing.empty:
+    existing = pd.read_csv(DATA_PATH)
+    if existing.empty or "timestamp" not in existing.columns:
         return DEFAULT_PAST_DAYS
     last_ts = pd.to_datetime(existing["timestamp"], errors="coerce").max()
+    if pd.isna(last_ts):
+        return DEFAULT_PAST_DAYS
+    if last_ts.tzinfo is None:
+        last_ts = last_ts.tz_localize("-05:00")
     now = pd.Timestamp.now(tz="UTC").tz_convert("-05:00")
     hours_old = (now - last_ts).total_seconds() / 3600
-    return max(1, math.ceil(hours_old / 24) + 1)
+    return min(92, max(1, math.ceil(hours_old / 24) + 1))
 
 
 def update_weather():
@@ -102,19 +130,22 @@ def update_weather():
     openmeteo = _client()
     df_new = _fetch(openmeteo, OTTAWA_COORDS, WEATHER_VARIABLES, past_days, FORECAST_DAYS)
     df_new.index.name = "timestamp"
-    df_new = df_new.reset_index()
 
-    df_new = df_new.set_index("timestamp")
     for coords, variables, suffix in SECONDARY_STATIONS:
         station = _fetch(openmeteo, coords, variables, past_days, FORECAST_DAYS)
         station = station.rename(columns={v: f"{v}_{suffix}" for v in variables})
         df_new = df_new.join(station, how="left")
     df_new = df_new.reset_index()
+    if df_new.empty:
+        raise RuntimeError("Open-Meteo weather fetch produced no rows.")
 
     if DATA_PATH.exists():
         existing_df = pd.read_csv(DATA_PATH)
+        if "timestamp" not in existing_df.columns:
+            raise ValueError(f"{DATA_PATH} is missing expected column: 'timestamp'")
         existing_df["timestamp"] = pd.to_datetime(existing_df["timestamp"], errors="coerce")
-        combined = pd.concat([existing_df, df_new], axis=0)
+        existing_df = existing_df.dropna(subset=["timestamp"])
+        combined = pd.concat([existing_df, df_new], axis=0, ignore_index=True) if not existing_df.empty else df_new
     else:
         combined = df_new
 

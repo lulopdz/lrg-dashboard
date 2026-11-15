@@ -10,20 +10,34 @@ email instead of only as a warning annotation nobody opens.
 Stdlib only on purpose: the verification job that runs it does no pip install."""
 import argparse
 import csv
+import math
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_rtm_prices.csv"
+MARKET_TZ = timezone(timedelta(hours=-5))
+CRITICAL_ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")
 
 
 def latest_per_zone(path):
     latest = {}
     with open(path, newline="") as f:
-        for row in csv.DictReader(f):
-            ts = datetime.fromisoformat(row["interval_start_local"])
-            if row["location"] not in latest or ts > latest[row["location"]]:
-                latest[row["location"]] = ts
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        missing = [c for c in ("location", "interval_start_local") if c not in fieldnames]
+        if missing:
+            raise ValueError(f"{path} is missing expected columns: {missing}")
+        for line_no, row in enumerate(reader, start=2):
+            zone = (row["location"] or "").strip()
+            ts_raw = (row["interval_start_local"] or "").strip()
+            if not zone or not ts_raw:
+                raise ValueError(f"{path}:{line_no} has empty location or interval_start_local")
+            ts = datetime.fromisoformat(ts_raw)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=MARKET_TZ)
+            if zone not in latest or ts > latest[zone]:
+                latest[zone] = ts
     return latest
 
 
@@ -34,16 +48,25 @@ def main():
         help="Oldest acceptable age of the last stored hour, in the zone furthest behind (default 4)."
     )
     args = parser.parse_args()
+    if not math.isfinite(args.max_hours) or args.max_hours <= 0:
+        sys.exit(f"--max-hours must be a positive finite number, got {args.max_hours}")
 
     if not DATA_PATH.exists():
         sys.exit(f"{DATA_PATH} does not exist")
-    latest = latest_per_zone(DATA_PATH)
+    try:
+        latest = latest_per_zone(DATA_PATH)
+    except (OSError, ValueError) as exc:
+        sys.exit(f"Failed to read {DATA_PATH}: {exc}")
     if not latest:
         sys.exit(f"{DATA_PATH} has no rows")
 
     now = datetime.now(timezone.utc)
     for zone, ts in sorted(latest.items()):
         print(f"{zone:<10} last hour {ts}  ({(now - ts).total_seconds() / 3600:.1f} h ago)")
+
+    missing_zones = [z for z in CRITICAL_ZONES if z not in latest]
+    if missing_zones:
+        sys.exit(f"RT prices are missing critical zone(s): {', '.join(missing_zones)}")
 
     # Same anchor update_rtm.py resumes from: the zone furthest behind, so a single-zone gap
     # counts as stale too.
