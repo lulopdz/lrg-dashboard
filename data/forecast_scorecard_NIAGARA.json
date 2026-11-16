@@ -94,24 +94,24 @@
     },
     "rtm": {
       "post_dam": {
-        "n_days": 53,
-        "n_hours": 1266,
+        "n_days": 54,
+        "n_hours": 1281,
         "first_day": "2026-09-24",
-        "last_day": "2026-11-15",
-        "mae": 13.83,
-        "rmse": 26.61,
-        "bias": 1.68,
-        "actual_std": 31.13,
+        "last_day": "2026-11-16",
+        "mae": 13.82,
+        "rmse": 26.52,
+        "bias": 1.74,
+        "actual_std": 30.99,
         "mae_by_hour": {
-          "1": 7.2,
-          "2": 7.3,
-          "3": 6.4,
-          "4": 7.8,
-          "5": 8.9,
-          "6": 9.1,
-          "7": 12.2,
-          "8": 11.0,
-          "9": 12.4,
+          "1": 7.3,
+          "2": 7.2,
+          "3": 6.3,
+          "4": 7.7,
+          "5": 9.0,
+          "6": 9.4,
+          "7": 12.4,
+          "8": 11.5,
+          "9": 12.5,
           "10": 12.4,
           "11": 13.0,
           "12": 12.6,
@@ -121,48 +121,48 @@
           "16": 12.0,
           "17": 23.0,
           "18": 41.7,
-          "19": 32.3,
-          "20": 15.8,
-          "21": 14.2,
+          "19": 31.9,
+          "20": 15.6,
+          "21": 14.3,
           "22": 11.5,
-          "23": 11.6,
-          "24": 9.2
+          "23": 11.5,
+          "24": 9.3
         },
         "mae_by_month": {
           "2026-09": 9.7,
           "2026-10": 13.0,
-          "2026-11": 17.5
+          "2026-11": 17.3
         },
-        "analog_mae": 26.52,
-        "band_p10_p90_coverage": 78.4,
-        "band_width_mean": 41.8,
-        "band_n_days": 53,
+        "analog_mae": 26.86,
+        "band_p10_p90_coverage": 78.5,
+        "band_width_mean": 41.9,
+        "band_n_days": 54,
         "baseline_rt_eq_dam_pred_mae": 14.86,
-        "baseline_rt_eq_dam_real_mae": 13.3,
-        "tail_low_actual_pct": 0.79,
+        "baseline_rt_eq_dam_real_mae": 13.33,
+        "tail_low_actual_pct": 0.78,
         "tail_low_predicted_pct": 0.0,
-        "tail_high_actual_pct": 1.03,
+        "tail_high_actual_pct": 1.01,
         "tail_high_predicted_pct": 0.0
       },
       "pre_dam": {
-        "n_days": 41,
-        "n_hours": 984,
+        "n_days": 42,
+        "n_hours": 993,
         "first_day": "2026-09-24",
-        "last_day": "2026-11-03",
+        "last_day": "2026-11-16",
         "mae": 13.76,
-        "rmse": 27.95,
-        "bias": -0.12,
-        "actual_std": 31.7,
+        "rmse": 27.87,
+        "bias": -0.03,
+        "actual_std": 31.57,
         "mae_by_hour": {
-          "1": 7.7,
-          "2": 8.4,
-          "3": 6.6,
-          "4": 7.6,
-          "5": 9.4,
-          "6": 10.6,
-          "7": 13.0,
-          "8": 10.4,
-          "9": 11.3,
+          "1": 7.9,
+          "2": 8.2,
+          "3": 6.5,
+          "4": 7.5,
+          "5": 9.3,
+          "6": 10.9,
+          "7": 13.4,
+          "8": 10.8,
+          "9": 11.5,
           "10": 10.7,
           "11": 11.4,
           "12": 12.0,
@@ -182,28 +182,28 @@
         "mae_by_month": {
           "2026-09": 9.7,
           "2026-10": 14.2,
-          "2026-11": 18.4
+          "2026-11": 17.9
         },
-        "analog_mae": 25.39,
+        "analog_mae": 25.37,
         "band_p10_p90_coverage": 76.7,
         "band_width_mean": 39.2,
-        "band_n_days": 41,
-        "baseline_rt_eq_dam_pred_mae": 13.64,
-        "baseline_rt_eq_dam_real_mae": 12.52,
-        "tail_low_actual_pct": 0.61,
+        "band_n_days": 42,
+        "baseline_rt_eq_dam_pred_mae": 13.65,
+        "baseline_rt_eq_dam_real_mae": 12.6,
+        "tail_low_actual_pct": 0.6,
         "tail_low_predicted_pct": 0.0,
-        "tail_high_actual_pct": 1.12,
+        "tail_high_actual_pct": 1.11,
         "tail_high_predicted_pct": 0.0
       },
       "pre_dam_reconstructed": {
         "n_days": 12,
-        "n_hours": 282,
+        "n_hours": 288,
         "first_day": "2026-11-04",
         "last_day": "2026-11-15",
-        "mae": 20.83,
-        "rmse": 26.27,
-        "bias": 11.91,
-        "actual_std": 29.03,
+        "mae": 20.75,
+        "rmse": 26.18,
+        "bias": 11.95,
+        "actual_std": 28.88,
         "mae_by_hour": {
           "1": 6.1,
           "2": 6.7,
@@ -223,48 +223,48 @@
           "16": 25.5,
           "17": 31.2,
           "18": 40.2,
-          "19": 29.1,
-          "20": 30.4,
-          "21": 26.2,
-          "22": 20.0,
-          "23": 17.7,
+          "19": 27.3,
+          "20": 29.5,
+          "21": 27.5,
+          "22": 20.2,
+          "23": 16.5,
           "24": 10.0
         },
         "mae_by_month": {
           "2026-11": 20.8
         },
-        "analog_mae": 26.73,
-        "band_p10_p90_coverage": 64.5,
-        "band_width_mean": 51.7,
+        "analog_mae": 28.41,
+        "band_p10_p90_coverage": 65.3,
+        "band_width_mean": 51.9,
         "band_n_days": 12,
-        "baseline_rt_eq_dam_pred_mae": 19.12,
-        "baseline_rt_eq_dam_real_mae": 16.0,
-        "tail_low_actual_pct": 1.42,
+        "baseline_rt_eq_dam_pred_mae": 19.05,
+        "baseline_rt_eq_dam_real_mae": 15.85,
+        "tail_low_actual_pct": 1.39,
         "tail_low_predicted_pct": 0.0,
-        "tail_high_actual_pct": 0.71,
+        "tail_high_actual_pct": 0.69,
         "tail_high_predicted_pct": 0.0
       }
     },
     "spread": {
       "post_dam": {
-        "n_days": 53,
-        "n_hours": 1266,
+        "n_days": 54,
+        "n_hours": 1281,
         "first_day": "2026-09-24",
-        "last_day": "2026-11-15",
-        "mae": 13.83,
-        "rmse": 26.61,
-        "bias": -1.68,
-        "actual_std": 25.75,
+        "last_day": "2026-11-16",
+        "mae": 13.82,
+        "rmse": 26.52,
+        "bias": -1.74,
+        "actual_std": 25.7,
         "mae_by_hour": {
-          "1": 7.2,
-          "2": 7.3,
-          "3": 6.4,
-          "4": 7.8,
-          "5": 8.9,
-          "6": 9.1,
-          "7": 12.2,
-          "8": 11.0,
-          "9": 12.4,
+          "1": 7.3,
+          "2": 7.2,
+          "3": 6.3,
+          "4": 7.7,
+          "5": 9.0,
+          "6": 9.4,
+          "7": 12.4,
+          "8": 11.5,
+          "9": 12.5,
           "10": 12.4,
           "11": 13.0,
           "12": 12.6,
@@ -274,50 +274,50 @@
           "16": 12.0,
           "17": 23.0,
           "18": 41.7,
-          "19": 32.3,
-          "20": 15.8,
-          "21": 14.2,
+          "19": 31.9,
+          "20": 15.6,
+          "21": 14.3,
           "22": 11.5,
-          "23": 11.6,
-          "24": 9.2
+          "23": 11.5,
+          "24": 9.3
         },
         "mae_by_month": {
           "2026-09": 9.7,
           "2026-10": 13.0,
-          "2026-11": 17.5
+          "2026-11": 17.3
         },
-        "analog_mae": 23.97,
-        "band_p10_p90_coverage": 78.4,
-        "band_width_mean": 41.8,
-        "band_n_days": 53,
-        "sign_hit_rate": 53.6,
-        "base_rate_pos": 57.0,
-        "pnl_follow_sign": 840.0,
-        "pnl_always_gen": 321.0,
-        "pnl_optimal": 16836.0,
-        "derived_mae": 15.12,
-        "derived_sign_hit_rate": 51.5,
-        "derived_pnl_follow_sign": 1891.0
+        "analog_mae": 24.27,
+        "band_p10_p90_coverage": 78.5,
+        "band_width_mean": 41.9,
+        "band_n_days": 54,
+        "sign_hit_rate": 53.9,
+        "base_rate_pos": 56.8,
+        "pnl_follow_sign": 1048.0,
+        "pnl_always_gen": 356.0,
+        "pnl_optimal": 17078.0,
+        "derived_mae": 15.14,
+        "derived_sign_hit_rate": 51.8,
+        "derived_pnl_follow_sign": 1927.0
       },
       "pre_dam": {
-        "n_days": 41,
-        "n_hours": 984,
+        "n_days": 42,
+        "n_hours": 993,
         "first_day": "2026-09-24",
-        "last_day": "2026-11-03",
-        "mae": 13.08,
+        "last_day": "2026-11-16",
+        "mae": 13.15,
         "rmse": 26.82,
-        "bias": -0.47,
-        "actual_std": 26.5,
+        "bias": -0.62,
+        "actual_std": 26.49,
         "mae_by_hour": {
-          "1": 7.8,
-          "2": 8.5,
-          "3": 6.6,
-          "4": 8.4,
-          "5": 9.5,
-          "6": 9.6,
-          "7": 13.5,
-          "8": 9.2,
-          "9": 9.9,
+          "1": 7.9,
+          "2": 8.3,
+          "3": 6.5,
+          "4": 8.3,
+          "5": 9.6,
+          "6": 10.0,
+          "7": 14.3,
+          "8": 10.1,
+          "9": 10.4,
           "10": 9.3,
           "11": 9.7,
           "12": 10.4,
@@ -337,30 +337,30 @@
         "mae_by_month": {
           "2026-09": 10.3,
           "2026-10": 13.4,
-          "2026-11": 16.0
+          "2026-11": 16.5
         },
-        "analog_mae": 23.3,
-        "band_p10_p90_coverage": 78.4,
+        "analog_mae": 23.28,
+        "band_p10_p90_coverage": 78.1,
         "band_width_mean": 39.2,
-        "band_n_days": 41,
-        "sign_hit_rate": 52.6,
-        "base_rate_pos": 53.9,
-        "pnl_follow_sign": 1359.0,
-        "pnl_always_gen": -1140.0,
-        "pnl_optimal": 12323.0,
-        "derived_mae": 13.08,
-        "derived_sign_hit_rate": 52.6,
-        "derived_pnl_follow_sign": 1359.0
+        "band_n_days": 42,
+        "sign_hit_rate": 52.8,
+        "base_rate_pos": 53.8,
+        "pnl_follow_sign": 1343.0,
+        "pnl_always_gen": -1064.0,
+        "pnl_optimal": 12512.0,
+        "derived_mae": 13.15,
+        "derived_sign_hit_rate": 52.8,
+        "derived_pnl_follow_sign": 1343.0
       },
       "pre_dam_reconstructed": {
         "n_days": 12,
-        "n_hours": 282,
+        "n_hours": 288,
         "first_day": "2026-11-04",
         "last_day": "2026-11-15",
-        "mae": 18.66,
-        "rmse": 25.09,
-        "bias": -7.69,
-        "actual_std": 22.29,
+        "mae": 18.47,
+        "rmse": 24.89,
+        "bias": -7.62,
+        "actual_std": 22.18,
         "mae_by_hour": {
           "1": 8.7,
           "2": 7.0,
@@ -380,39 +380,39 @@
           "16": 22.4,
           "17": 30.2,
           "18": 37.8,
-          "19": 22.4,
-          "20": 21.7,
-          "21": 23.3,
-          "22": 19.6,
-          "23": 16.8,
-          "24": 9.5
+          "19": 20.6,
+          "20": 20.0,
+          "21": 23.0,
+          "22": 19.2,
+          "23": 15.8,
+          "24": 10.0
         },
         "mae_by_month": {
-          "2026-11": 18.7
+          "2026-11": 18.5
         },
-        "analog_mae": 24.02,
-        "band_p10_p90_coverage": 72.3,
-        "band_width_mean": 51.7,
+        "analog_mae": 25.44,
+        "band_p10_p90_coverage": 72.9,
+        "band_width_mean": 51.9,
         "band_n_days": 12,
-        "sign_hit_rate": 44.0,
-        "base_rate_pos": 68.1,
-        "pnl_follow_sign": -174.0,
-        "pnl_always_gen": 1460.0,
-        "pnl_optimal": 4513.0,
-        "derived_mae": 18.66,
-        "derived_sign_hit_rate": 44.0,
-        "derived_pnl_follow_sign": -174.0
+        "sign_hit_rate": 44.4,
+        "base_rate_pos": 67.4,
+        "pnl_follow_sign": -129.0,
+        "pnl_always_gen": 1420.0,
+        "pnl_optimal": 4566.0,
+        "derived_mae": 18.47,
+        "derived_sign_hit_rate": 44.4,
+        "derived_pnl_follow_sign": -129.0
       }
     }
   },
   "signal": {
     "post_dam": {
       "live": {
-        "n_days": 53,
-        "n_hours": 1266,
-        "base_rate_pos": 57.0,
-        "pnl_optimal": 16836.0,
-        "pnl_always_gen": 321.0,
+        "n_days": 54,
+        "n_hours": 1281,
+        "base_rate_pos": 56.8,
+        "pnl_optimal": 17078.0,
+        "pnl_always_gen": 356.0,
         "tiers": {
           "high": {
             "n": 63,
@@ -421,46 +421,46 @@
             "pnl_per_hour": -2.7
           },
           "low": {
-            "n": 781,
-            "hit_rate": 51.0,
-            "pnl": -467.0,
-            "pnl_per_hour": -0.6
+            "n": 793,
+            "hit_rate": 51.3,
+            "pnl": -311.0,
+            "pnl_per_hour": -0.39
           },
           "medium": {
-            "n": 422,
-            "hit_rate": 44.5,
-            "pnl": -117.0,
-            "pnl_per_hour": -0.28
+            "n": 425,
+            "hit_rate": 44.9,
+            "pnl": -71.0,
+            "pnl_per_hour": -0.17
           }
         },
         "picks": {
-          "n": 164,
-          "hit_rate": 65.2,
-          "pnl": 21.0,
-          "pnl_per_hour": 0.13,
-          "n_gen": 87,
-          "n_load": 77
+          "n": 166,
+          "hit_rate": 65.7,
+          "pnl": 69.0,
+          "pnl_per_hour": 0.42,
+          "n_gen": 88,
+          "n_load": 78
         },
         "rated": {
-          "n": 485,
-          "hit_rate": 44.5,
-          "pnl": -287.0
+          "n": 488,
+          "hit_rate": 44.9,
+          "pnl": -241.0
         },
         "watch": {
           "big_pos_watch": {
             "n_flagged": 59,
-            "flagged_pct": 4.7,
+            "flagged_pct": 4.6,
             "precision": 13.6,
-            "recall": 44.4,
-            "base_rate": 1.4,
-            "n_events": 18
+            "recall": 40.0,
+            "base_rate": 1.6,
+            "n_events": 20
           },
           "big_neg_watch": {
             "n_flagged": 15,
             "flagged_pct": 1.2,
             "precision": 6.7,
             "recall": 3.3,
-            "base_rate": 2.4,
+            "base_rate": 2.3,
             "n_events": 30
           },
           "sbg_watch": {
@@ -475,31 +475,31 @@
         "calibration_p_pos": [
           {
             "bin": "(0.0, 0.5]",
-            "n": 378,
+            "n": 382,
             "p_mean": 0.436,
-            "observed": 0.548,
-            "e_dart": 0.77
+            "observed": 0.542,
+            "e_dart": 0.64
           },
           {
             "bin": "(0.5, 0.6]",
-            "n": 398,
-            "p_mean": 0.551,
-            "observed": 0.54,
-            "e_dart": 0.1
+            "n": 403,
+            "p_mean": 0.55,
+            "observed": 0.536,
+            "e_dart": -0.03
           },
           {
             "bin": "(0.6, 0.7]",
-            "n": 304,
+            "n": 308,
             "p_mean": 0.648,
-            "observed": 0.586,
-            "e_dart": 0.39
+            "observed": 0.588,
+            "e_dart": 0.58
           },
           {
             "bin": "(0.7, 0.8]",
-            "n": 128,
-            "p_mean": 0.748,
-            "observed": 0.586,
-            "e_dart": -7.61
+            "n": 130,
+            "p_mean": 0.749,
+            "observed": 0.592,
+            "e_dart": -6.94
           },
           {
             "bin": "(0.8, 0.9]",
@@ -521,10 +521,10 @@
     "pre_dam": {
       "backfilled": {
         "n_days": 12,
-        "n_hours": 282,
-        "base_rate_pos": 68.1,
-        "pnl_optimal": 4513.0,
-        "pnl_always_gen": 1460.0,
+        "n_hours": 288,
+        "base_rate_pos": 67.4,
+        "pnl_optimal": 4566.0,
+        "pnl_always_gen": 1420.0,
         "tiers": {
           "high": {
             "n": 11,
@@ -533,10 +533,10 @@
             "pnl_per_hour": -11.79
           },
           "low": {
-            "n": 205,
-            "hit_rate": 36.1,
-            "pnl": -623.0,
-            "pnl_per_hour": -3.04
+            "n": 211,
+            "hit_rate": 37.0,
+            "pnl": -583.0,
+            "pnl_per_hour": -2.76
           },
           "medium": {
             "n": 66,
@@ -546,12 +546,12 @@
           }
         },
         "picks": {
-          "n": 54,
-          "hit_rate": 53.7,
-          "pnl": 154.0,
-          "pnl_per_hour": 2.86,
+          "n": 56,
+          "hit_rate": 55.4,
+          "pnl": 195.0,
+          "pnl_per_hour": 3.49,
           "n_gen": 28,
-          "n_load": 26
+          "n_load": 28
         },
         "rated": {
           "n": 77,
@@ -561,10 +561,10 @@
         "watch": {
           "big_pos_watch": {
             "n_flagged": 1,
-            "flagged_pct": 0.4,
+            "flagged_pct": 0.3,
             "precision": 100.0,
             "recall": 9.1,
-            "base_rate": 3.9,
+            "base_rate": 3.8,
             "n_events": 11
           },
           "big_neg_watch": {
@@ -577,7 +577,7 @@
           },
           "sbg_watch": {
             "n_flagged": 5,
-            "flagged_pct": 1.8,
+            "flagged_pct": 1.7,
             "precision": 0.0,
             "recall": 0.0,
             "base_rate": 1.4,
@@ -587,24 +587,24 @@
         "calibration_p_pos": [
           {
             "bin": "(0.0, 0.5]",
-            "n": 95,
-            "p_mean": 0.413,
-            "observed": 0.684,
-            "e_dart": 5.66
+            "n": 97,
+            "p_mean": 0.412,
+            "observed": 0.67,
+            "e_dart": 5.12
           },
           {
             "bin": "(0.5, 0.6]",
-            "n": 70,
-            "p_mean": 0.551,
-            "observed": 0.729,
-            "e_dart": 5.26
+            "n": 72,
+            "p_mean": 0.552,
+            "observed": 0.722,
+            "e_dart": 5.09
           },
           {
             "bin": "(0.6, 0.7]",
-            "n": 58,
+            "n": 60,
             "p_mean": 0.653,
             "observed": 0.5,
-            "e_dart": -1.25
+            "e_dart": -1.16
           },
           {
             "bin": "(0.7, 0.8]",
@@ -623,11 +623,11 @@
         ]
       },
       "live": {
-        "n_days": 41,
-        "n_hours": 984,
-        "base_rate_pos": 53.9,
-        "pnl_optimal": 12323.0,
-        "pnl_always_gen": -1140.0,
+        "n_days": 42,
+        "n_hours": 993,
+        "base_rate_pos": 53.8,
+        "pnl_optimal": 12512.0,
+        "pnl_always_gen": -1064.0,
         "tiers": {
           "high": {
             "n": 7,
@@ -636,10 +636,10 @@
             "pnl_per_hour": -4.81
           },
           "low": {
-            "n": 652,
+            "n": 661,
             "hit_rate": 52.8,
-            "pnl": 29.0,
-            "pnl_per_hour": 0.04
+            "pnl": -46.0,
+            "pnl_per_hour": -0.07
           },
           "medium": {
             "n": 325,
@@ -649,12 +649,12 @@
           }
         },
         "picks": {
-          "n": 105,
-          "hit_rate": 58.1,
-          "pnl": 399.0,
-          "pnl_per_hour": 3.8,
+          "n": 106,
+          "hit_rate": 58.5,
+          "pnl": 402.0,
+          "pnl_per_hour": 3.79,
           "n_gen": 59,
-          "n_load": 46
+          "n_load": 47
         },
         "rated": {
           "n": 332,
@@ -666,9 +666,9 @@
             "n_flagged": 18,
             "flagged_pct": 1.8,
             "precision": 11.1,
-            "recall": 28.6,
-            "base_rate": 0.7,
-            "n_events": 7
+            "recall": 22.2,
+            "base_rate": 0.9,
+            "n_events": 9
           },
           "big_neg_watch": {
             "n_flagged": 8,
@@ -690,24 +690,24 @@
         "calibration_p_pos": [
           {
             "bin": "(0.0, 0.5]",
-            "n": 214,
-            "p_mean": 0.444,
-            "observed": 0.458,
-            "e_dart": -2.3
+            "n": 219,
+            "p_mean": 0.445,
+            "observed": 0.447,
+            "e_dart": -2.51
           },
           {
             "bin": "(0.5, 0.6]",
-            "n": 332,
+            "n": 334,
             "p_mean": 0.551,
-            "observed": 0.497,
-            "e_dart": -0.82
+            "observed": 0.5,
+            "e_dart": -0.64
           },
           {
             "bin": "(0.6, 0.7]",
-            "n": 277,
+            "n": 279,
             "p_mean": 0.647,
-            "observed": 0.581,
-            "e_dart": -0.61
+            "observed": 0.584,
+            "e_dart": -0.34
           },
           {
             "bin": "(0.7, 0.8]",
@@ -731,150 +731,150 @@
     "post_dam": {
       "live": {
         "picks": {
-          "n_days": 53,
-          "n_trades": 164,
-          "pnl": 21.0,
-          "pnl_per_day": 0.4,
+          "n_days": 54,
+          "n_trades": 166,
+          "pnl": 69.0,
+          "pnl_per_day": 1.29,
           "pnl_per_day_ci90": [
-            -17.87,
-            15.98
+            -16.04,
+            16.66
           ],
-          "pnl_per_trade": 0.13,
-          "hit_rate": 65.2,
+          "pnl_per_trade": 0.42,
+          "hit_rate": 65.7,
           "worst_hour": -295.0,
           "worst_day": -284.0,
           "max_drawdown": 452.0,
-          "pct_days_positive": 73.9,
+          "pct_days_positive": 74.5,
           "pnl_by_month": {
             "2026-09": -115.0,
             "2026-10": 126.0,
-            "2026-11": 10.0
+            "2026-11": 58.0
           }
         },
         "picks_5": {
-          "n_days": 53,
-          "n_trades": 180,
-          "pnl": 114.0,
-          "pnl_per_day": 2.15,
+          "n_days": 54,
+          "n_trades": 183,
+          "pnl": 250.0,
+          "pnl_per_day": 4.63,
           "pnl_per_day_ci90": [
-            -16.03,
-            18.08
+            -13.36,
+            20.78
           ],
-          "pnl_per_trade": 0.63,
-          "hit_rate": 64.4,
+          "pnl_per_trade": 1.37,
+          "hit_rate": 65.6,
           "worst_hour": -295.0,
           "worst_day": -284.0,
           "max_drawdown": 452.0,
-          "pct_days_positive": 73.9,
+          "pct_days_positive": 74.5,
           "pnl_by_month": {
             "2026-09": -115.0,
             "2026-10": 231.0,
-            "2026-11": -3.0
+            "2026-11": 134.0
           }
         },
         "top5_fc": {
-          "n_days": 53,
-          "n_trades": 265,
-          "pnl": -112.0,
-          "pnl_per_day": -2.11,
+          "n_days": 54,
+          "n_trades": 270,
+          "pnl": -30.0,
+          "pnl_per_day": -0.56,
           "pnl_per_day_ci90": [
-            -23.82,
-            17.41
+            -21.43,
+            19.68
           ],
-          "pnl_per_trade": -0.42,
-          "hit_rate": 52.5,
+          "pnl_per_trade": -0.11,
+          "hit_rate": 53.3,
           "worst_hour": -295.0,
           "worst_day": -294.0,
           "max_drawdown": 628.0,
-          "pct_days_positive": 54.7,
+          "pct_days_positive": 55.6,
           "pnl_by_month": {
             "2026-09": -106.0,
             "2026-10": 180.0,
-            "2026-11": -186.0
+            "2026-11": -104.0
           }
         },
         "follow_sign": {
-          "n_days": 53,
-          "n_trades": 1265,
-          "pnl": 819.0,
-          "pnl_per_day": 15.45,
+          "n_days": 54,
+          "n_trades": 1280,
+          "pnl": 1026.0,
+          "pnl_per_day": 19.01,
           "pnl_per_day_ci90": [
-            -17.49,
-            52.34
+            -15.16,
+            54.3
           ],
-          "pnl_per_trade": 0.65,
-          "hit_rate": 53.6,
+          "pnl_per_trade": 0.8,
+          "hit_rate": 53.9,
           "worst_hour": -295.0,
           "worst_day": -370.0,
-          "max_drawdown": 903.0,
-          "pct_days_positive": 58.5,
+          "max_drawdown": 857.0,
+          "pct_days_positive": 59.3,
           "pnl_by_month": {
             "2026-09": 148.0,
             "2026-10": 1334.0,
-            "2026-11": -663.0
+            "2026-11": -456.0
           }
         },
         "always_gen": {
-          "n_days": 53,
-          "n_trades": 1266,
-          "pnl": 321.0,
-          "pnl_per_day": 6.05,
+          "n_days": 54,
+          "n_trades": 1281,
+          "pnl": 356.0,
+          "pnl_per_day": 6.59,
           "pnl_per_day_ci90": [
-            -40.31,
-            51.15
+            -36.5,
+            51.5
           ],
-          "pnl_per_trade": 0.25,
-          "hit_rate": 57.0,
+          "pnl_per_trade": 0.28,
+          "hit_rate": 56.8,
           "worst_hour": -320.0,
           "worst_day": -565.0,
           "max_drawdown": 1384.0,
-          "pct_days_positive": 52.8,
+          "pct_days_positive": 53.7,
           "pnl_by_month": {
             "2026-09": 59.0,
             "2026-10": -1079.0,
-            "2026-11": 1341.0
+            "2026-11": 1376.0
           }
         },
         "gen_ex_evening": {
-          "n_days": 53,
-          "n_trades": 1108,
-          "pnl": 964.0,
-          "pnl_per_day": 18.19,
+          "n_days": 54,
+          "n_trades": 1122,
+          "pnl": 1000.0,
+          "pnl_per_day": 18.52,
           "pnl_per_day_ci90": [
-            -17.21,
-            54.01
+            -13.17,
+            53.35
           ],
-          "pnl_per_trade": 0.87,
-          "hit_rate": 54.8,
+          "pnl_per_trade": 0.89,
+          "hit_rate": 54.6,
           "worst_hour": -75.0,
           "worst_day": -329.0,
           "max_drawdown": 933.0,
-          "pct_days_positive": 47.2,
+          "pct_days_positive": 48.1,
           "pnl_by_month": {
             "2026-09": 222.0,
             "2026-10": -231.0,
-            "2026-11": 973.0
+            "2026-11": 1009.0
           }
         },
         "gen_top3_dam": {
-          "n_days": 53,
-          "n_trades": 159,
-          "pnl": -742.0,
-          "pnl_per_day": -14.0,
+          "n_days": 54,
+          "n_trades": 162,
+          "pnl": -632.0,
+          "pnl_per_day": -11.7,
           "pnl_per_day_ci90": [
-            -44.07,
-            13.78
+            -41.15,
+            15.32
           ],
-          "pnl_per_trade": -4.67,
-          "hit_rate": 69.2,
+          "pnl_per_trade": -3.9,
+          "hit_rate": 69.1,
           "worst_hour": -320.0,
           "worst_day": -507.0,
           "max_drawdown": 1349.0,
-          "pct_days_positive": 64.2,
+          "pct_days_positive": 64.8,
           "pnl_by_month": {
             "2026-09": -168.0,
             "2026-10": -920.0,
-            "2026-11": 346.0
+            "2026-11": 456.0
           }
         }
       }
@@ -882,285 +882,285 @@
     "pre_dam": {
       "live": {
         "picks": {
-          "n_days": 41,
-          "n_trades": 105,
-          "pnl": 399.0,
-          "pnl_per_day": 9.73,
+          "n_days": 42,
+          "n_trades": 106,
+          "pnl": 402.0,
+          "pnl_per_day": 9.56,
           "pnl_per_day_ci90": [
-            -3.67,
-            20.67
+            -4.88,
+            20.47
           ],
-          "pnl_per_trade": 3.8,
-          "hit_rate": 58.1,
+          "pnl_per_trade": 3.79,
+          "hit_rate": 58.5,
           "worst_hour": -186.0,
           "worst_day": -254.0,
           "max_drawdown": 254.0,
-          "pct_days_positive": 72.7,
+          "pct_days_positive": 73.5,
           "pnl_by_month": {
             "2026-09": 53.0,
             "2026-10": 206.0,
-            "2026-11": 140.0
+            "2026-11": 143.0
           }
         },
         "picks_5": {
-          "n_days": 41,
-          "n_trades": 117,
-          "pnl": 492.0,
-          "pnl_per_day": 11.99,
+          "n_days": 42,
+          "n_trades": 122,
+          "pnl": 548.0,
+          "pnl_per_day": 13.06,
           "pnl_per_day_ci90": [
-            -2.2,
-            23.7
+            -1.57,
+            24.8
           ],
-          "pnl_per_trade": 4.2,
-          "hit_rate": 59.0,
+          "pnl_per_trade": 4.5,
+          "hit_rate": 60.7,
           "worst_hour": -186.0,
           "worst_day": -254.0,
           "max_drawdown": 254.0,
-          "pct_days_positive": 72.7,
+          "pct_days_positive": 73.5,
           "pnl_by_month": {
             "2026-09": 53.0,
             "2026-10": 298.0,
-            "2026-11": 140.0
+            "2026-11": 197.0
           }
         },
         "top5_fc": {
-          "n_days": 41,
-          "n_trades": 205,
-          "pnl": 1183.0,
-          "pnl_per_day": 28.86,
+          "n_days": 42,
+          "n_trades": 210,
+          "pnl": 1214.0,
+          "pnl_per_day": 28.9,
           "pnl_per_day_ci90": [
-            5.63,
-            55.42
+            5.59,
+            53.81
           ],
-          "pnl_per_trade": 5.77,
-          "hit_rate": 57.1,
+          "pnl_per_trade": 5.78,
+          "hit_rate": 57.6,
           "worst_hour": -186.0,
           "worst_day": -265.0,
           "max_drawdown": 265.0,
-          "pct_days_positive": 70.7,
+          "pct_days_positive": 71.4,
           "pnl_by_month": {
             "2026-09": 158.0,
             "2026-10": 904.0,
-            "2026-11": 121.0
+            "2026-11": 151.0
           }
         },
         "follow_sign": {
-          "n_days": 41,
-          "n_trades": 984,
-          "pnl": 1359.0,
-          "pnl_per_day": 33.14,
+          "n_days": 42,
+          "n_trades": 993,
+          "pnl": 1343.0,
+          "pnl_per_day": 31.97,
           "pnl_per_day_ci90": [
-            -3.88,
-            73.32
+            -6.17,
+            70.12
           ],
-          "pnl_per_trade": 1.38,
-          "hit_rate": 52.6,
+          "pnl_per_trade": 1.35,
+          "hit_rate": 52.8,
           "worst_hour": -295.0,
           "worst_day": -345.0,
           "max_drawdown": 479.0,
-          "pct_days_positive": 65.9,
+          "pct_days_positive": 64.3,
           "pnl_by_month": {
             "2026-09": -78.0,
             "2026-10": 926.0,
-            "2026-11": 511.0
+            "2026-11": 495.0
           }
         },
         "always_gen": {
-          "n_days": 41,
-          "n_trades": 984,
-          "pnl": -1140.0,
-          "pnl_per_day": -27.8,
+          "n_days": 42,
+          "n_trades": 993,
+          "pnl": -1064.0,
+          "pnl_per_day": -25.34,
           "pnl_per_day_ci90": [
-            -75.72,
-            16.44
+            -71.54,
+            19.58
           ],
-          "pnl_per_trade": -1.16,
-          "hit_rate": 53.9,
+          "pnl_per_trade": -1.07,
+          "hit_rate": 53.8,
           "worst_hour": -320.0,
           "worst_day": -565.0,
           "max_drawdown": 1384.0,
-          "pct_days_positive": 46.3,
+          "pct_days_positive": 47.6,
           "pnl_by_month": {
             "2026-09": 59.0,
             "2026-10": -1079.0,
-            "2026-11": -120.0
+            "2026-11": -44.0
           }
         },
         "gen_ex_evening": {
-          "n_days": 41,
-          "n_trades": 861,
-          "pnl": -87.0,
-          "pnl_per_day": -2.12,
+          "n_days": 42,
+          "n_trades": 870,
+          "pnl": -11.0,
+          "pnl_per_day": -0.27,
           "pnl_per_day_ci90": [
-            -32.9,
-            29.03
+            -28.69,
+            30.5
           ],
-          "pnl_per_trade": -0.1,
-          "hit_rate": 51.5,
+          "pnl_per_trade": -0.01,
+          "hit_rate": 51.4,
           "worst_hour": -75.0,
           "worst_day": -305.0,
           "max_drawdown": 933.0,
-          "pct_days_positive": 39.0,
+          "pct_days_positive": 40.5,
           "pnl_by_month": {
             "2026-09": 222.0,
             "2026-10": -231.0,
-            "2026-11": -78.0
+            "2026-11": -3.0
           }
         },
         "gen_top3_dam": {
-          "n_days": 41,
-          "n_trades": 123,
-          "pnl": -1006.0,
-          "pnl_per_day": -24.53,
+          "n_days": 42,
+          "n_trades": 126,
+          "pnl": -887.0,
+          "pnl_per_day": -21.12,
           "pnl_per_day_ci90": [
-            -60.88,
-            5.49
+            -58.34,
+            10.78
           ],
-          "pnl_per_trade": -8.18,
-          "hit_rate": 69.1,
+          "pnl_per_trade": -7.04,
+          "hit_rate": 69.8,
           "worst_hour": -320.0,
           "worst_day": -468.0,
           "max_drawdown": 1212.0,
-          "pct_days_positive": 65.9,
+          "pct_days_positive": 66.7,
           "pnl_by_month": {
             "2026-09": -165.0,
             "2026-10": -799.0,
-            "2026-11": -42.0
+            "2026-11": 77.0
           }
         }
       },
       "rebuilt_latest_inputs": {
         "picks": {
           "n_days": 12,
-          "n_trades": 54,
-          "pnl": 154.0,
-          "pnl_per_day": 12.86,
+          "n_trades": 56,
+          "pnl": 195.0,
+          "pnl_per_day": 16.29,
           "pnl_per_day_ci90": [
-            -20.44,
-            47.92
+            -17.16,
+            51.34
           ],
-          "pnl_per_trade": 2.86,
-          "hit_rate": 53.7,
+          "pnl_per_trade": 3.49,
+          "hit_rate": 55.4,
           "worst_hour": -38.0,
           "worst_day": -86.0,
           "max_drawdown": 200.0,
-          "pct_days_positive": 58.3,
+          "pct_days_positive": 66.7,
           "pnl_by_month": {
-            "2026-11": 154.0
+            "2026-11": 195.0
           }
         },
         "picks_5": {
           "n_days": 12,
           "n_trades": 56,
-          "pnl": 124.0,
-          "pnl_per_day": 10.34,
+          "pnl": 195.0,
+          "pnl_per_day": 16.29,
           "pnl_per_day_ci90": [
-            -23.39,
-            45.55
+            -17.16,
+            51.34
           ],
-          "pnl_per_trade": 2.22,
-          "hit_rate": 51.8,
+          "pnl_per_trade": 3.49,
+          "hit_rate": 55.4,
           "worst_hour": -38.0,
           "worst_day": -86.0,
           "max_drawdown": 200.0,
-          "pct_days_positive": 58.3,
+          "pct_days_positive": 66.7,
           "pnl_by_month": {
-            "2026-11": 124.0
+            "2026-11": 195.0
           }
         },
         "top5_fc": {
           "n_days": 12,
           "n_trades": 60,
-          "pnl": 9.0,
-          "pnl_per_day": 0.75,
+          "pnl": 86.0,
+          "pnl_per_day": 7.19,
           "pnl_per_day_ci90": [
-            -38.72,
-            41.63
+            -33.13,
+            48.8
           ],
-          "pnl_per_trade": 0.15,
-          "hit_rate": 45.0,
+          "pnl_per_trade": 1.44,
+          "hit_rate": 50.0,
           "worst_hour": -38.0,
           "worst_day": -127.0,
           "max_drawdown": 203.0,
-          "pct_days_positive": 41.7,
+          "pct_days_positive": 50.0,
           "pnl_by_month": {
-            "2026-11": 9.0
+            "2026-11": 86.0
           }
         },
         "follow_sign": {
           "n_days": 12,
-          "n_trades": 282,
-          "pnl": -174.0,
-          "pnl_per_day": -14.5,
+          "n_trades": 288,
+          "pnl": -129.0,
+          "pnl_per_day": -10.73,
           "pnl_per_day_ci90": [
-            -134.99,
-            106.51
+            -130.58,
+            108.88
           ],
-          "pnl_per_trade": -0.62,
-          "hit_rate": 44.0,
+          "pnl_per_trade": -0.45,
+          "hit_rate": 44.4,
           "worst_hour": -50.0,
           "worst_day": -403.0,
           "max_drawdown": 585.0,
           "pct_days_positive": 41.7,
           "pnl_by_month": {
-            "2026-11": -174.0
+            "2026-11": -129.0
           }
         },
         "always_gen": {
           "n_days": 12,
-          "n_trades": 282,
-          "pnl": 1460.0,
-          "pnl_per_day": 121.7,
+          "n_trades": 288,
+          "pnl": 1420.0,
+          "pnl_per_day": 118.35,
           "pnl_per_day_ci90": [
-            19.04,
-            224.62
+            16.06,
+            221.24
           ],
-          "pnl_per_trade": 5.18,
-          "hit_rate": 68.1,
+          "pnl_per_trade": 4.93,
+          "hit_rate": 67.4,
           "worst_hour": -137.0,
           "worst_day": -228.0,
           "max_drawdown": 273.0,
           "pct_days_positive": 75.0,
           "pnl_by_month": {
-            "2026-11": 1460.0
+            "2026-11": 1420.0
           }
         },
         "gen_ex_evening": {
           "n_days": 12,
-          "n_trades": 247,
-          "pnl": 1051.0,
-          "pnl_per_day": 87.59,
+          "n_trades": 252,
+          "pnl": 1011.0,
+          "pnl_per_day": 84.27,
           "pnl_per_day_ci90": [
-            -11.17,
-            186.28
+            -15.67,
+            181.2
           ],
-          "pnl_per_trade": 4.26,
-          "hit_rate": 66.4,
+          "pnl_per_trade": 4.01,
+          "hit_rate": 65.9,
           "worst_hour": -54.0,
           "worst_day": -329.0,
           "max_drawdown": 336.0,
           "pct_days_positive": 75.0,
           "pnl_by_month": {
-            "2026-11": 1051.0
+            "2026-11": 1011.0
           }
         },
         "gen_top3_dam": {
           "n_days": 12,
           "n_trades": 36,
-          "pnl": 441.0,
-          "pnl_per_day": 36.77,
+          "pnl": 470.0,
+          "pnl_per_day": 39.16,
           "pnl_per_day_ci90": [
-            7.81,
-            62.17
+            10.86,
+            63.53
           ],
-          "pnl_per_trade": 12.26,
+          "pnl_per_trade": 13.05,
           "hit_rate": 83.3,
           "worst_hour": -137.0,
           "worst_day": -103.0,
           "max_drawdown": 103.0,
-          "pct_days_positive": 83.3,
+          "pct_days_positive": 91.7,
           "pnl_by_month": {
-            "2026-11": 441.0
+            "2026-11": 470.0
           }
         }
       }
