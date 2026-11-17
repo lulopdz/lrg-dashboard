@@ -193,3 +193,14 @@ jobs:
       run: |
         echo "::error::Los forecasts pre-DAM fallaron (ver el paso 'Forecasts' del job actualizar); el sitio salió con los de ayer."
         exit 1
+    # Lo de arriba no ve el caso del 03-14/11/2026: el Apps Script no disparó, el cron llegó
+    # pasado el DAM y run_forecasts.py saltó el pre-DAM con exit 0 (todo en verde 12 días).
+    # Esto mira el historial: si mañana no tiene pronóstico pre-DAM live en las 4 zonas, rojo.
+    - name: Pre-DAM de mañana en el historial
+      if: always()
+      run: python3 src/ingest/check_forecasts.py --vintage pre_dam --day tomorrow
+    # El post-DAM de ayer a la tarde (para hoy). forecast_pm.yml ya falla en rojo si su corrida
+    # falla, pero no si nunca corrió (cron perdido o cancelado por el grupo de concurrency).
+    - name: Post-DAM de hoy en el historial
+      if: always()
+      run: python3 src/ingest/check_forecasts.py --vintage post_dam --day today

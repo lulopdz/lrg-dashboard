@@ -112,6 +112,24 @@ jobs:
       with:
         path: docs
 
+  # forecast_pm corre todos los días por cron, sin depender del Apps Script de las 9:00. Si a
+  # esta hora mañana no tiene pronóstico pre-DAM live, el disparo de la mañana falló y el
+  # respaldo no alcanzó a correr antes del DAM: rojo y mail el mismo día (el 03/11/2026 pasó 12
+  # días en silencio). Solo cuando corre "pronosticar", para no avisar dos veces.
+  verificar:
+    needs: [decidir, pronosticar]
+    if: always() && needs.decidir.outputs.correr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Traer el historial
+      uses: actions/checkout@v4
+      with:
+        ref: main
+    - name: Pre-DAM de mañana en el historial
+      run: python3 src/ingest/check_forecasts.py --vintage pre_dam --day tomorrow
+
   publicar:
     needs: pronosticar
     runs-on: ubuntu-latest

@@ -36,6 +36,7 @@ lrg-dashboard/
 │   │   ├── update_prices_ieso.py <-- DAM y RT desde los reportes públicos de IESO: mismos valores, 0 requests del cupo
 │   │   ├── update_common.py <-- Descarga y fusión incremental que comparten los update_*
 │   │   ├── check_freshness.py <-- Falla si el RT quedó viejo (job "verificar")
+│   │   ├── check_forecasts.py <-- Falla si falta el pronóstico pre-DAM o post-DAM live del día en alguna zona (jobs "verificar")
 │   │   └── parse_reports.py <-- Suma los XML de data/reports/ a portfolio_positions.csv y escribe data/historical_pnl.csv
 │   ├── forecast/           <-- Modelos que proyectan el día siguiente
 │   │   ├── config.py / io_archive.py / features.py / analog.py / modeling.py <-- Módulos internos compartidos (re-exportados en forecast_common.py)
