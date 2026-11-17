@@ -146,6 +146,8 @@
   .grid-section { margin:20px 0 8px; font-size:12px; font-weight:600; color:#999;
     text-transform:uppercase; letter-spacing:0.6px; }
   .grid-section:first-of-type { margin-top:8px; }
+  /* Dot on Weather charts whose variable a forecast model reads (MODEL_WEATHER_INPUTS). */
+  .model-input { color:#e8a33d; font-size:10px; vertical-align:middle; margin-left:4px; }
   .weather-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:0 0 16px; }
   @media (max-width: 900px) { .weather-grid { grid-template-columns:repeat(2, 1fr); } }
   @media (max-width: 600px) { .weather-grid { grid-template-columns:1fr; } }

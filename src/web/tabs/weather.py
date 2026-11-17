@@ -7,8 +7,10 @@ import pandas as pd
 from dashboard_data import (
     COLORS,
     DAY_OPTIONS,
+    MODEL_WEATHER_INPUTS,
     TABLE_DAYS,
     WEATHER_GROUPS,
+    WEATHER_TILE_VARS,
     WEATHER_VARS,
     default_forecast_date_idx,
     default_weather_idx,
@@ -43,7 +45,7 @@ def weather_tile_data():
             continue
         prev = by_day.get(date - pd.Timedelta(days=1))
         entries = []
-        for v in weather_var_keys:
+        for v in WEATHER_TILE_VARS:
             unit = WEATHER_VARS[v][1]
             avg = day[v].mean() if v in day.columns else None
             if avg is None or pd.isna(avg):
@@ -65,11 +67,12 @@ def weather_tile_data():
 
 def weather_stat_tiles_html():
     """Empty shells; updateWeatherTiles() fills them from WEATHER_TILE_DATA for the selected
-    day. The label is baked in since it never changes."""
+    day. The label is baked in since it never changes. Tile i is WEATHER_TILE_VARS[i], the same
+    order weather_tile_data() writes its entries in."""
     return '\n'.join(
         f'<div class="stat-tile" id="weather-tile-{i}"><div class="stat-label">{weather_label_html(v)}</div>'
         f'<div class="stat-value"></div><div class="stat-delta"></div></div>'
-        for i, v in enumerate(weather_var_keys)
+        for i, v in enumerate(WEATHER_TILE_VARS)
     )
 
 
@@ -149,10 +152,8 @@ def weather_grid_html(weather_grid_figs):
     """One small chart per weather variable (see build_weather_grid_figs) instead of one big
     chart with a variable dropdown -- every variable visible at once.
 
-    Grouped by site rather than run as one long grid: with three sites sharing the same three
-    core variables, the useful comparison is across sites, and a three-column section per site
-    puts Toronto's temperature directly above Ottawa's. Charts keep the bare variable name --
-    the section heading says where."""
+    Grouped by what the variable does to price (WEATHER_GROUPS). Sections mix sites, so each
+    title names its site, and a dot marks the variables the forecast models actually read."""
     idx = {v: i for i, v in enumerate(weather_var_keys)}
     sections = []
     for heading, keys in WEATHER_GROUPS.items():
@@ -160,9 +161,10 @@ def weather_grid_html(weather_grid_figs):
         for v in keys:
             label, unit = WEATHER_VARS[v]
             div_id = f'weather-grid-{idx[v]}'
+            mark = ' <span class="model-input" title="Forecast model input">●</span>' if v in MODEL_WEATHER_INPUTS else ''
             fig_html = weather_grid_figs[v].to_html(full_html=False, include_plotlyjs=False, div_id=div_id)
             tiles.append(f"""<div class="weather-tile">
-  <h3>{label} ({unit})</h3>
+  <h3>{weather_label_html(v)} ({unit}){mark}</h3>
   {fig_html}
   {register_fig(div_id, 3 + ENSEMBLE_TRACES, label, zones_json=json.dumps([label]), show_title=False)}
 </div>""")
@@ -193,7 +195,7 @@ def build_weather_tab():
     html = f"""<div id="tab-weather" class="tab-content">
 <div class="summary-split">
   <div class="summary-half wide">
-    <h3>Daily average for the selected day</h3>
+    <h3>Daily average for the selected day <span class="site">(price drivers)</span></h3>
     <div class="stat-row">
 {weather_stat_tiles_html()}
     </div>
@@ -207,6 +209,7 @@ def build_weather_tab():
   <span><i style="background:{COLORS['prev_day']}"></i>Previous day</span>
   <span><i style="background:{COLORS['dam']}"></i>Selected day</span>
   <span><i class="band" style="background:rgba(52,152,219,0.35)"></i>Ensemble p10&ndash;p90</span>
+  <span><span class="model-input">●</span> Forecast model input</span>
 </div>
 {weather_grid_html(weather_grid_figs)}
 <div class="card">

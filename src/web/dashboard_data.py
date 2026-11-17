@@ -78,41 +78,60 @@ wind_forecast['hour'] = wind_forecast['interval_start_local'].dt.hour + 1
 zones = sorted(dam['location'].unique())
 default_idx = zones.index(DEFAULT_ZONE)
 
-# Order is the display order of the Weather tab's small-multiples grid (3 across), so the
-# first three fill the top row: temperature, wind at the turbine site, humidity. Port Alma
-# (42.18N, -82.24W, Chatham-Kent) is where the wind fleet sits, so it's the wind speed that
-# moves price; Ottawa's is the pricing zone's own weather. The two sit in the same grid
-# column (positions 2 and 5) so they stack vertically and can be read against each other.
+# Order is the Weather tab's order everywhere (grid, hourly table picker, stability table):
+# grouped by what the variable does to price -- demand, renewable supply, other conditions --
+# rather than by site. Ottawa's and Toronto's demand rows share columns (temperature, humidity,
+# wind 10m) so each Toronto chart sits under its Ottawa one and the two read as a comparison.
 WEATHER_VARS = {
-    # Toronto -- the province's load centre, so its weather is a demand signal. Its wind and
+    # Demand. Ottawa's weather is what the models read for every zone (TORONTO and NIAGARA have
+    # no station of their own in FEATURE_COLS).
+    "temperature_2m": ("Temperature", "°C"),
+    "relative_humidity_2m": ("Humidity", "%"),
+    "wind_speed_10m": ("Wind 10m", "m/s"),
+    # Toronto -- the province's load centre. Context only: no model reads it. Its wind and
     # humidity correlate only ~0.45-0.48 with Ottawa's, i.e. they carry their own information
     # rather than restating it; temperature tracks closely (0.96) but runs ~2 C warmer.
     "temperature_2m_toronto": ("Temperature", "°C"),
-    "wind_speed_10m_toronto": ("Wind 10m", "m/s"),
     "relative_humidity_2m_toronto": ("Humidity", "%"),
-    # Ottawa -- the pricing zone itself.
-    "temperature_2m": ("Temperature", "°C"),
-    "wind_speed_10m": ("Wind 10m", "m/s"),
-    "relative_humidity_2m": ("Humidity", "%"),
-    # Port Alma -- where the wind fleet sits, so these are supply signals.
+    "wind_speed_10m_toronto": ("Wind 10m", "m/s"),
+    # Renewable supply. Port Alma (42.18N, -82.24W, Chatham-Kent) is where the wind fleet sits;
+    # 100m is roughly hub height, the wind speed that moves price.
     "wind_speed_100m_port_alma": ("Wind 100m", "m/s"),
     "shortwave_radiation_port_alma": ("Solar Radiation", "W/m²"),
-    # Remaining Ottawa conditions.
     "shortwave_radiation": ("Solar Radiation", "W/m²"),
+    # Other Ottawa conditions.
     "precipitation": ("Precipitation", "mm"),
     "snowfall": ("Snowfall", "cm"),
 }
 
-# Section -> variables, in render order. Labels above are deliberately bare (no site name)
-# because the section heading carries it; that also keeps the three-column grid aligned, so
-# Toronto's temperature sits directly above Ottawa's and the two read as one comparison.
+# Section -> variables, in render order (3 charts a row). Sections mix sites, so each chart
+# title carries its site (weather_label_html).
 WEATHER_GROUPS = {
-    "Demand centre · Toronto": ["temperature_2m_toronto", "wind_speed_10m_toronto",
-                                 "relative_humidity_2m_toronto"],
-    "Pricing zone · Ottawa": ["temperature_2m", "wind_speed_10m", "relative_humidity_2m"],
-    "Generation site · Port Alma": ["wind_speed_100m_port_alma", "shortwave_radiation_port_alma"],
-    "Other conditions · Ottawa": ["shortwave_radiation", "precipitation", "snowfall"],
+    "Demand": ["temperature_2m", "relative_humidity_2m", "wind_speed_10m",
+               "temperature_2m_toronto", "relative_humidity_2m_toronto", "wind_speed_10m_toronto"],
+    "Renewable supply": ["wind_speed_100m_port_alma", "shortwave_radiation_port_alma", "shortwave_radiation"],
+    "Other conditions": ["precipitation", "snowfall"],
 }
+
+# The daily-average tiles at the top of the tab: only variables that feed the models and move
+# price, so the row stays scannable. The rest are in the charts and the hourly table.
+WEATHER_TILE_VARS = ["temperature_2m", "wind_speed_100m_port_alma", "relative_humidity_2m",
+                     "shortwave_radiation", "snowfall"]
+
+
+def _model_weather_inputs():
+    """Weather columns any forecast model reads, taken from the models' own FEATURE_COLS so the
+    tab's "model input" marks can't drift from what is actually trained on."""
+    import predict_dam
+    import predict_rtm
+    import predict_spread
+    from config import ZONE_FEATURES
+    cols = set(predict_dam.FEATURE_COLS) | set(predict_rtm.FEATURE_COLS) | set(predict_spread.FEATURE_COLS)
+    cols |= {c for extra in ZONE_FEATURES.values() for c in extra}
+    return cols & set(WEATHER_VARS)
+
+
+MODEL_WEATHER_INPUTS = _model_weather_inputs()
 
 # Where a label appears away from its section heading (stat tiles, the revision table, the
 # hourly table's variable picker) it needs the site spelled out -- including Ottawa's, which
