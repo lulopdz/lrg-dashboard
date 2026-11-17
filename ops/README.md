@@ -15,5 +15,5 @@ GitHub Actions no puede ni correr a las 9:00 hora de Ottawa en punto (cron solo 
 ## Notas
 
 - La URL del botón queda en el HTML público: quien la tenga puede pedir un refresh. Solo dispara `refresh_rtm.yml`, que no acepta parámetros y se encola con el grupo de concurrency, así que lo peor es una corrida de más, que cuesta 1 de los 250 requests mensuales de GridStatus; si aparecen refreshes que nadie pidió, redeployar el web app para cambiar la URL.
-- Si el token expira, `dispatch` devuelve 401/403 y el botón lo muestra. Renovarlo en Script properties.
+- Si el token expira, `dispatch` devuelve 401/403: el botón lo muestra y la corrida de las 9:00 sale *Failed* en *Executions* (Google manda un mail con el error). Renovarlo en Script properties.
 - El cron `0 15 * * *` de `daily.yml` queda como respaldo por si el trigger de Apps Script falla: corre después de las 9:00 y, si ese día ya hubo un run por `workflow_dispatch`, no descarga nada (cada descarga completa son 5 de los 250 requests mensuales de GridStatus).

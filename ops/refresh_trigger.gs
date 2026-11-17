@@ -28,9 +28,12 @@ function doGet() {
 
 // 9:00 run. Exact-minute triggers only exist as one-shots, so each run re-arms tomorrow's
 // inside finally so a transient dispatch error never breaks the chain.
+// A rejected dispatch (e.g. 401/403 from an expired token) throws, so the execution shows as
+// Failed and Google emails the owner; without it the run would look Completed.
 function runDaily() {
   try {
-    dispatch('daily.yml');
+    const code = dispatch('daily.yml');
+    if (code !== 204) throw new Error(`GitHub dispatch of daily.yml failed: HTTP ${code}`);
   } finally {
     armDaily();
   }
