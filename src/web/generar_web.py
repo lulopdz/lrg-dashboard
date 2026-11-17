@@ -32,6 +32,7 @@ from dashboard_figures import (
     build_hourly_fig,
     build_table_fig,
     build_wide_hourly_fig,
+    hourly_traces_per_combo,
     build_wide_table_fig,
     compact_combos,
 )
@@ -64,15 +65,16 @@ def _load_asset(filename, replacements):
 
 def main():
     market_tabs_html, market_combos, COMPACT_ZONE_DATA_JSON = build_market_tabs()
-    weather_tab_html, weather_combos, WEATHER_TILE_DATA_JSON = build_weather_tab()
+    weather_tab_html, weather_combos, WEATHER_CONTEXT_JSON = build_weather_tab()
 
+    LOAD_TRACES = WIND_TRACES = hourly_traces_per_combo(context=True)
     load_hourly_fig = build_wide_hourly_fig(
         load_forecast, 'interval_start_local', LOAD_VARS, default_load_idx, 'Load Forecast',
-        default_day_idx=default_forecast_date_idx, polished=True,
+        default_day_idx=default_forecast_date_idx, polished=True, context=True,
     )
     load_table_fig = build_wide_table_fig(
         load_forecast, 'interval_start_local', LOAD_VARS, default_load_idx, 'Load Forecast',
-        colorscale='Viridis', polished=True,
+        colorscale='Viridis', polished=True, number_format='.0f',  # MW: decimals were just clutter
     )
 
     (
@@ -87,7 +89,7 @@ def main():
     wind_hourly_fig = build_hourly_fig(
         wind_forecast, 'Wind Forecast', location_col='zone', value_col='generation_forecast',
         y_axis_title='Generation (MW)', zones_list=wind_zones, default_zone_idx=default_wind_idx,
-        default_day_idx=default_forecast_date_idx, polished=True,
+        default_day_idx=default_forecast_date_idx, polished=True, context=True, unit='MW',
     )
     wind_table_fig = build_table_fig(
         wind_forecast, 'Wind Forecast', palette='Greens', location_col='zone',
@@ -102,8 +104,8 @@ def main():
     # traces for non-default zones (compact_zones=True), which stay as they are.
     COMBO_DATA = {
         **market_combos,
-        'load-hourly': compact_combos(load_hourly_fig, 3),
-        'wind-hourly': compact_combos(wind_hourly_fig, 3),
+        'load-hourly': compact_combos(load_hourly_fig, LOAD_TRACES),
+        'wind-hourly': compact_combos(wind_hourly_fig, WIND_TRACES),
         **weather_combos,
         **supply_combos,
     }
@@ -237,7 +239,8 @@ const COMBO_DATA = {COMBO_DATA_JSON};
 // Per-day Supply Mix tile values, so the tiles follow the Day picker like the charts do.
 const SUPPLY_TILE_DATA = {SUPPLY_TILE_DATA_JSON};
 const SUPPLY_TILE_LABELS = {SUPPLY_TILE_LABELS_JSON};
-const WEATHER_TILE_DATA = {WEATHER_TILE_DATA_JSON};
+// Weather tab hour-by-hour table: rows, per-day HE1-24 values, shading ranges (tabs/weather.py).
+const WEATHER_CONTEXT = {WEATHER_CONTEXT_JSON};
 // Archived forecasts per series and target day, with what actually cleared where known.
 const FORECAST_HISTORY = {predict['FORECAST_HISTORY_JSON']};
 const FORECAST_TABS = {predict['FORECAST_TABS_JSON']};
@@ -298,7 +301,7 @@ let currentTab = 'dam';
     <h2>Hourly Profile</h2>
   </div>
   {load_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='load-hourly')}
-  {register_fig('load-hourly', 3, 'Load Forecast - Hourly Profile', zones_json=LOAD_LABELS_JSON, y_axis_titles=LOAD_Y_AXIS_TITLES, show_title=False, zone_sel_id='tab-zone-select')}
+  {register_fig('load-hourly', LOAD_TRACES, 'Load Forecast - Hourly Profile', zones_json=LOAD_LABELS_JSON, y_axis_titles=LOAD_Y_AXIS_TITLES, show_title=False, zone_sel_id='tab-zone-select')}
 </div>
 <div class="card">
   <div class="section-header">
@@ -316,7 +319,7 @@ let currentTab = 'dam';
     <h2>Hourly Profile</h2>
   </div>
   {wind_hourly_fig.to_html(full_html=False, include_plotlyjs=False, div_id='wind-hourly')}
-  {register_fig('wind-hourly', 3, 'Wind Forecast - Hourly Profile', zones_json=WIND_ZONES_JSON, show_title=False, zone_sel_id='tab-zone-select')}
+  {register_fig('wind-hourly', WIND_TRACES, 'Wind Forecast - Hourly Profile', zones_json=WIND_ZONES_JSON, show_title=False, zone_sel_id='tab-zone-select')}
 </div>
 <div class="card">
   <div class="section-header">

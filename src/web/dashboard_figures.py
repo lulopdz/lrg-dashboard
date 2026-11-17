@@ -116,7 +116,7 @@ def discrete_diverging_colorscale(n_per_side=3, neg_palette='Reds', pos_palette=
 
 def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis_title='Price ($/MWh)',
                       zones_list=None, default_zone_idx=None, polished=False, default_day_idx=None,
-                      compact_zones=False):
+                      compact_zones=False, context=False, unit=None):
     """One zone-selector + the shared 'Day' selector both drive trace visibility via JS.
     location_col/value_col let this be reused for non-price datasets (e.g. Wind Forecast's
     'zone'/'generation_forecast') without duplicating the trace-building logic.
@@ -129,7 +129,11 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     per day, toggled instantly) and appends 3 empty 'dynamic' placeholder traces that the
     page's JS fills in on demand -- via zone_hourly_data()'s compact {zone: {date: [24]}} data
     -- when a non-default zone is picked, instead of pre-baking every zone x day combination.
-    Cuts this figure's embedded data by roughly (zones - 1) / zones."""
+    Cuts this figure's embedded data by roughly (zones - 1) / zones.
+    context=True adds the 7-day range band and the hour-to-hour ramp panel (as in
+    build_wide_hourly_fig); unit labels the ramp axis. Not with compact_zones: its JS-filled
+    placeholder traces only know the 3 reference lines."""
+    assert not (context and compact_zones), 'context traces are not supported with compact_zones'
     zones_list = zones_list if zones_list is not None else zones
     default_zone_idx = default_zone_idx if default_zone_idx is not None else default_idx
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
@@ -139,10 +143,14 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
     fig = go.Figure()
     for zi, zone in enumerate(baked_zones):
         df_zone = df[df[location_col] == zone]
+        if context:
+            df_zone = _with_ramp(df_zone, 'interval_start_local', value_col)
         zone_dates = df_zone['interval_start_local'].dt.date
         for di, date in enumerate(DAY_OPTIONS):
             visible = di == default_day_idx if compact_zones else (zi == default_zone_idx and di == default_day_idx)
             day_z, prev_z, avg_z, prev_date = _reference_series(df_zone, zone_dates, value_col, date)
+            if context:
+                fig.add_traces(_range_band_traces(df_zone, zone_dates, value_col, date, visible, zone))
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[value_col], name='7d Average', mode='lines',
@@ -162,6 +170,8 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
                 fill='tozeroy' if polished else None, fillcolor='rgba(52,152,219,0.08)' if polished else None,
                 visible=visible, legendgroup=zone
             ))
+            if context:
+                fig.add_trace(_ramp_bar_trace(day_z, value_col, visible, zone))
 
     if compact_zones:
         # Same 3 mark specs as above (avg/prev/today), empty and hidden until the page's JS
@@ -209,6 +219,8 @@ def build_hourly_fig(df, label, location_col='location', value_col='lmp', y_axis
         margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
         height=PROFILE_HEIGHT if polished else 500
     )
+    if context:
+        _ramp_panel_layout(fig, unit or '')
     return fig
 
 
@@ -569,23 +581,93 @@ def build_table_fig(df, label, diverging=False, palette='YlOrRd', location_col='
     return fig
 
 
-def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, default_day_idx=None, polished=False):
+RAMP_TOP_N = 3  # ramp bars drawn bright: the day's steepest hour-to-hour changes
+RAMP_UP, RAMP_DOWN = (230, 126, 34), (52, 152, 219)  # orange = rising, blue = falling
+CONTEXT_TRACES = 3  # what context=True adds to each (zone, day) group: 2 band traces + 1 ramp bar
+
+
+def hourly_traces_per_combo(context=False):
+    """Traces per (zone/variable, day) group in build_hourly_fig / build_wide_hourly_fig: the 3
+    reference lines, plus the range band and ramp bars when context=True. compact_combos and
+    register_fig must be given the same number."""
+    return 3 + (CONTEXT_TRACES if context else 0)
+
+
+def _with_ramp(df, time_col, value_col):
+    """df sorted by time with a '<value_col>__ramp' column: the change from the hour before,
+    across midnight too (HE1 against the day before's HE24). Pass one zone's rows at a time."""
+    df = df.sort_values(time_col).copy()
+    df[f'{value_col}__ramp'] = df[value_col].diff()
+    return df
+
+
+def _range_band_traces(df, dates, value_col, date, visible, group):
+    """Each hour's min-max over the 7 days before `date`, as a filled band (2 traces): a line
+    outside it is an hour unlike the past week."""
+    week = df[(dates >= date - pd.Timedelta(days=7)) & (dates < date)]
+    rng = week.groupby('hour')[value_col].agg(['min', 'max']).reindex(range(1, 25))
+    return [
+        go.Scatter(x=list(rng.index), y=rng['min'].tolist(), mode='lines', line=dict(width=0),
+                   name='7-day low', hoverinfo='skip', showlegend=False, visible=visible),
+        go.Scatter(x=list(rng.index), y=rng['max'].tolist(), mode='lines', line=dict(width=0),
+                   fill='tonexty', fillcolor='rgba(52,152,219,0.13)', name='Last 7 days range',
+                   hoverinfo='skip', visible=visible, legendgroup=group),
+    ]
+
+
+def _ramp_bar_trace(day_z, value_col, visible, group):
+    """Hour-to-hour change bars for the lower panel; the day's RAMP_TOP_N steepest in full colour.
+    Colours travel with the combo data (compact_combos packs marker colours), so the highlight
+    follows the Day bar."""
+    ramp = day_z.set_index('hour')[f'{value_col}__ramp'].reindex(range(1, 25))
+    top = set(ramp.abs().nlargest(RAMP_TOP_N).index)
+    colors = [f"rgba({','.join(map(str, RAMP_UP if (v or 0) >= 0 else RAMP_DOWN))},{0.95 if h in top else 0.32})"
+              for h, v in ramp.items()]
+    return go.Bar(x=list(ramp.index), y=ramp.tolist(), name='Change vs hour before', yaxis='y2',
+                  marker=dict(color=colors, line=dict(width=0)), visible=visible, legendgroup=group,
+                  hovertemplate='%{y:+,.0f}')
+
+
+def _ramp_panel_layout(fig, unit):
+    """Lines on top, ramp bars in a short panel underneath sharing the hour axis."""
+    fig.update_layout(
+        height=PROFILE_HEIGHT + 150,
+        yaxis=dict(domain=[0.36, 1]),
+        yaxis2=dict(domain=[0, 0.26], gridcolor=COLORS['grid'], zeroline=True, zerolinecolor=COLORS['muted'],
+                    title=dict(text=f'Change ({unit}/h)', font=dict(size=11)), hoverformat='+,.0f'),
+        xaxis=dict(anchor='y2'),
+        bargap=0.25,
+    )
+
+
+def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, default_day_idx=None, polished=False,
+                          context=False):
     """Same 7d-avg / yesterday / today layout as build_hourly_fig, but looping over wide-format
     variables (columns, single location) instead of a 'location' column with one value column.
     Used by Weather (Open-Meteo columns) and Load Forecast (per-subzone columns).
     polished=True applies the same ringed-marker/crosshair/no-title treatment as
     build_hourly_fig(polished=True) -- minus the tozeroy fill, since zero isn't a meaningful
     baseline for most weather variables (temperature goes negative, humidity/wind don't
-    have a $-style floor) the way it is for price."""
+    have a $-style floor) the way it is for price.
+
+    context=True (Load Forecast) answers "which hours move the most": a shaded band with each
+    hour's min-max over the 7 days before the selected day (outside it = an unusual hour), and a
+    lower panel of hour-to-hour change bars, the day's RAMP_TOP_N steepest in full colour. Both
+    are per-combo traces, so they follow the Day bar and the zone picker like the lines do."""
     var_keys = list(var_map.keys())
     default_day_idx = default_day_idx if default_day_idx is not None else default_date_idx
 
+    if context:
+        for var in var_keys:
+            df = _with_ramp(df, time_col, var)
     df_dates = df[time_col].dt.date
     fig = go.Figure()
     for vi, var in enumerate(var_keys):
         for di, date in enumerate(DAY_OPTIONS):
             visible = (vi == default_var_idx and di == default_day_idx)
             day_z, prev_z, avg_z, prev_date = _reference_series(df, df_dates, var, date)
+            if context:
+                fig.add_traces(_range_band_traces(df, df_dates, var, date, visible, var))
 
             fig.add_trace(go.Scatter(
                 x=avg_z['hour'], y=avg_z[var], name='7d Average', mode='lines',
@@ -604,6 +686,8 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
                 marker=dict(size=8, line=dict(width=2, color=COLORS['ring'])) if polished else {},
                 visible=visible, legendgroup=var
             ))
+            if context:
+                fig.add_trace(_ramp_bar_trace(day_z, var, visible, var))
 
     label0, unit0 = var_map[var_keys[default_var_idx]]
     xaxis = hour_xaxis()
@@ -625,6 +709,8 @@ def build_wide_hourly_fig(df, time_col, var_map, default_var_idx, tab_label, def
         margin=dict(t=30, b=60, r=140) if polished else dict(t=60, b=60, r=140),
         height=PROFILE_HEIGHT if polished else 500
     )
+    if context:
+        _ramp_panel_layout(fig, unit0)
     return fig
 
 
@@ -871,7 +957,8 @@ def build_weather_grid_figs(df, time_col, var_map, default_day_idx=None, confide
     return figs
 
 
-def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colorscale='Thermal', polished=False):
+def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colorscale='Thermal', polished=False,
+                         number_format='.1f'):
     """Same rolling-window heatmap as build_table_fig. polished=False keeps the native Plotly
     updatemenu dropdown to pick the variable; polished=True drops it since variable switching
     is then driven externally (the shared day-bar selector, relabeled 'Variable' for this tab)."""
@@ -896,11 +983,11 @@ def build_wide_table_fig(df, time_col, var_map, default_var_idx, tab_label, colo
             # Cell labels come from z itself: a separate text array repeated every value as a
             # string (and printed 'nan' in empty cells).
             z=pivot.values.tolist(), x=list(pivot.columns), y=list(pivot.index),
-            texttemplate='%{z:.1f}', textfont=dict(size=11),
+            texttemplate=f'%{{z:{number_format}}}', textfont=dict(size=11),
             colorscale=colorscale, zmin=zmin, zmax=zmax,
             colorbar=dict(title=unit),
             visible=(i == default_var_idx),
-            hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{label}: %{{z:.1f}} {unit}<extra></extra>'
+            hovertemplate=f'Date %{{y}}, Hour %{{x}}<br>{label}: %{{z:{number_format}}} {unit}<extra></extra>'
         ))
 
     label0 = var_map[var_keys[default_var_idx]][0]

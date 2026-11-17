@@ -113,12 +113,6 @@ WEATHER_GROUPS = {
     "Other conditions": ["precipitation", "snowfall"],
 }
 
-# The daily-average tiles at the top of the tab: only variables that feed the models and move
-# price, so the row stays scannable. The rest are in the charts and the hourly table.
-WEATHER_TILE_VARS = ["temperature_2m", "wind_speed_100m_port_alma", "relative_humidity_2m",
-                     "shortwave_radiation", "snowfall"]
-
-
 def _model_weather_inputs():
     """Weather columns any forecast model reads, taken from the models' own FEATURE_COLS so the
     tab's "model input" marks can't drift from what is actually trained on."""

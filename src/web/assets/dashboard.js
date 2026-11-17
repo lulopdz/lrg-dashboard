@@ -94,7 +94,7 @@ function showTab(name, btn) {
   }
 
   updateSupplyTiles();
-  updateWeatherTiles();
+  renderWeatherContext();
   // Charts drawn just now start on their baked default; bring them to the Day bar and zone.
   drawn.forEach(id => { if (FIG_CONFIGS[id]) applyFigSelection(id); });
   if (drawn.length) applyZoneChange();
@@ -278,23 +278,105 @@ function updateSupplyTiles() {
   });
 }
 
-function updateWeatherTiles() {
-  const day = WEATHER_TILE_DATA[document.getElementById('global-date').value];
-  document.querySelectorAll('[id^="weather-tile-"]').forEach(tile => {
-    const entry = day ? day[+tile.id.split('-')[2]] : null;
-    tile.style.display = entry ? '' : 'none';
-    if (!entry) return;
-    tile.querySelector('.stat-value').textContent = entry.value;
-    const d = tile.querySelector('.stat-delta');
-    d.textContent = entry.delta || '';
-    d.className = 'stat-delta ' + (entry.direction || '');
+// Weather tab hour-by-hour table (tabs/weather.weather_context_json): HE1-24 across, one row per
+// metric. Level rows are shaded along their own 90-day range, change/spread rows by size, and an
+// unusual value (top 20%) is outlined. Neutral colours on purpose: it is context, not a verdict.
+// The first row is the day's picks for the zone last chosen on the forecast tabs.
+const WX_PALETTE = {temp: null, temp_tor: null, wind: [26, 188, 156], solar: [241, 196, 15]};
+function wxColor(r, v) {
+  const sc = WEATHER_CONTEXT.scale[r.key] || [0, 1];
+  if (r.kind === 'level') {
+    const t = Math.max(0, Math.min(1, (v - sc[0]) / ((sc[1] - sc[0]) || 1)));
+    const base = WX_PALETTE[r.key];
+    if (!base) {  // temperature: cold blue -> warm orange
+      const c = [Math.round(60 + 170 * t), Math.round(120 + 20 * t), Math.round(210 - 160 * t)];
+      return 'rgba(' + c.join(',') + ',' + (0.18 + 0.32 * Math.abs(t - 0.5) * 2).toFixed(2) + ')';
+    }
+    return 'rgba(' + base.join(',') + ',' + (0.06 + 0.40 * t).toFixed(2) + ')';
+  }
+  const t = Math.max(0, Math.min(1, Math.abs(v) / (sc[1] || 1)));
+  return 'rgba(120,150,190,' + (0.04 + 0.42 * t).toFixed(2) + ')';
+}
+function wxFmt(r, v) {
+  if (v == null) return '—';
+  const d = r.key === 'solar' ? 0 : 1;
+  const n = Math.abs(v).toFixed(d);
+  if (r.kind !== 'change') return (v < 0 ? '−' : '') + n;
+  return (Number(n) === 0 ? '' : v > 0 ? '+' : '−') + n;
+}
+function wxDay(r, vals) {
+  const xs = vals.filter(v => v != null);
+  if (!xs.length) return [null, ''];
+  if (r.kind === 'level') return [xs.reduce((a, b) => a + b, 0) / xs.length, 'day average'];
+  if (r.kind === 'change') {
+    const m = xs.reduce((a, b) => Math.abs(b) > Math.abs(a) ? b : a, 0);
+    return [m, 'largest of the day'];
+  }
+  return [Math.max(...xs), 'widest of the day'];
+}
+function renderWeatherContext() {
+  const table = document.getElementById('wx-table');
+  if (!table || !WEATHER_CONTEXT.rows) return;
+  const date = document.getElementById('global-date').value;
+  const day = WEATHER_CONTEXT.days[date];
+  const title = document.getElementById('wx-title');
+  if (title) title.textContent = 'Hour by hour \u00b7 ' + date;
+  if (!day) {
+    table.innerHTML = '<tbody><tr><td class="wx-empty">No weather data for ' + date + '</td></tr></tbody>';
+    return;
+  }
+  const H = Array.from({length: 24}, (_, i) => i + 1);
+  const picks = (((SIGNAL_HISTORY[forecastZone] || {})[date]) || {}).pick || [];
+  const fc = ((((FORECAST_HISTORY.spread || {})[forecastZone]) || {})[date] || {}).predicted || [];
+  let html = '<thead><tr><th class="wx-label">HE</th>' + H.map(h => '<th data-h="' + h + '">' + h + '</th>').join('')
+    + '<th class="wx-day">Day</th></tr></thead><tbody>';
+  html += '<tr class="wx-picks"><td class="wx-label">Picks <span class="site">' + forecastZone + '</span></td>'
+    + H.map((h, i) => {
+      const rank = picks[i] || 0, f = fc[i];
+      if (!rank) return '<td data-h="' + h + '"></td>';
+      const side = f > 0 ? 'gen' : 'load';
+      return '<td data-h="' + h + '" title="HE' + h + ': pick \u2605' + rank + ', virtual ' + side + ', DART forecast $'
+        + (f == null ? '\u2014' : f.toFixed(1)) + '"><span class="wx-star ' + (f > 0 ? 'pos' : 'neg') + '">\u2605' + rank + '</span></td>';
+    }).join('')
+    + '<td class="wx-day" title="Picks that day">' + picks.filter(Boolean).length + '</td></tr>';
+  let group = null;
+  WEATHER_CONTEXT.rows.forEach(r => {
+    if (r.group !== group) {
+      group = r.group;
+      html += '<tr class="wx-group"><td colspan="26">' + group + '</td></tr>';
+    }
+    const vals = day[r.key] || [];
+    const thr = WEATHER_CONTEXT.unusual[r.key];
+    const cells = H.map((h, i) => {
+      const v = vals[i];
+      if (v == null) return '<td data-h="' + h + '" class="wx-na">\u2014</td>';
+      const odd = thr != null && Math.abs(v) >= thr;
+      const tip = 'HE' + h + ' \u00b7 ' + r.label + ' (' + r.site + '): ' + wxFmt(r, v) + ' ' + r.unit
+        + (odd ? ' \u2014 unusual, top 20% of the last 90 days' : '');
+      return '<td data-h="' + h + '" class="' + (odd ? 'wx-hi' : '') + '" style="background:' + wxColor(r, v)
+        + '" title="' + tip + '">' + wxFmt(r, v) + '</td>';
+    }).join('');
+    const [dv, how] = wxDay(r, vals);
+    const dOdd = dv != null && thr != null && Math.abs(dv) >= thr;
+    html += '<tr><td class="wx-label" title="' + r.help + '">' + r.label + ' <span class="site">' + r.site + ' \u00b7 ' + r.unit
+      + '</span></td>' + cells + '<td class="wx-day' + (dOdd ? ' wx-hi' : '') + '" title="' + how + '">' + wxFmt(r, dv) + '</td></tr>';
   });
+  table.innerHTML = html + '</tbody>';
+  if (!table.dataset.hover) {  // highlight the hovered hour's column, so a column reads as one hour
+    table.dataset.hover = '1';
+    table.addEventListener('mouseover', e => {
+      const td = e.target.closest('[data-h]');
+      table.querySelectorAll('.wx-col').forEach(c => c.classList.remove('wx-col'));
+      if (td) table.querySelectorAll('[data-h="' + td.dataset.h + '"]').forEach(c => c.classList.add('wx-col'));
+    });
+    table.addEventListener('mouseleave', () => table.querySelectorAll('.wx-col').forEach(c => c.classList.remove('wx-col')));
+  }
 }
 
 function applyAllFigs() {
   Object.keys(FIG_CONFIGS).forEach(applyFigSelection);
   updateSupplyTiles();
-  updateWeatherTiles();
+  renderWeatherContext();
   if (FORECAST_TABS[currentTab]) applyForecastDate(currentTab);
   if (currentTab === 'spread-signal') applySignalDate();
 }
@@ -506,4 +588,4 @@ function copyTableTSV(btn, plotlyDivId) {
 
 // This script block runs before the body, so the tiles it fills don't exist yet -- they start
 // as empty shells and get their first paint once the DOM is up.
-document.addEventListener('DOMContentLoaded', () => { updateSupplyTiles(); updateWeatherTiles(); if (SIGNAL_BASE[forecastZone]) renderSignalTable(SIGNAL_BASE[forecastZone].latest); });
+document.addEventListener('DOMContentLoaded', () => { updateSupplyTiles(); renderWeatherContext(); if (SIGNAL_BASE[forecastZone]) renderSignalTable(SIGNAL_BASE[forecastZone].latest); });

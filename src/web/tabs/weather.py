@@ -1,4 +1,4 @@
-"""Weather Forecast tab HTML, stat tiles, stability table, and grid builders."""
+"""Weather Forecast tab HTML: hour-by-hour context table, chart grid, and hourly table."""
 
 import json
 
@@ -6,11 +6,9 @@ import pandas as pd
 
 from dashboard_data import (
     COLORS,
-    DAY_OPTIONS,
     MODEL_WEATHER_INPUTS,
     TABLE_DAYS,
     WEATHER_GROUPS,
-    WEATHER_TILE_VARS,
     WEATHER_VARS,
     default_forecast_date_idx,
     default_weather_idx,
@@ -27,125 +25,6 @@ from dashboard_figures import (
     compact_combos,
 )
 from tabs.common import WEATHER_LABELS_JSON, register_fig
-
-
-def weather_tile_data():
-    """{date_str: [{value, delta, direction} or None, ...]} for every day in the picker.
-
-    Was baked once for tomorrow-vs-today while the charts below followed the Day selector, so
-    moving the day left these showing another day's averages -- the same defect just fixed on
-    the Supply Mix tab. Following the picker also generalises the comparison: the delta is now
-    against the day before whichever day is selected, not against today specifically."""
-    dates = weather['timestamp'].dt.date
-    by_day = {d: weather[dates == d] for d in DAY_OPTIONS}
-    out = {}
-    for date in DAY_OPTIONS:
-        day = by_day.get(date)
-        if day is None or day.empty:
-            continue
-        prev = by_day.get(date - pd.Timedelta(days=1))
-        entries = []
-        for v in WEATHER_TILE_VARS:
-            unit = WEATHER_VARS[v][1]
-            avg = day[v].mean() if v in day.columns else None
-            if avg is None or pd.isna(avg):
-                entries.append(None)
-                continue
-            entry = {'value': f'{avg:.1f} {unit}'}
-            prev_avg = prev[v].mean() if prev is not None and not prev.empty and v in prev.columns else None
-            if prev_avg is not None and not pd.isna(prev_avg):
-                delta = avg - prev_avg
-                direction = 'up' if delta > 0.05 else ('down' if delta < -0.05 else 'flat')
-                arrow = {'up': '▲', 'down': '▼', 'flat': '–'}[direction]
-                entry['direction'] = direction
-                entry['delta'] = f'{arrow} {delta:+.1f} {unit} vs previous day'
-            entries.append(entry)
-        if any(entries):
-            out[str(date)] = entries
-    return out
-
-
-def weather_stat_tiles_html():
-    """Empty shells; updateWeatherTiles() fills them from WEATHER_TILE_DATA for the selected
-    day. The label is baked in since it never changes. Tile i is WEATHER_TILE_VARS[i], the same
-    order weather_tile_data() writes its entries in."""
-    return '\n'.join(
-        f'<div class="stat-tile" id="weather-tile-{i}"><div class="stat-label">{weather_label_html(v)}</div>'
-        f'<div class="stat-value"></div><div class="stat-delta"></div></div>'
-        for i, v in enumerate(WEATHER_TILE_VARS)
-    )
-
-
-def weather_stability_html():
-    """How much tomorrow's forecast has moved between successive model runs -- one column per
-    lead time, so you can see whether it is converging or still wandering.
-
-    Reading two lead times together is what makes this useful: if the 2-day-ago column is
-    large and the 1-day-ago column is small, the forecast has settled and can be trusted. If
-    both are large it is still moving. If the 1-day column is the larger of the two, something
-    changed late, which is the least comfortable case.
-
-    The ensemble spread (how far apart ECMWF's members are) is not repeated here -- it is
-    already drawn as the shaded band on each chart above."""
-    if weather_confidence is None:
-        return ''
-    tomorrow_date = today_date + pd.Timedelta(days=1)
-    conf = weather_confidence[weather_confidence['timestamp'].dt.date == tomorrow_date]
-    fc = weather[weather['timestamp'].dt.date == tomorrow_date]
-    if conf.empty or fc.empty:
-        return ''
-
-    # Both figures are also shown as a share of how much the variable normally moves (its
-    # hourly standard deviation over the trailing 30 days). The raw numbers can't be compared
-    # across variables or judged on their own -- 67 W/m2 of solar spread sounds alarming until
-    # you see solar's normal swing is 289, making it the *most* trustworthy row here. Dividing
-    # by the mean instead would be wrong: temperature in Celsius is an interval scale (a "% of
-    # 16 degrees" means nothing), and precipitation/snowfall average ~0 so it would explode.
-    recent = weather[weather['timestamp'] >= weather['timestamp'].max() - pd.Timedelta(days=30)]
-
-    def relative(value, var):
-        sd = recent[var].std()
-        if value is None or pd.isna(value) or not sd or sd < 1e-9:
-            return ''
-        return f' <span class="rel">({value / sd * 100:.0f}%)</span>'
-
-    def cell(value, var, unit):
-        if value is None or pd.isna(value):
-            return '—'
-        return f'{value:.1f} {unit}{relative(value, var)}'
-
-    def revision(var, days_ago):
-        """Mean absolute gap between the current forecast for tomorrow and what the run
-        `days_ago` days earlier said for those same hours."""
-        col = f'{var}_prev{days_ago}'
-        if col not in conf.columns or not conf[col].notna().any():
-            return None
-        merged = fc[['hour', var]].merge(conf[['hour', col]], on='hour', how='inner').dropna()
-        return (merged[var] - merged[col]).abs().mean() if not merged.empty else None
-
-    rows = []
-    for v in weather_var_keys:
-        label, unit = weather_label_html(v), WEATHER_VARS[v][1]
-        rev1, rev2 = revision(v, 1), revision(v, 2)
-        if rev1 is None and rev2 is None:
-            continue
-        rows.append(f"""<tr><td>{label}</td>
-  <td>{cell(rev1, v, unit)}</td>
-  <td>{cell(rev2, v, unit)}</td></tr>""")
-    if not rows:
-        return ''
-
-    return f"""
-<h3>How much tomorrow's forecast has been moving</h3>
-<table class="naive-table">
-  <thead><tr><th>Variable</th><th>1 day ago</th><th>2 days ago</th></tr></thead>
-  <tbody>
-{chr(10).join(rows)}
-  </tbody>
-</table>
-<p class="caveat">Shift from what the model said 1 and 2 days ago for the same hours. Big 2-day next to
-small 1-day = it has settled; both big = still wandering; 1-day bigger = something changed late.
-Percentages are against each variable's normal hourly swing (30-day std), so rows compare.</p>"""
 
 
 def weather_grid_html(weather_grid_figs):
@@ -175,8 +54,121 @@ def weather_grid_html(weather_grid_figs):
     return '\n'.join(sections)
 
 
+CONTEXT_DAYS = 90        # history the table's shading and "unusual" marks are judged against
+CONTEXT_UNUSUAL_Q = 0.8  # |value| in the top 20% of that span is flagged unusual
+
+# Rows of the hour-by-hour table at the top of the tab: (key, label, site, unit, kind, help).
+# kind: 'level' = shaded along its own 90-day range; 'change' = signed, flagged when unusual;
+# 'spread' = shaded by size, flagged when unusual. Grouped like the charts below.
+CONTEXT_ROWS = {
+    "Demand": [
+        ("temp", "Temperature", "Ottawa", "°C", "level", "Forecast temperature. The models read Ottawa's weather for every zone."),
+        ("dT", "Change per hour", "Ottawa", "°C", "change", "Temperature change from the hour before: how steep the ramp is."),
+        ("temp_tor", "Temperature", "Toronto", "°C", "level", "Toronto, the province's load centre. Context: no model reads it."),
+    ],
+    "Renewable supply": [
+        ("wind", "Wind 100m", "Port Alma", "m/s", "level", "Wind at hub height where the wind fleet sits."),
+        ("dW", "Change per hour", "Port Alma", "m/s", "change", "Wind change from the hour before: a wind ramp up or down."),
+        ("solar", "Solar radiation", "Ottawa", "W/m²", "level", "Shortwave radiation; its evening drop starts the ramp."),
+    ],
+    "Forecast confidence": [
+        ("rev", "Revision", "Ottawa temp", "°C", "change",
+         "Temperature forecast 1 day before the hour minus 2 days before: how much it moved."),
+        ("ensT", "Ensemble width", "Ottawa temp", "°C", "spread",
+         "P10-P90 across ECMWF's 51 members: how divided the scenarios are."),
+        ("ensW", "Ensemble width", "Port Alma wind", "m/s", "spread", "P10-P90 across ECMWF's 51 members for 100m wind."),
+    ],
+}
+_SOURCE = {"temp": "temperature_2m", "temp_tor": "temperature_2m_toronto",
+           "wind": "wind_speed_100m_port_alma", "solar": "shortwave_radiation"}
+
+
+def weather_context_json():
+    """Per day, HE1-24 values for every CONTEXT_ROWS row, plus what the page needs to shade and
+    flag them: each level row's 5th-95th percentile range and each change/spread row's
+    "unusual" |value| (top 20%), both over the last CONTEXT_DAYS days. renderWeatherContext()
+    draws the table for whatever day the Day bar is on.
+
+    Context, deliberately no trade/skip verdict: on 111 days (2026-07..11, three zones) steep
+    ramps, forecast revisions and wide ensembles never made the picks worse -- picks in
+    steep-ramp hours paid $11.4/h vs $7.5/h, wide-ensemble hours $5.0/h vs $2.3/h (TRACKING,
+    2026-11-17). For past days the values are what the files hold now (near-actuals, a
+    short-lead ensemble); weather_confidence_dayahead.csv keeps the day-before ensemble."""
+    w = weather[['timestamp'] + [c for c in _SOURCE.values() if c in weather.columns]].sort_values('timestamp').copy()
+    w = w.rename(columns={v: k for k, v in _SOURCE.items()})
+    w['dT'] = w['temp'].diff()
+    if 'wind' in w:
+        w['dW'] = w['wind'].diff()
+    w = w[w['timestamp'] >= w['timestamp'].max() - pd.Timedelta(days=CONTEXT_DAYS)].copy()
+    w['date'] = w['timestamp'].dt.strftime('%Y-%m-%d')
+    w['hour'] = w['timestamp'].dt.hour + 1
+    if weather_confidence is not None:
+        c = weather_confidence.copy()
+        c['date'] = c['timestamp'].dt.strftime('%Y-%m-%d')
+        if {'temperature_2m_prev1', 'temperature_2m_prev2'} <= set(c.columns):
+            # Not "latest minus prev1": Open-Meteo's prev1 is the newest run at least 24h before
+            # the hour, which for most of tomorrow IS the latest run, so that was always 0 there.
+            c['rev'] = c['temperature_2m_prev1'] - c['temperature_2m_prev2']
+        for key, var in (('ensT', 'temperature_2m'), ('ensW', 'wind_speed_100m_port_alma')):
+            if {f'{var}_p10', f'{var}_p90'} <= set(c.columns):
+                c[key] = c[f'{var}_p90'] - c[f'{var}_p10']
+        extra = [k for k in ('rev', 'ensT', 'ensW') if k in c]
+        w = w.merge(c[['date', 'hour'] + extra], on=['date', 'hour'], how='left')
+
+    rows, scale, unusual = [], {}, {}
+    for group, specs in CONTEXT_ROWS.items():
+        for key, label, site, unit, kind, help_ in specs:
+            if key not in w or not w[key].notna().any():
+                continue
+            rows.append({'key': key, 'group': group, 'label': label, 'site': site, 'unit': unit,
+                         'kind': kind, 'help': help_})
+            if kind == 'level':
+                scale[key] = [round(float(w[key].quantile(q)), 1) for q in (0.05, 0.95)]
+            else:
+                unusual[key] = round(float(w[key].abs().quantile(CONTEXT_UNUSUAL_Q)), 2)
+                scale[key] = [0, round(float(w[key].abs().quantile(0.95)), 2)]
+    keys = [r['key'] for r in rows]
+    days = {}
+    for date, g in w.groupby('date'):
+        g = g.set_index('hour').reindex(range(1, 25))
+        days[date] = {k: [None if pd.isna(v) else round(float(v), 1) for v in g[k]] for k in keys}
+    return json.dumps({'rows': rows, 'days': days, 'scale': scale, 'unusual': unusual})
+
+
+def weather_context_html():
+    """Shell for the hour-by-hour table; renderWeatherContext() fills it for the Day bar's day."""
+    return f"""<div class="card wx-card">
+  <div class="section-header">
+    <h2 id="wx-title">Hour by hour</h2>
+    <span class="wx-key"><span class="wx-swatch"></span>unusual (top 20% of the last {CONTEXT_DAYS} days)
+      &nbsp; <span class="wx-star">&#9733;</span> the day's picks</span>
+  </div>
+  <div class="wx-scroll"><table class="wx-table" id="wx-table"></table></div>
+  <p class="caveat wx-notes"><b>Forecast confidence</b> · <b>Revision</b>: forecast 1 day out minus 2 days out
+  (0 = unchanged, &minus; = colder) · <b>Ensemble width</b>: P10&ndash;P90 of 51 scenarios now (near 0 = they agree).
+  Big revision + narrow ensemble = changed its mind, now sure.<br>
+  Context, not a skip signal: steep-ramp and wide-ensemble hours paid more ($11.4 vs $7.5/h, $5.0 vs $2.3/h; 111 days).</p>
+</div>"""
+
+
+def ensemble_age_html():
+    """When tomorrow's ensemble band was fetched, for the legend. A failed daily fetch leaves the
+    previous run's rows in place, which otherwise looks exactly like a fresh band; this says so.
+    Empty for rows written before update_weather_confidence.py stamped fetched_at."""
+    if weather_confidence is None or 'fetched_at' not in weather_confidence.columns:
+        return ''
+    tomorrow = weather_confidence[weather_confidence['timestamp'].dt.date == today_date + pd.Timedelta(days=1)]
+    fetched = pd.to_datetime(tomorrow['fetched_at'], errors='coerce').dropna()
+    if fetched.empty:
+        return ''
+    last = fetched.max()
+    stale = last.date() < today_date
+    label = f"fetched {last:%d/%m %H:%M}" + (" — not updated today" if stale else "")
+    return f' <span class="site{" stale" if stale else ""}">({label})</span>'
+
+
 def build_weather_tab():
-    """Build the Weather Forecast tab HTML, combo traces, and tile data JSON."""
+    """Build the Weather Forecast tab HTML, combo traces, and the hour-by-hour table data (JSON)."""
     weather_grid_figs = build_weather_grid_figs(
         weather, 'timestamp', WEATHER_VARS,
         default_day_idx=default_forecast_date_idx,
@@ -190,25 +182,14 @@ def build_weather_tab():
         f'weather-grid-{weather_var_keys.index(_v)}': compact_combos(_fig, 3 + ENSEMBLE_TRACES)
         for _v, _fig in weather_grid_figs.items()
     }
-    weather_tile_data_json = json.dumps(weather_tile_data())
 
     html = f"""<div id="tab-weather" class="tab-content">
-<div class="summary-split">
-  <div class="summary-half wide">
-    <h3>Daily average for the selected day <span class="site">(price drivers)</span></h3>
-    <div class="stat-row">
-{weather_stat_tiles_html()}
-    </div>
-  </div>
-  <div class="summary-half">
-{weather_stability_html()}
-  </div>
-</div>
+{weather_context_html()}
 <div class="chart-legend">
   <span><i style="background:{COLORS['avg']}"></i>7d Average</span>
   <span><i style="background:{COLORS['prev_day']}"></i>Previous day</span>
   <span><i style="background:{COLORS['dam']}"></i>Selected day</span>
-  <span><i class="band" style="background:rgba(52,152,219,0.35)"></i>Ensemble p10&ndash;p90</span>
+  <span><i class="band" style="background:rgba(52,152,219,0.35)"></i>Ensemble p10&ndash;p90{ensemble_age_html()}</span>
   <span><span class="model-input">●</span> Forecast model input</span>
 </div>
 {weather_grid_html(weather_grid_figs)}
@@ -222,4 +203,4 @@ def build_weather_tab():
 </div>
 </div>"""
 
-    return html, combos, weather_tile_data_json
+    return html, combos, weather_context_json()
