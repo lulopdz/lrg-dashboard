@@ -6,9 +6,9 @@
 # El bot nunca toca portfolio_positions.csv (en Actions no hay XML), así que este commit y los
 # del bot no pueden chocar.
 #
-# Los pull son con merge, no con rebase: el repo vive en Google Drive y Drive dejó vacía la
-# carpeta .git/rebase-merge de un rebase del 27/09/2026; git la toma como un rebase a medias y
-# se niega a hacer otro. Con merge no se usa esa carpeta.
+# Los pull son con merge, no con rebase: cuando el repo vivía en Google Drive, Drive dejó una
+# carpeta .git/rebase-merge vacía que bloqueaba los rebases. Desde el 17/11/2026 el repo está en
+# C:\code (fuera de Drive), pero el merge se mantiene porque no molesta.
 
 $repo = Split-Path $PSScriptRoot -Parent
 Set-Location $repo
