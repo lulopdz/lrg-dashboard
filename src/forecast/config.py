@@ -87,6 +87,18 @@ BACKTEST_SERIES_KEYS = ("test_actual", "test_predicted")
 # spring, a floor at $0), so the P10 and P90 sit at very different distances from the point.
 QUANTILES = (0.1, 0.9)
 
+# Conformal widening of the band (N-5). The DAM quantile boosters come out overconfident: live
+# pre_dam P10-P90 covered 63-70% of hours in all four zones (2026-09-22..11-17, 33-43 days a
+# zone), missing on both sides, so the band is too narrow rather than off-centre. Each run
+# scales the raw band around the point by k, the smallest factor that would have put `target`
+# of the last `window_days` days' actuals inside it (raw bands, live and reconstructed rows).
+# Walk-forward on those same days, using only earlier days: coverage 80.1 / 79.8 / 79.2 / 81.6%
+# (OTTAWA / TORONTO / NIAGARA / NORTHWEST), k 1.15-1.76, mean width $21 -> $31 in OTTAWA. 21-
+# and 45-day windows gave the same within ~1 pt. RT and spread bands are already at 74-80%.
+BAND_CALIBRATION = {
+    "dam": dict(window_days=30, min_days=10, target=0.8, k_min=1.0, k_max=2.5),
+}
+
 # The full set of forecasted variables we have for tomorrow (IESO load forecast +
 # IESO wind forecast + Open-Meteo weather forecast) -- "similar day" means closest
 # on these, not on anything realized/actual. Each entry is
@@ -124,7 +136,11 @@ SUPPLY_COLS = ["nuclear_avail", "gas_avail", "hydro_avail", "adq_demand", "solar
                "net_load", "net_load_day_min", "net_load_day_max", "capacity_margin"]
 
 HISTORY_COLS = ["target_date", "vintage", "generated_at", "analog_date", "analog_date_2", "hour",
-                "predicted_lmp", "p10", "p90", "analog_lmp", "analog_lmp_2", "band_err", "backfilled"]
+                "predicted_lmp", "p10", "p90", "analog_lmp", "analog_lmp_2", "band_err", "backfilled",
+                # p10/p90 are what was published; *_raw is the boosters' band before
+                # BAND_CALIBRATION and band_k the factor applied (empty when not calibrated).
+                # Calibration always learns from the raw band, never from its own output.
+                "p10_raw", "p90_raw", "band_k"]
 
 # Where the money is lost: from 2026-09-24 OTTAWA's 10 worst DART hours were all HE17-19, the
 # evening ramp -- load climbing while solar drops out, earlier every autumn day -- and HE17-20

@@ -11,6 +11,7 @@ from analog import analog_comparison_display, analog_price_curves, find_similar_
 from config import (
     ANALOG_FEATURE_LABELS,
     BACKTEST_DAYS,
+    BAND_CALIBRATION,
     BACKTEST_SERIES_KEYS,
     DATA_DIR,
     DEFAULT_MODEL_PARAMS,
@@ -161,6 +162,56 @@ def order_band(df_target):
     return df_target.assign(p10=lo, p90=hi)
 
 
+MIN_HALF_WIDTH = 0.5  # $/MWh: floor on a side of the band, so a collapsed side can't divide by ~0
+
+
+def band_scale(history, actual, target_date, vintage, window_days, min_days, target, k_min, k_max):
+    """Split-conformal factor for the band (see BAND_CALIBRATION): for each archived hour in the
+    `window_days` before target_date, the k that would have just covered the actual price
+    (distance from the point over the raw half-width on that side), then the finite-sample
+    `target` quantile of those, clipped to [k_min, k_max]. Only days before target_date count,
+    so a reconstruction sees what the live run would have. Returns (k or None, days used)."""
+    if history is None or history.empty or "p10" not in history.columns:
+        return None, 0
+    h = history[history["vintage"] == vintage].copy()
+    lo = h["p10_raw"] if "p10_raw" in h.columns else pd.Series(np.nan, index=h.index)
+    hi = h["p90_raw"] if "p90_raw" in h.columns else pd.Series(np.nan, index=h.index)
+    h["lo"] = lo.fillna(h["p10"])  # rows from before calibration existed: p10/p90 were raw
+    h["hi"] = hi.fillna(h["p90"])
+    start = str(target_date - pd.Timedelta(days=window_days))
+    h = h[(h["target_date"] >= start) & (h["target_date"] < str(target_date))
+          & h["lo"].notna() & h["hi"].notna()]
+    act = actual.assign(target_date=actual["interval_start_local"].dt.strftime("%Y-%m-%d"),
+                        hour=actual["interval_start_local"].dt.hour + 1)[["target_date", "hour", "lmp"]]
+    g = h.merge(act, on=["target_date", "hour"], how="inner")
+    n_days = int(g["target_date"].nunique())
+    if n_days < min_days:
+        return None, n_days
+    point = g["predicted_lmp"]
+    below = (point - g["lmp"]) / np.maximum(point - g["lo"], MIN_HALF_WIDTH)
+    above = (g["lmp"] - point) / np.maximum(g["hi"] - point, MIN_HALF_WIDTH)
+    need = np.where(g["lmp"] < point, below, above)
+    n = len(need)
+    q = min(1.0, np.ceil((n + 1) * target) / n)
+    return float(np.clip(np.quantile(need, q), k_min, k_max)), n_days
+
+
+def calibrate_band(df_target, history, actual, target_date, vintage, cfg):
+    """Widen df_target's P10/P90 around predicted_lmp by band_scale's k, keeping the raw band in
+    p10_raw/p90_raw. k >= 1, so the band still contains the point. Returns (df, info or None)."""
+    df_target = df_target.assign(p10_raw=df_target["p10"], p90_raw=df_target["p90"])
+    k, n_days = band_scale(history, actual, target_date, vintage, **cfg)
+    if k is None:
+        print(f"Band calibration: only {n_days} archived days in the last {cfg['window_days']} "
+              f"(need {cfg['min_days']}); publishing the raw band.")
+        return df_target, None
+    point = df_target["predicted_lmp"]
+    df_target = df_target.assign(p10=point - k * (point - df_target["p10_raw"]),
+                                 p90=point + k * (df_target["p90_raw"] - point))
+    print(f"Band calibration: x{k:.2f} from {n_days} days (target {cfg['target']:.0%} coverage)")
+    return df_target, {"k": round(k, 3), "n_days": n_days, **cfg}
+
+
 def fit_quantile_model(df_hist, usable_cols, quantile, model_params=None):
     params = {k: v for k, v in (model_params or {}).items() if k != "loss"}
     model = HistGradientBoostingRegressor(random_state=0, loss="quantile", quantile=quantile, **params)
@@ -259,6 +310,14 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
     for q in QUANTILES:
         df_target[f"p{int(q * 100)}"] = fit_quantile_model(df_hist, usable_cols, q, model_params).predict(df_target[usable_cols])
     df_target = order_band(df_target)
+    band_calibration = None
+    if prefix in BAND_CALIBRATION:
+        hist_path = Path(out_dir) / forecast_file(prefix, "forecast_history", zone)
+        history = pd.read_csv(hist_path) if hist_path.exists() else None
+        if history is not None and "vintage" not in history.columns:
+            history["vintage"] = "pre_dam"
+        df_target, band_calibration = calibrate_band(df_target, history, series_df, target_date,
+                                                     vintage, BAND_CALIBRATION[prefix])
 
     best_hour, best_hour_mae = recommend_hour(metrics, df_target, feature_cols)
     if best_hour:
@@ -284,6 +343,10 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
     for q in QUANTILES:
         col = f"p{int(q * 100)}"
         out[col] = df_target[col].round(2).values
+    if "p10_raw" in df_target.columns:
+        out["p10_raw"] = df_target["p10_raw"].round(2).values
+        out["p90_raw"] = df_target["p90_raw"].round(2).values
+        out["band_k"] = band_calibration["k"] if band_calibration else np.nan
     out["analog_lmp"] = out["hour"].map(analog_curves[0] if analogs else {}).round(2)
     out["analog_lmp_2"] = out["hour"].map(analog_curves[1] if len(analogs) > 1 else {}).round(2)
     out_dir = Path(out_dir)
@@ -309,6 +372,7 @@ def run_forecast(prefix, series_df, feature_cols, dam, attach_dam_feature=False,
         "recommended_hour": {"hour": best_hour, "expected_error": best_hour_mae} if best_hour else None,
         "backtest": metrics,
         "directional_backtest": track_record,
+        "band_calibration": band_calibration,
     }
     if attach_dam_feature:
         meta["used_dam_forecast_feature"] = used_dam_forecast

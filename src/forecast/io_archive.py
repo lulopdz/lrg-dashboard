@@ -152,7 +152,7 @@ def archive_forecast(prefix, out, meta, out_dir=DATA_DIR, zone=ZONE):
     rows["band_err"] = rows["hour"].map(lambda h: hourly_mae.get(int(h))).astype(float).round(2)
     for col in ("target_date", "vintage", "generated_at", "analog_date", "analog_date_2"):
         rows[col] = meta.get(col)
-    for col in ("p10", "p90"):
+    for col in ("p10", "p90", "p10_raw", "p90_raw", "band_k"):
         if col not in rows.columns:
             rows[col] = np.nan
     # A walk-forward reconstruction (walkforward.py) is marked so scorecard.py grades it apart
