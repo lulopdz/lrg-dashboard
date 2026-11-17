@@ -18,6 +18,7 @@ Ensemble history is short (the endpoint only serves a few past days), so this fi
 each run appends the current window and older rows are kept. Run alongside update_weather.py.
 """
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +26,7 @@ import pandas as pd
 import requests
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "weather_confidence.csv"
+DAYAHEAD_PATH = Path(__file__).resolve().parents[2] / "data" / "weather_confidence_dayahead.csv"
 
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
@@ -54,17 +56,27 @@ TORONTO_VARS = [
 ]
 
 PAST_DAYS = 3      # as far back as the ensemble endpoint serves
-FORECAST_DAYS = 3
+# Days are counted in UTC (timezone=UTC below), so the window ends at 23:00 UTC = 18:00 Ottawa:
+# with 3, the last day lost HE20-24, and on a day the fetch failed that last day was tomorrow,
+# so its band stopped at 18:00 (2026-11-18). 4 keeps tomorrow whole even with a day missed.
+FORECAST_DAYS = 4
+RETRIES = 3        # attempts per request; the endpoint failed 4 of 30 daily runs in Oct-Nov 2026
+RETRY_WAIT_S = 20
 REVISION_DAYS = (1, 2, 3)  # compare against the runs from 1, 2 and 3 days earlier
 
 
 def _get(url, params):
-    try:
-        r = requests.get(url, params=params, timeout=180)
-        r.raise_for_status()
-        payload = r.json()
-    except (requests.RequestException, ValueError) as exc:
-        raise RuntimeError(f"{url}: request/JSON error: {exc}") from exc
+    for attempt in range(1, RETRIES + 1):
+        try:
+            r = requests.get(url, params=params, timeout=180)
+            r.raise_for_status()
+            payload = r.json()
+            break
+        except (requests.RequestException, ValueError) as exc:
+            if attempt == RETRIES:
+                raise RuntimeError(f"{url}: request/JSON error after {RETRIES} attempts: {exc}") from exc
+            print(f"{url}: attempt {attempt} failed ({exc}); retrying in {RETRY_WAIT_S}s")
+            time.sleep(RETRY_WAIT_S)
     if not isinstance(payload, dict):
         raise RuntimeError(f"{url}: unexpected response payload type {type(payload).__name__}")
     if payload.get("error"):
@@ -149,6 +161,9 @@ def build():
     fresh = pd.concat(frames, axis=1).reset_index()
     if fresh.empty:
         raise RuntimeError("Weather confidence fetch produced no rows.")
+    # When each row was fetched, so the Weather tab can say how old the band it draws is (a
+    # failed run leaves the previous day's rows in place without any other sign).
+    fresh["fetched_at"] = pd.Timestamp.now(tz="UTC").tz_convert("-05:00").strftime("%Y-%m-%d %H:%M")
 
     if DATA_PATH.exists():
         existing = pd.read_csv(DATA_PATH)
@@ -166,7 +181,34 @@ def build():
     combined.to_csv(DATA_PATH, index=False)
     print(f"Saved {len(combined)} rows to {DATA_PATH} "
           f"(span {combined['timestamp'].min()} -> {combined['timestamp'].max()})")
+    archive_dayahead(fresh)
     return combined
+
+
+def archive_dayahead(fresh, path=DAYAHEAD_PATH, today=None):
+    """Keep tomorrow's rows as fetched the day before. weather_confidence.csv overwrites each
+    hour with the newest run, so for a past day it holds a short-lead ensemble, not what was
+    known when the picks were made; this file is what lets the weather-context columns on the
+    Spread Signal tab be re-tested against the picks later (TRACKING, 2026-11-17). Upserts
+    tomorrow's rows (a later run the same day replaces them)."""
+    ts = pd.to_datetime(fresh["timestamp"])
+    today = today or pd.Timestamp.now(tz="UTC").tz_convert("-05:00").date()
+    tomorrow = today + pd.Timedelta(days=1)
+    rows = fresh[ts.dt.date == tomorrow].copy()
+    if rows.empty:
+        print(f"No rows for {tomorrow} in this fetch; day-ahead archive unchanged.")
+        return None
+    rows.insert(0, "target_date", str(tomorrow))
+    path = Path(path)
+    if path.exists():
+        old = pd.read_csv(path)
+        old = old[old["target_date"] != str(tomorrow)]
+        if not old.empty:
+            rows = pd.concat([old, rows], ignore_index=True)
+    rows = rows.sort_values(["target_date", "timestamp"])
+    rows.to_csv(path, index=False)
+    print(f"Archived {str(tomorrow)} day-ahead ensemble to {path} ({rows['target_date'].nunique()} days)")
+    return rows
 
 
 if __name__ == "__main__":
