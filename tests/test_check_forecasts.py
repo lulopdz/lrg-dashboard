@@ -20,7 +20,7 @@ def _all_zones(tmp_path, rows):
 
 def test_history_path_suffix(tmp_path):
     assert cfc.history_path("OTTAWA", tmp_path).name == "spread_forecast_history.csv"
-    assert cfc.history_path("NORTHWEST", tmp_path).name == "spread_forecast_history_NORTHWEST.csv"
+    assert cfc.history_path("NIAGARA", tmp_path).name == "spread_forecast_history_NIAGARA.csv"
 
 
 def test_all_zones_live_passes(tmp_path):
@@ -43,9 +43,9 @@ def test_other_vintage_or_day_does_not_count(tmp_path):
 
 def test_one_zone_missing_is_reported(tmp_path):
     _all_zones(tmp_path, [("2026-11-18", 1, "pre_dam", "False")])
-    _write(tmp_path, "NORTHWEST", [("2026-11-17", 1, "pre_dam", "False")])
+    _write(tmp_path, "NIAGARA", [("2026-11-17", 1, "pre_dam", "False")])
     assert cfc.check("2026-11-18", "pre_dam", data_dir=tmp_path) == [
-        "NORTHWEST: no live pre_dam forecast for 2026-11-18"]
+        "NIAGARA: no live pre_dam forecast for 2026-11-18"]
 
 
 def test_missing_file_and_bad_columns(tmp_path):

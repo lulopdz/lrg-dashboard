@@ -23,7 +23,7 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 MARKET_TZ = timezone(timedelta(hours=-5))  # same fixed EST anchor as io_archive.market_today
 # Mirrors src/forecast/config.ZONES (not imported: that module pulls in pandas).
-ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")
+ZONES = ("OTTAWA", "TORONTO", "NIAGARA")
 DASHBOARD_ZONE = "OTTAWA"  # files without a zone suffix
 VINTAGES = ("pre_dam", "post_dam")
 

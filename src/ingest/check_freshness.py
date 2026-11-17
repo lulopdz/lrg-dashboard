@@ -17,7 +17,7 @@ from pathlib import Path
 
 DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "ieso_rtm_prices.csv"
 MARKET_TZ = timezone(timedelta(hours=-5))
-CRITICAL_ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")
+CRITICAL_ZONES = ("OTTAWA", "TORONTO", "NIAGARA")
 
 
 def latest_per_zone(path):

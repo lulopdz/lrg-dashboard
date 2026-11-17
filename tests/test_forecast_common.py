@@ -7,7 +7,7 @@ import pytest
 import forecast_common as fc
 
 
-def test_zone_helpers_and_forecast_file():
+def test_zone_helpers_and_forecast_file(monkeypatch):
     assert fc.zone_suffix("OTTAWA") == ""
     assert fc.zone_suffix("NIAGARA") == "_NIAGARA"
 
@@ -17,10 +17,12 @@ def test_zone_helpers_and_forecast_file():
 
     base_cols = ["ontario", "wind_forecast"]
     assert fc.zone_feature_cols(base_cols, "OTTAWA") == base_cols
-    nw_cols = fc.zone_feature_cols(base_cols, "NORTHWEST")
-    assert nw_cols == base_cols + fc.ZONE_FEATURES["NORTHWEST"]
+    # No zone has its own inputs today; check the mechanism with a stand-in.
+    monkeypatch.setitem(fc.ZONE_FEATURES, "FARZONE", ["temperature_2m_far"])
+    far_cols = fc.zone_feature_cols(base_cols, "FARZONE")
+    assert far_cols == base_cols + ["temperature_2m_far"]
     # No duplicate additions if already present
-    assert fc.zone_feature_cols(nw_cols, "NORTHWEST") == nw_cols
+    assert fc.zone_feature_cols(far_cols, "FARZONE") == far_cols
 
 
 def test_determine_target_date_and_errors():

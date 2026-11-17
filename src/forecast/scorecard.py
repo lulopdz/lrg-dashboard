@@ -312,8 +312,9 @@ def compare_strategies(base_dir, cand_dir, zone=ZONE):
 
 # A change ships when the strategy it targets makes more money in at least this many zones
 # (README, "Evaluar un cambio"): one zone can win by luck, and the zones' DART moves together
-# (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), so a real improvement should show in most.
-MIN_ZONES_BETTER = 3
+# (OTTAWA-TORONTO 0.87, TORONTO-NIAGARA 0.94), so a real improvement should show in most:
+# 2 of the 3 zones (it was 3 of 4 until NORTHWEST was dropped on 2026-11-17).
+MIN_ZONES_BETTER = 2
 
 
 def verdict(per_zone):

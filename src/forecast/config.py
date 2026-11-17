@@ -12,16 +12,13 @@ DATA_DIR = ROOT / "data"
 DAYAHEAD_PATH = DATA_DIR / "forecast_inputs_dayahead.csv"
 
 ZONE = "OTTAWA"  # the dashboard's zone; its files carry no suffix (dam_forecast.csv), other zones do (dam_forecast_NIAGARA.csv)
-ZONES = ("OTTAWA", "TORONTO", "NIAGARA", "NORTHWEST")  # what the workflows forecast every day (NORTHWEST: D-4, 2026-10-02)
+ZONES = ("OTTAWA", "TORONTO", "NIAGARA")  # what the workflows forecast every day. NORTHWEST ran 2026-10-02..11-17
+# and was dropped: we can't trade it as a virtual participant.
 
 
-# Inputs only one zone's models see, on top of each model's own FEATURE_COLS. NORTHWEST trades
-# ~1,000 km from Ottawa and Toronto, so its own weather (Thunder Bay, update_weather.py) is the
-# local demand signal there (TRACKING N-4). Its regional load forecast, ontario_northwest, is
-# already in every model's FEATURE_COLS.
-ZONE_FEATURES = {
-    "NORTHWEST": ["temperature_2m_thunder_bay", "wind_speed_10m_thunder_bay", "relative_humidity_2m_thunder_bay"],
-}
+# Inputs only one zone's models see, on top of each model's own FEATURE_COLS, e.g. a distant
+# hub's own weather. None today: the one user, NORTHWEST (Thunder Bay weather), was dropped.
+ZONE_FEATURES = {}
 
 
 def zone_feature_cols(feature_cols, zone):
@@ -88,12 +85,12 @@ BACKTEST_SERIES_KEYS = ("test_actual", "test_predicted")
 QUANTILES = (0.1, 0.9)
 
 # Conformal widening of the band (N-5). The DAM quantile boosters come out overconfident: live
-# pre_dam P10-P90 covered 63-70% of hours in all four zones (2026-09-22..11-17, 33-43 days a
-# zone), missing on both sides, so the band is too narrow rather than off-centre. Each run
+# pre_dam P10-P90 covered 62-66% of hours in every zone (2026-09-22..11-17, 43 days a zone),
+# missing on both sides, so the band is too narrow rather than off-centre. Each run
 # scales the raw band around the point by k, the smallest factor that would have put `target`
 # of the last `window_days` days' actuals inside it (raw bands, live and reconstructed rows).
-# Walk-forward on those same days, using only earlier days: coverage 80.1 / 79.8 / 79.2 / 81.6%
-# (OTTAWA / TORONTO / NIAGARA / NORTHWEST), k 1.15-1.76, mean width $21 -> $31 in OTTAWA. 21-
+# Walk-forward on those same days, using only earlier days: coverage 80.1 / 79.8 / 79.2%
+# (OTTAWA / TORONTO / NIAGARA), k 1.30-1.76, mean width $21 -> $31 in OTTAWA. 21-
 # and 45-day windows gave the same within ~1 pt. RT and spread bands are already at 74-80%.
 BAND_CALIBRATION = {
     "dam": dict(window_days=30, min_days=10, target=0.8, k_min=1.0, k_max=2.5),
