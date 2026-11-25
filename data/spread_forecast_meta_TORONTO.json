@@ -1,13 +1,13 @@
 {
   "zone": "TORONTO",
-  "target_date": "2026-11-25",
-  "vintage": "post_dam",
+  "target_date": "2026-11-26",
+  "vintage": "pre_dam",
   "reconstruction": false,
-  "generated_at": "2026-11-25T03:06:33.560088+00:00",
-  "method": "real DAM - RT forecast",
-  "rtm_generated_at": "2026-11-25T03:06:33.342915+00:00",
+  "generated_at": "2026-11-25T14:01:37.202733+00:00",
+  "method": "DAM forecast - RT forecast",
+  "rtm_generated_at": "2026-11-25T14:01:37.073577+00:00",
   "missing_input_hours": 0,
-  "analog_date": "2026-01-08",
-  "analog_date_2": "2026-11-12",
+  "analog_date": "2025-11-11",
+  "analog_date_2": "2025-12-18",
   "backtest": null
 }
