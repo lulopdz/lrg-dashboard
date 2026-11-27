@@ -9,11 +9,11 @@ name: Forecast post-DAM
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 19 * * *' # 15:30 EDT / 14:30 EST; con el retraso habitual de GitHub aterriza entre las 16:00 y las 21:00
+    - cron: '15 18 * * *' # 14:15 EDT / 13:15 EST (IESO publica ~12:35 EST todo el año); margen amplio antes de medianoche EST
     # Reintento: los tres workflows comparten grupo de concurrency y GitHub guarda un solo run
     # pendiente, así que un clic de Refresh mientras este espera en cola lo cancela. El paso
     # "¿Ya está hecho?" hace que este segundo disparo no haga nada si el primero completó.
-    - cron: '30 23 * * *' # 19:30 EDT / 18:30 EST
+    - cron: '15 20 * * *' # 16:15 EDT / 15:15 EST
 
 concurrency:
   group: lrg-dashboard-git-writes
@@ -44,15 +44,28 @@ jobs:
         EVENTO: ${{ github.event_name }}
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
-        import json, os
+        import json, os, sys
         from datetime import datetime, timedelta, timezone
-        tomorrow = (datetime.now(timezone(timedelta(hours=-5))) + timedelta(days=1)).date().isoformat()
+        now_est = datetime.now(timezone(timedelta(hours=-5)))
+        tomorrow = (now_est + timedelta(days=1)).date().isoformat()
         try:
             meta = json.load(open("data/rtm_forecast_meta.json"))
         except (OSError, ValueError):
             meta = {}
         done = meta.get("vintage") == "post_dam" and meta.get("target_date") == tomorrow
-        run = os.environ["EVENTO"] == "workflow_dispatch" or not done
+        # Si un cron se atrasó y cruzó medianoche EST (00:00–12:29 EST), "tomorrow" ya avanzó un día
+        # y ni el DAM ni el pre-DAM de ese día existen todavía: saltar sin fallar en rojo.
+        before_dam = (now_est.hour, now_est.minute) < (12, 30)
+        if os.environ["EVENTO"] == "workflow_dispatch":
+            run = True
+        elif before_dam:
+            print(
+                f"Cron atrasado fuera de ventana ({now_est.strftime('%Y-%m-%d %H:%M')} EST < 12:30 EST); se omite.",
+                file=sys.stderr,
+            )
+            run = False
+        else:
+            run = not done
         print(f"correr={'true' if run else 'false'}")
         PY
         cat "$GITHUB_OUTPUT"
