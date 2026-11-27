@@ -56,10 +56,19 @@ jobs:
         case "$GITHUB_EVENT_NAME" in
           push) descargar=false ;; # un reporte nuevo o un cambio de código solo necesitan P&L y sitio
           schedule)
-            # Respaldo del Apps Script: descarga solo si hoy no hubo ningún run disparado por
-            # workflow_dispatch (el de las 9:00 o uno a mano). Si la consulta falla, descarga.
+            # Respaldo del Apps Script: descarga solo si hoy (en hora de mercado EST) no hubo ningún
+            # run disparado por workflow_dispatch (el de las 9:00 o uno a mano). Comparar en EST en
+            # vez de date -u evita duplicar descargas cuando el cron cruza las 00:00 UTC.
+            # Si la consulta falla, descarga.
             previos=$(gh run list --workflow daily.yml --event workflow_dispatch \
-                        --created "$(date -u +%F)" --json databaseId --jq length || echo 0)
+                        --limit 10 --json createdAt | python3 -c '
+        import json, sys
+        from datetime import datetime, timedelta, timezone
+        est = timezone(timedelta(hours=-5))
+        hoy = datetime.now(est).date()
+        runs = json.load(sys.stdin)
+        print(sum(1 for r in runs if datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00")).astimezone(est).date() == hoy))
+        ' || echo 0)
             if [ "${previos:-0}" -gt 0 ]; then descargar=false; else descargar=true; fi ;;
           *) descargar=true ;;
         esac
